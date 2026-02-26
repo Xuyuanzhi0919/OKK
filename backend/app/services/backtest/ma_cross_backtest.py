@@ -390,15 +390,14 @@ class DualMACrossBacktestEngine(BacktestEngine):
         golden_cross = prev_fast_ma <= prev_slow_ma and fast_ma > slow_ma
         death_cross = prev_fast_ma >= prev_slow_ma and fast_ma < slow_ma
 
-        # 计算交易数量
-        trade_amount = self.calculate_position_size(close_price)
-
         if golden_cross:
             # 金叉：平空开多
             if self.position.direction == "short" and self.position.amount < 0:
                 self.cover(close_price, abs(self.position.amount), timestamp)
 
             if self.position.amount <= 0:
+                # 平空后重新计算可用资金对应的仓位大小
+                trade_amount = self.calculate_position_size(close_price)
                 self.buy(close_price, trade_amount, timestamp)
                 self.position.direction = "long"
                 self.entry_price = close_price
@@ -410,6 +409,8 @@ class DualMACrossBacktestEngine(BacktestEngine):
                 self.sell(close_price, self.position.amount, timestamp)
 
             if self.position.amount >= 0:
+                # 平多后重新计算可用资金对应的仓位大小
+                trade_amount = self.calculate_position_size(close_price)
                 self.short(close_price, trade_amount, timestamp)
                 self.position.direction = "short"
                 self.entry_price = close_price

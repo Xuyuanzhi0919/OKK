@@ -125,6 +125,7 @@
   },
   "strategy": {
     "title": "Strategy Management",
+    "strategyList": "Strategy List",
     "strategies": "Strategies",
     "createStrategy": "Create Strategy",
     "strategyName": "Strategy Name",
