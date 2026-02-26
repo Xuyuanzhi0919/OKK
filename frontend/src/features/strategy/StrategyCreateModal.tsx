@@ -56,11 +56,31 @@ const TIMEFRAMES = [
   { value: '1D', label: '1天' },
 ]
 
+// 策略类型短名（用于自动命名）
+const TYPE_SHORT: Record<string, string> = {
+  trend: '趋势跟踪',
+}
+
+// 从交易对提取币种简称，例如 BTC-USDT-SWAP → BTC
+function extractCoin(symbol: string): string {
+  return symbol?.split('-')[0] ?? symbol
+}
+
+// 生成自动名称，例如 BTC 趋势跟踪
+function buildAutoName(type: string, symbol: string): string {
+  const coin = extractCoin(symbol)
+  const typeName = TYPE_SHORT[type] ?? type
+  if (coin && typeName) return `${coin} ${typeName}`
+  return ''
+}
+
 const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
   open, onCancel, onSuccess, initialType, backtestData,
 }) => {
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
+  // 记录上一次自动生成的名称，用于判断用户是否手动修改过
+  const [lastAutoName, setLastAutoName] = useState('')
 
   // 获取可用交易对：DB 中已有 K 线的排前面，再合并默认列表（去重）
   const { data: availableSymbols } = useQuery({
@@ -95,6 +115,25 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       })
     }
   }, [backtestData, open, form])
+
+  // 自动命名：监听类型和交易对，只要名称为空或等于上次自动生成的值就覆盖
+  const watchedType   = Form.useWatch('type',   form)
+  const watchedSymbol = Form.useWatch('symbol', form)
+  useEffect(() => {
+    if (backtestData) return   // 回测模式不覆盖
+    const auto = buildAutoName(watchedType, watchedSymbol)
+    if (!auto) return
+    const current = form.getFieldValue('name') ?? ''
+    if (current === '' || current === lastAutoName) {
+      form.setFieldValue('name', auto)
+      setLastAutoName(auto)
+    }
+  }, [watchedType, watchedSymbol]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 弹窗关闭时重置自动名称记录
+  useEffect(() => {
+    if (!open) setLastAutoName('')
+  }, [open])
 
   // 提交
   const handleSubmit = async () => {
