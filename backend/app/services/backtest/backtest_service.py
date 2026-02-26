@@ -2,7 +2,7 @@
 回测执行服务
 负责协调K线数据、回测引擎和结果存储
 """
-from typing import Dict, Optional
+from typing import Dict, Optional, Type, Callable
 from sqlalchemy.orm import Session
 from loguru import logger
 from datetime import datetime
@@ -10,7 +10,35 @@ from datetime import datetime
 from app.models import Backtest, BacktestTrade, Kline
 from .kline_service import KlineService
 from .grid_backtest import GridBacktestEngine, GridMarketMakingBacktest
+from .ma_cross_backtest import MACrossBacktestEngine, DualMACrossBacktestEngine
+from .backtest_engine import BacktestEngine
 from .metrics import BacktestMetrics
+
+
+# 策略类型注册表
+BACKTEST_ENGINES: Dict[str, Type[BacktestEngine]] = {
+    "grid": GridBacktestEngine,
+    "grid_mm": GridMarketMakingBacktest,
+    "ma_cross": MACrossBacktestEngine,
+    "dual_ma_cross": DualMACrossBacktestEngine,
+}
+
+
+def register_backtest_engine(strategy_type: str, engine_class: Type[BacktestEngine]):
+    """
+    注册新的回测引擎类型
+    
+    Args:
+        strategy_type: 策略类型标识
+        engine_class: 引擎类
+    """
+    BACKTEST_ENGINES[strategy_type] = engine_class
+    logger.info(f"注册回测引擎: {strategy_type} -> {engine_class.__name__}")
+
+
+def get_available_strategy_types() -> list:
+    """获取可用的策略类型列表"""
+    return list(BACKTEST_ENGINES.keys())
 
 
 class BacktestService:
@@ -208,7 +236,7 @@ class BacktestService:
             self.db.commit()
             raise
 
-    def _create_engine(self, backtest: Backtest):
+    def _create_engine(self, backtest: Backtest) -> BacktestEngine:
         """
         根据策略类型创建回测引擎
 
@@ -219,9 +247,24 @@ class BacktestService:
             回测引擎实例
         """
         params = backtest.parameters or {}
+        strategy_type = backtest.strategy_type
 
-        if backtest.strategy_type == 'grid':
-            # 网格策略
+        # 从注册表获取引擎类
+        engine_class = BACKTEST_ENGINES.get(strategy_type)
+        
+        if engine_class is None:
+            raise ValueError(f"不支持的策略类型: {strategy_type}，可用类型: {list(BACKTEST_ENGINES.keys())}")
+
+        # 检查引擎是否支持 from_params 方法
+        if hasattr(engine_class, 'from_params'):
+            return engine_class.from_params(
+                symbol=backtest.symbol,
+                initial_capital=float(backtest.initial_capital),
+                params=params
+            )
+        
+        # 兼容旧版网格策略
+        if strategy_type == 'grid':
             return GridBacktestEngine(
                 symbol=backtest.symbol,
                 initial_capital=float(backtest.initial_capital),
@@ -231,8 +274,7 @@ class BacktestService:
                 amount_per_grid=float(params.get('amount_per_grid', 0.001)),
                 fee_rate=float(params.get('fee_rate', 0.001))
             )
-        elif backtest.strategy_type == 'grid_mm':
-            # 网格做市策略
+        elif strategy_type == 'grid_mm':
             return GridMarketMakingBacktest(
                 symbol=backtest.symbol,
                 initial_capital=float(backtest.initial_capital),
@@ -241,8 +283,8 @@ class BacktestService:
                 amount_per_grid=float(params.get('amount_per_grid', 0.001)),
                 fee_rate=float(params.get('fee_rate', 0.001))
             )
-        else:
-            raise ValueError(f"不支持的策略类型: {backtest.strategy_type}")
+        
+        raise ValueError(f"无法创建策略引擎: {strategy_type}")
 
     @staticmethod
     def _trade_to_dict(trade) -> Dict:

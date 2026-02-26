@@ -154,6 +154,29 @@ async def query_klines(
         raise HTTPException(status_code=500, detail=f"查询K线数据失败: {str(e)}")
 
 
+@router.get("/strategy-types", summary="获取可用策略类型")
+async def get_strategy_types():
+    """
+    获取所有可用的回测策略类型
+    
+    **返回:** 策略类型列表，包含类型标识和名称
+    """
+    from app.services.backtest.backtest_service import get_available_strategy_types
+    
+    types = get_available_strategy_types()
+    strategy_names = {
+        'grid': '网格策略',
+        'grid_mm': '网格做市',
+        'ma_cross': '均线交叉',
+        'dual_ma_cross': '双均线(多空)'
+    }
+    
+    return [
+        {"value": t, "label": strategy_names.get(t, t)}
+        for t in types
+    ]
+
+
 @router.get("/klines/range", summary="获取数据范围")
 async def get_data_range(
     symbol: str = Query(..., description="交易对"),

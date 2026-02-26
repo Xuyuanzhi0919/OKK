@@ -49,6 +49,17 @@ interface CreateBacktestFormData {
   amount_per_grid?: number
   fee_rate: number
   description?: string
+  // 均线交叉策略参数
+  fast_period?: number
+  slow_period?: number
+  ma_type?: string
+  amount_per_trade?: number
+  // 双均线策略参数
+  position_ratio?: number
+  leverage?: number
+  enable_short?: boolean
+  stop_loss?: number
+  take_profit?: number
 }
 
 const BacktestList = () => {
@@ -1103,8 +1114,14 @@ const BacktestList = () => {
                 rules={[{ required: true }]}
               >
                 <Select onChange={(value) => setStrategyType(value)}>
-                  <Select.Option value="grid">网格策略</Select.Option>
-                  <Select.Option value="grid_mm">网格做市</Select.Option>
+                  <Select.OptGroup label="网格策略">
+                    <Select.Option value="grid">网格策略</Select.Option>
+                    <Select.Option value="grid_mm">网格做市</Select.Option>
+                  </Select.OptGroup>
+                  <Select.OptGroup label="趋势策略">
+                    <Select.Option value="ma_cross">均线交叉</Select.Option>
+                    <Select.Option value="dual_ma_cross">双均线(多空)</Select.Option>
+                  </Select.OptGroup>
                 </Select>
               </Form.Item>
 
@@ -1509,6 +1526,193 @@ const BacktestList = () => {
                   </Form.Item>
                 </>
               )}
+
+              {/* 均线交叉策略参数 */}
+              {(strategyType === 'ma_cross' || strategyType === 'dual_ma_cross') && (
+                <>
+                  <Alert
+                    message={strategyType === 'ma_cross' ? "均线交叉策略说明" : "双均线策略说明"}
+                    description={
+                      strategyType === 'ma_cross'
+                        ? "快均线上穿慢均线时买入（金叉），快均线下穿慢均线时卖出（死叉）。适合趋势行情。"
+                        : "双均线多空策略：金叉开多，死叉开空。支持杠杆和止损止盈。适合双向波动的市场。"
+                    }
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                  />
+
+                  <Form.Item
+                    name="fast_period"
+                    label={
+                      <span>
+                        快线周期{' '}
+                        <Tooltip title="快速均线的计算周期，建议5-10">
+                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
+                        </Tooltip>
+                      </span>
+                    }
+                    rules={[{ required: true, message: '请输入快线周期' }]}
+                    initialValue={5}
+                  >
+                    <InputNumber min={1} max={50} style={{ width: '100%' }} placeholder="5" />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="slow_period"
+                    label={
+                      <span>
+                        慢线周期{' '}
+                        <Tooltip title="慢速均线的计算周期，建议20-60">
+                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
+                        </Tooltip>
+                      </span>
+                    }
+                    rules={[{ required: true, message: '请输入慢线周期' }]}
+                    initialValue={20}
+                  >
+                    <InputNumber min={1} max={200} style={{ width: '100%' }} placeholder="20" />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="ma_type"
+                    label={
+                      <span>
+                        均线类型{' '}
+                        <Tooltip title="SMA为简单移动平均，EMA为指数移动平均（对近期价格更敏感）">
+                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
+                        </Tooltip>
+                      </span>
+                    }
+                    initialValue="EMA"
+                  >
+                    <Select>
+                      <Select.Option value="EMA">EMA（指数移动平均）</Select.Option>
+                      <Select.Option value="SMA">SMA（简单移动平均）</Select.Option>
+                    </Select>
+                  </Form.Item>
+
+                  <Form.Item
+                    name="amount_per_trade"
+                    label={
+                      <span>
+                        每次交易数量{' '}
+                        <Tooltip title="每次开仓的交易数量，单位为基础币种">
+                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
+                        </Tooltip>
+                      </span>
+                    }
+                    rules={[{ required: strategyType === 'ma_cross', message: '请输入每次交易数量' }]}
+                    initialValue={0.01}
+                  >
+                    <InputNumber min={0.001} step={0.001} style={{ width: '100%' }} placeholder="0.01" />
+                  </Form.Item>
+
+                  {/* 双均线策略特有参数 */}
+                  {strategyType === 'dual_ma_cross' && (
+                    <>
+                      <Form.Item
+                        name="position_ratio"
+                        label={
+                          <span>
+                            仓位比例{' '}
+                            <Tooltip title="每次开仓使用资金的比例，0.9表示使用90%的可用资金">
+                              <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
+                            </Tooltip>
+                          </span>
+                        }
+                        initialValue={0.9}
+                      >
+                        <InputNumber min={0.1} max={1} step={0.1} style={{ width: '100%' }} placeholder="0.9" />
+                      </Form.Item>
+
+                      <Form.Item
+                        name="leverage"
+                        label={
+                          <span>
+                            杠杆倍数{' '}
+                            <Tooltip title="交易杠杆倍数，1表示不使用杠杆">
+                              <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
+                            </Tooltip>
+                          </span>
+                        }
+                        initialValue={1}
+                      >
+                        <InputNumber min={1} max={125} style={{ width: '100%' }} placeholder="1" />
+                      </Form.Item>
+
+                      <Form.Item
+                        name="enable_short"
+                        label={
+                          <span>
+                            启用做空{' '}
+                            <Tooltip title="是否在死叉时开空仓">
+                              <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
+                            </Tooltip>
+                          </span>
+                        }
+                        valuePropName="checked"
+                        initialValue={true}
+                      >
+                        <Select>
+                          <Select.Option value={true}>是</Select.Option>
+                          <Select.Option value={false}>否</Select.Option>
+                        </Select>
+                      </Form.Item>
+
+                      <Form.Item
+                        name="stop_loss"
+                        label={
+                          <span>
+                            止损比例{' '}
+                            <Tooltip title="亏损达到该比例时止损，0表示不启用">
+                              <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
+                            </Tooltip>
+                          </span>
+                        }
+                        initialValue={0}
+                      >
+                        <InputNumber min={0} max={0.5} step={0.01} style={{ width: '100%' }} placeholder="0.05 (5%)" />
+                      </Form.Item>
+
+                      <Form.Item
+                        name="take_profit"
+                        label={
+                          <span>
+                            止盈比例{' '}
+                            <Tooltip title="盈利达到该比例时止盈，0表示不启用">
+                              <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
+                            </Tooltip>
+                          </span>
+                        }
+                        initialValue={0}
+                      >
+                        <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} placeholder="0.1 (10%)" />
+                      </Form.Item>
+                    </>
+                  )}
+
+                  <Form.Item
+                    name="fee_rate"
+                    label={
+                      <span>
+                        手续费率{' '}
+                        <Tooltip title="OKX现货交易手续费率">
+                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
+                        </Tooltip>
+                      </span>
+                    }
+                    rules={[{ required: true, message: '请输入手续费率' }]}
+                    initialValue={0.001}
+                  >
+                    <InputNumber min={0} max={1} step={0.0001} style={{ width: '100%' }} placeholder="0.001" />
+                  </Form.Item>
+
+                  <Form.Item name="description" label="描述">
+                    <TextArea rows={3} placeholder="回测描述(可选)" />
+                  </Form.Item>
+                </>
+              )}
             </div>
 
             {/* 第三步: 确认信息 */}
@@ -1523,7 +1727,16 @@ const BacktestList = () => {
 
               {(() => {
                 const values = form.getFieldsValue()
-                const strategyName = values.strategy_type === 'grid' ? '网格策略' : '网格做市'
+                const getStrategyName = (type: string) => {
+                  const names: Record<string, string> = {
+                    'grid': '网格策略',
+                    'grid_mm': '网格做市',
+                    'ma_cross': '均线交叉',
+                    'dual_ma_cross': '双均线(多空)'
+                  }
+                  return names[type] || type
+                }
+                const strategyName = getStrategyName(values.strategy_type)
                 const startTime = values.time_range?.[0]?.format('YYYY-MM-DD HH:mm')
                 const endTime = values.time_range?.[1]?.format('YYYY-MM-DD HH:mm')
 
@@ -1690,6 +1903,88 @@ const BacktestList = () => {
                                   valueStyle={{ fontSize: 18 }}
                                 />
                               </Col>
+                            </Row>
+
+                            {values.description && (
+                              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #303030' }}>
+                                <div style={{ color: '#8c8c8c', marginBottom: 8 }}>描述</div>
+                                <div style={{ fontSize: 14 }}>{values.description}</div>
+                              </div>
+                            )}
+                          </Card>
+                        </Col>
+                      )}
+
+                      {/* 均线交叉策略参数确认 */}
+                      {(values.strategy_type === 'ma_cross' || values.strategy_type === 'dual_ma_cross') && (
+                        <Col span={24}>
+                          <Card size="small" title="均线交叉参数">
+                            <Row gutter={[16, 12]}>
+                              <Col span={12}>
+                                <Statistic
+                                  title="快线周期"
+                                  value={values.fast_period || 5}
+                                  suffix={values.ma_type || 'EMA'}
+                                  valueStyle={{ fontSize: 18 }}
+                                />
+                              </Col>
+                              <Col span={12}>
+                                <Statistic
+                                  title="慢线周期"
+                                  value={values.slow_period || 20}
+                                  suffix={values.ma_type || 'EMA'}
+                                  valueStyle={{ fontSize: 18 }}
+                                />
+                              </Col>
+                              <Col span={12}>
+                                <Statistic
+                                  title="每次交易数量"
+                                  value={values.amount_per_trade || 0.01}
+                                  valueStyle={{ fontSize: 18 }}
+                                />
+                              </Col>
+                              <Col span={12}>
+                                <Statistic
+                                  title="手续费率"
+                                  value={formatPercent(values.fee_rate * 100)}
+                                  suffix="%"
+                                  valueStyle={{ fontSize: 18 }}
+                                />
+                              </Col>
+                              {values.strategy_type === 'dual_ma_cross' && (
+                                <>
+                                  <Col span={12}>
+                                    <Statistic
+                                      title="仓位比例"
+                                      value={formatPercent((values.position_ratio || 0.9) * 100)}
+                                      suffix="%"
+                                      valueStyle={{ fontSize: 18 }}
+                                    />
+                                  </Col>
+                                  <Col span={12}>
+                                    <Statistic
+                                      title="杠杆倍数"
+                                      value={values.leverage || 1}
+                                      suffix="x"
+                                      valueStyle={{ fontSize: 18, color: values.leverage > 1 ? '#ff4d4f' : undefined }}
+                                    />
+                                  </Col>
+                                  <Col span={12}>
+                                    <Statistic
+                                      title="启用做空"
+                                      value={values.enable_short ? '是' : '否'}
+                                      valueStyle={{ fontSize: 18 }}
+                                    />
+                                  </Col>
+                                  <Col span={12}>
+                                    <Statistic
+                                      title="止损/止盈"
+                                      value={`${formatPercent((values.stop_loss || 0) * 100)}% / ${formatPercent((values.take_profit || 0) * 100)}%`}
+                                      valueStyle={{ fontSize: 18 }}
+                                    />
+                                  </Col>
+                                </>
+                              )}
                             </Row>
 
                             {values.description && (

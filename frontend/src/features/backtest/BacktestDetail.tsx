@@ -157,7 +157,15 @@ const BacktestDetail = () => {
         <Descriptions column={2}>
           <Descriptions.Item label="名称">{backtest.name}</Descriptions.Item>
           <Descriptions.Item label="策略类型">
-            {backtest.strategy_type === 'grid' ? '网格策略' : '网格做市'}
+            {(() => {
+              const names: Record<string, string> = {
+                'grid': '网格策略',
+                'grid_mm': '网格做市',
+                'ma_cross': '均线交叉',
+                'dual_ma_cross': '双均线(多空)'
+              }
+              return names[backtest.strategy_type] || backtest.strategy_type
+            })()}
           </Descriptions.Item>
           <Descriptions.Item label="交易对">{backtest.symbol}</Descriptions.Item>
           <Descriptions.Item label="K线周期">{backtest.interval}</Descriptions.Item>
