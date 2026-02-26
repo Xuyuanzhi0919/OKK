@@ -23,6 +23,7 @@ def run_grid_backtest(
     initial_capital: float = 10000,
     grid_num: int = 10,
     price_range_percent: float = 0.10,  # 价格范围百分比
+    use_dynamic_range: bool = True,  # 是否使用动态范围(基于历史波动)
 ):
     """
     运行网格策略回测
@@ -34,6 +35,7 @@ def run_grid_backtest(
         initial_capital: 初始资金
         grid_num: 网格数量
         price_range_percent: 价格范围百分比(相对于起始价格)
+        use_dynamic_range: 是否使用动态范围(基于历史高低价)
     """
     print("\n" + "=" * 60)
     print(f"网格策略回测测试")
@@ -48,33 +50,49 @@ def run_grid_backtest(
     
     db = SessionLocal()
     try:
-        # 获取K线数据
-        kline_service = KlineService(db)
+        # 直接从数据库获取K线数据
         end_time = datetime.now()
         start_time = end_time - timedelta(days=days)
         
-        klines = kline_service.get_klines(
-            symbol=symbol,
-            interval=interval,
-            start_time=int(start_time.timestamp() * 1000),
-            end_time=int(end_time.timestamp() * 1000)
-        )
+        start_ts = int(start_time.timestamp() * 1000)
+        end_ts = int(end_time.timestamp() * 1000)
+        
+        klines = db.query(Kline).filter(
+            and_(
+                Kline.symbol == symbol,
+                Kline.interval == interval,
+                Kline.timestamp >= start_ts,
+                Kline.timestamp <= end_ts
+            )
+        ).order_by(Kline.timestamp.asc()).all()
         
         if not klines:
             print(f"错误: 没有找到K线数据，请先运行 fetch-kline API 获取数据")
+            print(f"查询条件: symbol={symbol}, interval={interval}, start={start_ts}, end={end_ts}")
             return None
         
         print(f"获取到 {len(klines)} 条K线数据")
         
         # 计算网格参数
         first_price = float(klines[0].open)
-        price_lower = first_price * (1 - price_range_percent)
-        price_upper = first_price * (1 + price_range_percent)
         
-        # 计算每格交易数量
-        amount_per_grid = (initial_capital / grid_num) / first_price
+        if use_dynamic_range:
+            # 使用历史高低价计算网格范围(留有一定余量)
+            highs = [float(k.high) for k in klines]
+            lows = [float(k.low) for k in klines]
+            price_upper = max(highs) * 1.02  # 最高价上方2%
+            price_lower = min(lows) * 0.98   # 最低价下方2%
+        else:
+            price_lower = first_price * (1 - price_range_percent)
+            price_upper = first_price * (1 + price_range_percent)
+        
+        # 计算每格交易数量 - 使用总资金的一部分，预留资金应对价格波动
+        usable_capital = initial_capital * 0.9  # 只使用90%的资金
+        amount_per_grid = (usable_capital / grid_num) / ((price_upper + price_lower) / 2)
         
         print(f"起始价格: {first_price:.2f}")
+        print(f"历史最高: {max(highs):.2f}")
+        print(f"历史最低: {min(lows):.2f}")
         print(f"网格下限: {price_lower:.2f}")
         print(f"网格上限: {price_upper:.2f}")
         print(f"每格数量: {amount_per_grid:.4f}")
@@ -103,23 +121,47 @@ def run_grid_backtest(
             })
         
         # 获取结果
-        metrics = BacktestMetrics.calculate(engine)
+        final_capital = engine.capital + engine.position.amount * engine.current_kline['close'] if engine.current_kline else engine.capital
+        
+        # 转换交易记录格式
+        trades_data = []
+        for t in engine.trades:
+            trades_data.append({
+                'side': t.side,
+                'price': t.price,
+                'amount': t.amount,
+                'fee': t.fee,
+                'pnl': t.pnl
+            })
+        
+        # 获取时间戳范围
+        start_ts = klines[0].timestamp if klines else 0
+        end_ts = klines[-1].timestamp if klines else 0
+        
+        metrics = BacktestMetrics.calculate_all_metrics(
+            initial_capital=initial_capital,
+            final_capital=final_capital,
+            equity_curve=engine.equity_curve,
+            trades=trades_data,
+            start_timestamp=start_ts,
+            end_timestamp=end_ts
+        )
         
         # 打印结果
         print("\n" + "=" * 60)
         print("回测结果")
         print("=" * 60)
-        print(f"总收益率: {metrics['total_return']:.2f}%")
-        print(f"年化收益率: {metrics['annual_return']:.2f}%")
-        print(f"最大回撤: {metrics['max_drawdown']:.2f}%")
+        print(f"总收益率: {metrics['total_return']*100:.2f}%")
+        print(f"年化收益率: {metrics['annualized_return']*100:.2f}%")
+        print(f"最大回撤: {metrics['max_drawdown']*100:.2f}%")
         print(f"夏普比率: {metrics['sharpe_ratio']:.2f}")
-        print(f"胜率: {metrics['win_rate']:.2f}%")
+        print(f"胜率: {metrics['win_rate']*100:.2f}%")
         print(f"盈亏比: {metrics['profit_factor']:.2f}")
         print(f"总交易次数: {metrics['total_trades']}")
-        print(f"盈利交易: {metrics['win_trades']}")
-        print(f"亏损交易: {metrics['loss_trades']}")
-        print(f"最终资金: {metrics['final_capital']:.2f} USDT")
-        print(f"总盈亏: {metrics['total_pnl']:.2f} USDT")
+        print(f"盈利交易: {metrics['winning_trades']}")
+        print(f"亏损交易: {metrics['losing_trades']}")
+        print(f"最终资金: {final_capital:.2f} USDT")
+        print(f"总盈亏: {final_capital - initial_capital:.2f} USDT")
         print("=" * 60 + "\n")
         
         return metrics
@@ -180,7 +222,7 @@ def test_multiple_configs():
         config = r["config"]
         m = r["metrics"]
         config_str = f"网格{config['grid_num']}, 范围±{config['price_range_percent']*100}%, {config['days']}天"
-        print(f"{config_str:<30} {m['total_return']:>11.2f}% {m['max_drawdown']:>11.2f}% {m['sharpe_ratio']:>10.2f} {m['win_rate']:>9.2f}%")
+        print(f"{config_str:<30} {m['total_return']*100:>11.2f}% {m['max_drawdown']*100:>11.2f}% {m['sharpe_ratio']:>10.2f} {m['win_rate']*100:>9.2f}%")
     
     print("=" * 80)
     
