@@ -68,7 +68,7 @@ class MACrossBacktestEngine(BacktestEngine):
     def reset(self):
         """重置回测状态"""
         super().reset()
-        self.kline_buffer = KlineBuffer(max_size=max(self.fast_period, slow_period) + 10)
+        self.kline_buffer = KlineBuffer(max_size=max(self.fast_period, self.slow_period) + 10)
         self.fast_ma_history = []
         self.slow_ma_history = []
 

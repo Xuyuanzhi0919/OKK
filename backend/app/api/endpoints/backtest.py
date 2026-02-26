@@ -404,6 +404,7 @@ class BacktestResultResponse(BaseModel):
     profit_factor: Optional[float]
     total_fee: Optional[float]
     equity_curve: Optional[List[Dict[str, Any]]]
+    error_message: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime]
 

@@ -22,20 +22,29 @@ interface StrategyCreateModalProps {
   } | null
 }
 
-// 策略类型（与回测页面保持一致）
+// 策略类型（与后端 StrategyType 保持一致）
 const STRATEGY_TYPES = [
   {
     group: '网格策略',
     items: [
-      { value: 'grid',    label: '网格策略',  desc: '在价格区间内自动低买高卖，适合震荡行情' },
-      { value: 'grid_mm', label: '网格做市',  desc: '围绕当前价格对称布置网格，持续做市获利' },
+      { value: 'grid', label: '网格策略', desc: '在价格区间内自动低买高卖，适合震荡行情' },
     ],
   },
   {
-    group: '趋势策略',
+    group: '波段策略',
     items: [
-      { value: 'ma_cross',      label: '均线交叉',    desc: '快慢均线金叉/死叉信号交易' },
-      { value: 'dual_ma_cross', label: '双均线(多空)', desc: '支持做多做空的双均线策略' },
+      { value: 'swing_long', label: '波段做多', desc: '基于技术指标的波段做多策略' },
+      { value: 'swing_short', label: '波段做空', desc: '基于技术指标的波段做空策略' },
+      { value: 'ai_swing_long', label: 'AI波段做多', desc: 'AI增强的波段做多策略' },
+    ],
+  },
+  {
+    group: '其他策略',
+    items: [
+      { value: 'martin', label: '马丁格尔', desc: '亏损后加倍仓位的策略' },
+      { value: 'trend', label: '趋势跟踪', desc: '追踪市场趋势进行交易' },
+      { value: 'arbitrage', label: '套利', desc: '利用价格差异进行套利' },
+      { value: 'custom', label: '自定义', desc: '用户自定义策略' },
     ],
   },
 ]
@@ -85,6 +94,30 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       }
     },
   })
+
+  // 自动生成策略名称
+  const generateStrategyName = () => {
+    const values = form.getFieldsValue()
+    const { type, symbol } = values
+
+    if (!symbol) return
+
+    const strategyNameMap: Record<string, string> = {
+      'grid': '网格策略',
+      'swing_long': '波段做多',
+      'swing_short': '波段做空',
+      'ai_swing_long': 'AI波段做多',
+      'martin': '马丁格尔',
+      'trend': '趋势跟踪',
+      'arbitrage': '套利',
+      'custom': '自定义',
+    }
+    const strategyName = strategyNameMap[type] || '策略'
+    const dateStr = new Date().toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
+
+    const name = `${symbol} ${strategyName} ${dateStr}`
+    form.setFieldsValue({ name })
+  }
 
   // 从回测预填数据
   useEffect(() => {
@@ -140,24 +173,24 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
           grid_num: values.grid_num, amount_per_grid: values.amount_per_grid,
           total_amount: values.total_amount, fee_rate: values.fee_rate ?? 0.001,
         })
-      } else if (t === 'grid_mm') {
+      } else if (t === 'swing_long' || t === 'swing_short' || t === 'ai_swing_long') {
         Object.assign(parameters, {
-          grid_spread: values.grid_spread, grid_levels: values.grid_levels,
-          amount_per_grid: values.amount_per_grid, total_amount: values.total_amount,
-        })
-      } else if (t === 'ma_cross') {
-        Object.assign(parameters, {
-          fast_period: values.fast_period ?? 5, slow_period: values.slow_period ?? 20,
-          ma_type: values.ma_type ?? 'EMA', amount_per_trade: values.amount_per_trade ?? 0.01,
-        })
-      } else if (t === 'dual_ma_cross') {
-        Object.assign(parameters, {
-          fast_period: values.fast_period ?? 5, slow_period: values.slow_period ?? 20,
-          ma_type: values.ma_type ?? 'EMA', amount_per_trade: values.amount_per_trade ?? 0.01,
-          position_ratio: values.position_ratio ?? 0.5, leverage: values.leverage ?? 1,
-          enable_short: values.enable_short ?? false,
+          leverage: values.leverage ?? 1,
           stop_loss: values.stop_loss, take_profit: values.take_profit,
         })
+      } else if (t === 'martin') {
+        Object.assign(parameters, {
+          initial_amount: values.initial_amount ?? 0.01,
+          multiplier: values.multiplier ?? 2,
+          max_levels: values.max_levels ?? 5,
+        })
+      } else if (t === 'trend') {
+        Object.assign(parameters, {
+          fast_period: values.fast_period ?? 5, slow_period: values.slow_period ?? 20,
+          amount_per_trade: values.amount_per_trade ?? 0.01,
+        })
+      } else if (t === 'custom') {
+        Object.assign(parameters, values.custom_params ?? {})
       }
 
       await strategyApi.create({
@@ -392,7 +425,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
           <Col span={12}>
             <Form.Item name="type" label="策略类型" rules={[{ required: true }]} style={compactItem}>
               <Select
-                onChange={(v) => { setStrategyType(v); setGridCalc(null) }}
+                onChange={(v) => { setStrategyType(v); setGridCalc(null); setTimeout(generateStrategyName, 0) }}
                 placeholder="选择策略类型"
               >
                 {STRATEGY_TYPES.map(group => (
@@ -437,6 +470,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                 filterOption={(input, option) =>
                   String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())
                 }
+                onChange={() => setTimeout(generateStrategyName, 0)}
               >
                 <Select.OptGroup label="合约（SWAP）">
                   {(availableSymbols ?? DEFAULT_SYMBOLS)

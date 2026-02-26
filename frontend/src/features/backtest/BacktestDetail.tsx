@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { Card, Descriptions, Statistic, Row, Col, Table, Button, Tag, Spin, Empty, Space, App } from 'antd'
+import { Card, Descriptions, Statistic, Row, Col, Table, Button, Tag, Spin, Empty, Space, App, Alert } from 'antd'
 import { ArrowLeft, Rocket } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -33,6 +33,7 @@ interface BacktestDetail {
   profit_factor?: number
   total_fee?: number
   equity_curve?: Array<{ timestamp: number; equity: number; drawdown?: number }>
+  error_message?: string
   parameters?: Record<string, any>
   created_at: string
   completed_at?: string
@@ -196,8 +197,14 @@ const BacktestDetail = () => {
             {formatAmount(backtest.initial_capital) || '0'} USDT
           </Descriptions.Item>
           <Descriptions.Item label="状态">
-            <Tag color={backtest.status === 'completed' ? 'success' : 'processing'}>
-              {backtest.status === 'completed' ? '已完成' : backtest.status}
+            <Tag color={
+              backtest.status === 'completed' ? 'success' :
+              backtest.status === 'failed' ? 'error' :
+              backtest.status === 'running' ? 'processing' : 'default'
+            }>
+              {backtest.status === 'completed' ? '已完成' :
+               backtest.status === 'failed' ? '失败' :
+               backtest.status === 'running' ? '运行中' : backtest.status}
             </Tag>
           </Descriptions.Item>
           {backtest.description && (
@@ -207,6 +214,17 @@ const BacktestDetail = () => {
           )}
         </Descriptions>
       </Card>
+
+      {/* 失败原因 */}
+      {backtest.status === 'failed' && (
+        <Alert
+          type="error"
+          showIcon
+          message="回测执行失败"
+          description={backtest.error_message || '未知错误，请查看后端日志'}
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
       {/* 性能指标 */}
       {backtest.status === 'completed' && (
