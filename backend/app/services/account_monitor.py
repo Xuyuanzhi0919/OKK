@@ -31,15 +31,26 @@ class AccountMonitor:
         self.interval = interval
         self.is_running = False
         self._task = None
+        # 复用同一个 exchange 实例，避免每次创建新 session 造成资源泄漏
+        self._exchange = None
         # 快照计数器：每360次循环(= 3600秒 = 1小时)保存一次快照
         self._snapshot_counter = 0
         self._snapshot_interval = 360
+
+    def _get_exchange(self):
+        """获取或创建 exchange 实例（复用，不重复创建）"""
+        if self._exchange is None:
+            self._exchange = api_config_service.get_exchange(user_id=1)
+        return self._exchange
 
     async def start(self):
         """启动监控"""
         if self.is_running:
             logger.warning("账户监控器已在运行")
             return
+
+        # 预先创建 exchange 实例
+        self._exchange = api_config_service.get_exchange(user_id=1)
 
         self.is_running = True
         self._task = asyncio.create_task(self._monitor_loop())
@@ -54,6 +65,13 @@ class AccountMonitor:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        # 关闭 exchange session，释放 aiohttp 连接
+        if self._exchange is not None:
+            try:
+                await self._exchange.close()
+            except Exception:
+                pass
+            self._exchange = None
         logger.info("账户监控器已停止")
 
     async def _monitor_loop(self):
@@ -87,8 +105,7 @@ class AccountMonitor:
     async def _push_balance_update(self) -> dict | None:
         """推送余额更新，返回用于快照的核心数据"""
         try:
-            # 获取用户的交易所实例
-            exchange = api_config_service.get_exchange(user_id=1)
+            exchange = self._get_exchange()
             if not exchange:
                 return None
 
@@ -141,8 +158,7 @@ class AccountMonitor:
     async def _push_positions_update(self):
         """推送持仓更新"""
         try:
-            # 获取用户的交易所实例
-            exchange = api_config_service.get_exchange(user_id=1)
+            exchange = self._get_exchange()
             if not exchange:
                 return
 
