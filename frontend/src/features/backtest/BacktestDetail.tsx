@@ -33,6 +33,7 @@ interface BacktestDetail {
   profit_factor?: number
   total_fee?: number
   equity_curve?: Array<{ timestamp: number; equity: number; drawdown?: number }>
+  parameters?: Record<string, any>
   created_at: string
   completed_at?: string
 }
@@ -310,6 +311,23 @@ const BacktestDetail = () => {
           }}
         />
       </Card>
+
+      {/* 创建实盘策略模态框 */}
+      <StrategyCreateModal
+        open={createModalOpen}
+        onCancel={() => setCreateModalOpen(false)}
+        onSuccess={() => {
+          setCreateModalOpen(false)
+          message.success('策略创建成功，请前往策略列表启动')
+          navigate('/strategy')
+        }}
+        backtestData={backtest ? {
+          strategy_type: backtest.strategy_type,
+          symbol: backtest.symbol,
+          name: `${backtest.name}-实盘`,
+          parameters: backtest.parameters || {}
+        } : null}
+      />
     </div>
   )
 }
