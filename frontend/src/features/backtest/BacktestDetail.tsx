@@ -322,7 +322,7 @@ const BacktestDetail = () => {
         <Table
           columns={tradeColumns}
           dataSource={trades}
-          rowKey={(record) => `${record.timestamp}-${record.side}-${record.price}`}
+          rowKey={(record, index) => `${record.timestamp}-${record.side}-${record.price}-${index}`}
           loading={tradesLoading}
           pagination={{
             pageSize: 20,
