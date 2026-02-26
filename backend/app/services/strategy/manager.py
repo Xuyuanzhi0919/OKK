@@ -74,8 +74,16 @@ class StrategyManager:
         else:
             strategy_type_enum = strategy_type
 
-        # 所有策略类型暂未实现
-        if strategy_type_enum == StrategyType.GRID:
+        if strategy_type_enum == StrategyType.TREND:
+            from app.services.strategy.trend_follow import TrendFollowStrategy
+            return TrendFollowStrategy(
+                strategy_id=strategy_id,
+                exchange=exchange,
+                symbol=symbol,
+                parameters=parameters,
+                user_id=user_id,
+            )
+        elif strategy_type_enum == StrategyType.GRID:
             raise NotImplementedError("网格策略已移除")
         elif strategy_type_enum == StrategyType.SWING_LONG:
             raise NotImplementedError("波段做多策略已移除")
@@ -85,8 +93,6 @@ class StrategyManager:
             raise NotImplementedError("波段做空策略已移除")
         elif strategy_type_enum == StrategyType.MARTIN:
             raise NotImplementedError("马丁格尔策略尚未实现")
-        elif strategy_type_enum == StrategyType.TREND:
-            raise NotImplementedError("趋势跟踪策略尚未实现")
         elif strategy_type_enum == StrategyType.ARBITRAGE:
             raise NotImplementedError("套利策略尚未实现")
         elif strategy_type_enum == StrategyType.CUSTOM:

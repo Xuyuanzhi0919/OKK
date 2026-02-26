@@ -49,9 +49,10 @@ const STRATEGY_TYPE_LABELS: Record<string, string> = {
   custom: '自定义',
 }
 
-// 当前无可用实盘策略类型，过滤选项暂为空
-// 后续接入新策略时在此补充 { label, value }
-const STRATEGY_TYPE_OPTIONS: { label: string; value: string }[] = []
+// 可用实盘策略过滤选项
+const STRATEGY_TYPE_OPTIONS: { label: string; value: string }[] = [
+  { label: 'EMA趋势跟踪', value: 'trend' },
+]
 
 // 状态选项
 const STATUS_OPTIONS = [
@@ -427,7 +428,7 @@ const StrategyList = () => {
           <Col span={6}>
             <Select
               style={{ width: '100%' }}
-              placeholder="筛选类型（暂无可用选项）"
+              placeholder="筛选策略类型"
               allowClear
               disabled={STRATEGY_TYPE_OPTIONS.length === 0}
               value={filterType}
