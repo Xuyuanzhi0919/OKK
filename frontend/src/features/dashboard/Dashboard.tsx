@@ -18,27 +18,57 @@ import { wsService, StrategyUpdateData, StrategyStatsData, OrderUpdateData, Bala
 import { useTranslation } from 'react-i18next'
 import { formatPrice, formatQuantityDisplay, formatAmount, formatPercent } from '@/utils/format'
 
+// ── 本地缓存（解决路由切换/刷新后数据闪烁：挂载时立即还原上次数据）──
+const CACHE_KEY = 'okk_dashboard_v1'
+const CACHE_TTL = 5 * 60 * 1000 // 5分钟过期
+
+const readCache = (): Record<string, any> | null => {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (Date.now() - (parsed.ts ?? 0) > CACHE_TTL) {
+      localStorage.removeItem(CACHE_KEY)
+      return null
+    }
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+const writeCache = (data: Record<string, any>) => {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ...data, ts: Date.now() }))
+  } catch {}
+}
+
 const Dashboard = () => {
   const { t } = useTranslation()
-  const [loading, setLoading] = useState(true)   // 仅首次无数据时全屏 Spinner
-  const [refreshing, setRefreshing] = useState(false) // 后续刷新时按钮图标旋转
-  // 是否已完成过至少一次成功加载（用 ref 避免 setInterval 闭包过期问题）
-  const hasLoadedRef = useRef(false)
-  const [balance, setBalance] = useState<any>(null)
-  const [positionsWithPrice, setPositionsWithPrice] = useState<any[]>([])
-  const [runningStrategies, setRunningStrategies] = useState<any[]>([])
-  // ref 保持最新值，供 WS 闭包读取（避免过期闭包捕获初始空数组）
-  const runningStrategiesRef = useRef<any[]>([])
+
+  // 首次渲染时读缓存，作为所有 state 的初始值（只调用一次）
+  const [cache] = useState<Record<string, any> | null>(() => readCache())
+
+  // 有缓存则直接跳过 loading，用缓存数据初始化 state
+  const [loading, setLoading] = useState(!cache)
+  const hasLoadedRef = useRef(!!cache)
+
+  const [balance, setBalance] = useState<any>(cache?.balance ?? null)
+  const [positionsWithPrice, setPositionsWithPrice] = useState<any[]>(cache?.positions ?? [])
+  const [runningStrategies, setRunningStrategies] = useState<any[]>(cache?.strategies ?? [])
+  const runningStrategiesRef = useRef<any[]>(cache?.strategies ?? [])
+  const [recentOrders, setRecentOrders] = useState<any[]>(cache?.recentOrders ?? [])
+
+  const [refreshing, setRefreshing] = useState(false)
   const [wsConnected, setWsConnected] = useState(false)
   const [lastUpdateTime, setLastUpdateTime] = useState<Date>(new Date())
   const [currentTime, setCurrentTime] = useState<Date>(new Date())
-  const [recentOrders, setRecentOrders] = useState<any[]>([])
 
-  // 新增风险指标状态
-  const [marginRatio, setMarginRatio] = useState<number>(0)        // 保证金率 (%)
-  const [dailyPnlBaseline, setDailyPnlBaseline] = useState<number | null>(null) // 今日基线净值
-  const [maxDrawdown, setMaxDrawdown] = useState<number>(0)         // 最大回撤金额
-  const [maxDrawdownPct, setMaxDrawdownPct] = useState<number>(0)   // 最大回撤百分比
+  // 风险指标（也从缓存初始化）
+  const [marginRatio, setMarginRatio] = useState<number>(cache?.marginRatio ?? 0)
+  const [dailyPnlBaseline, setDailyPnlBaseline] = useState<number | null>(cache?.dailyPnlBaseline ?? null)
+  const [maxDrawdown, setMaxDrawdown] = useState<number>(cache?.maxDrawdown ?? 0)
+  const [maxDrawdownPct, setMaxDrawdownPct] = useState<number>(cache?.maxDrawdownPct ?? 0)
 
   // 格式化相对时间
   const getRelativeTime = (date: Date): string => {
@@ -185,15 +215,30 @@ const Dashboard = () => {
       // ── 所有异步工作完成，一次性批量更新 state（React 18 自动合并为单次渲染）──
       // 仅当主要数据（balance）获取成功时才更新，避免 API 失败时清空已有数据
       if (balanceData !== null) {
+        const newPositions = [...spotResults, ...(contractResults as any[])]
+        const newOrders = orders.slice(0, 10)
+
         setBalance(balanceData)
         setMarginRatio(newMarginRatio)
         setDailyPnlBaseline(newDailyPnlBaseline)
         setMaxDrawdown(newMaxDrawdown)
         setMaxDrawdownPct(newMaxDrawdownPct)
-        setPositionsWithPrice([...spotResults, ...(contractResults as any[])])
+        setPositionsWithPrice(newPositions)
         setRunningStrategiesWithRef(running)
-        setRecentOrders(orders.slice(0, 10))
-        hasLoadedRef.current = true  // 标记已完成首次加载
+        setRecentOrders(newOrders)
+        hasLoadedRef.current = true
+
+        // 写入缓存，下次挂载时立即还原，消除空数据闪烁
+        writeCache({
+          balance: balanceData,
+          positions: newPositions,
+          strategies: running,
+          recentOrders: newOrders,
+          marginRatio: newMarginRatio,
+          dailyPnlBaseline: newDailyPnlBaseline,
+          maxDrawdown: newMaxDrawdown,
+          maxDrawdownPct: newMaxDrawdownPct,
+        })
       }
     } catch (error) {
       message.error((error as Error).message || t('dashboard.fetchDataFailed'))
