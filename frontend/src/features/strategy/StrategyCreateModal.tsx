@@ -84,19 +84,35 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
   // 记录上一次自动生成的名称，用于判断用户是否手动修改过
   const [lastAutoName, setLastAutoName] = useState('')
 
-  // 获取可用交易对：DB 中已有 K 线的排前面，再合并默认列表（去重）
-  const { data: availableSymbols } = useQuery({
-    queryKey: ['available-symbols-strategy'],
+  // 从OKX动态获取全量交易对（SWAP合约 + SPOT现货），USDT计价
+  const { data: availableSymbols, isLoading: symbolsLoading } = useQuery({
+    queryKey: ['okx-instruments-all'],
     queryFn: async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/backtest/symbols`)
-        if (!res.ok) throw new Error()
-        const symbols: string[] = await res.json()
-        return [...new Set([...symbols, ...DEFAULT_SYMBOLS])]
+        const [swapRes, spotRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/v1/market/instruments?inst_type=SWAP&quote_ccy=USDT`),
+          fetch(`${API_BASE_URL}/api/v1/market/instruments?inst_type=SPOT&quote_ccy=USDT`),
+        ])
+        const swapJson = swapRes.ok ? await swapRes.json() : { data: [] }
+        const spotJson = spotRes.ok ? await spotRes.json() : { data: [] }
+
+        const swapSymbols: string[] = (swapJson.data ?? [])
+          .map((i: any) => i.instId as string)
+          .filter(Boolean)
+          .sort()
+
+        const spotSymbols: string[] = (spotJson.data ?? [])
+          .map((i: any) => i.instId as string)
+          .filter(Boolean)
+          .sort()
+
+        const all = [...swapSymbols, ...spotSymbols]
+        return all.length > 0 ? all : DEFAULT_SYMBOLS
       } catch {
         return DEFAULT_SYMBOLS
       }
     },
+    staleTime: 5 * 60 * 1000, // 5分钟内不重复请求
   })
 
   // 从下拉菜单预选类型
@@ -289,7 +305,8 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
               <Select
                 showSearch
                 allowClear
-                placeholder="选择或搜索交易对，如 BTC-USDT-SWAP"
+                loading={symbolsLoading}
+                placeholder={symbolsLoading ? '加载交易对中...' : '搜索交易对，如 BTC-USDT-SWAP'}
                 filterOption={(input, option) =>
                   String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())
                 }

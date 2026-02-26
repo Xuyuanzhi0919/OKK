@@ -25,6 +25,7 @@ class StrategyType(str, enum.Enum):
     MARTIN = "martin"  # 马丁格尔
     TREND = "trend"  # 趋势跟踪
     ARBITRAGE = "arbitrage"  # 套利
+    ORDER_BOOK_IMBALANCE = "order_book_imbalance"  # 订单簿不平衡高频策略
     CUSTOM = "custom"  # 自定义
 
 
