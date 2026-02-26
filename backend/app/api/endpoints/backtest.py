@@ -177,6 +177,32 @@ async def get_strategy_types():
     ]
 
 
+@router.get("/symbols", summary="获取有K线数据的交易对")
+async def get_available_symbols(
+    kline_service: KlineService = Depends(get_kline_service)
+):
+    """
+    获取数据库中有K线数据的交易对列表
+    
+    **返回:** 交易对列表
+    """
+    symbols = kline_service.get_symbols()
+    return symbols
+
+
+@router.get("/symbols/detail", summary="获取交易对详细信息")
+async def get_symbols_detail(
+    kline_service: KlineService = Depends(get_kline_service)
+):
+    """
+    获取所有有K线数据的交易对详细信息
+    
+    **返回:** 交易对列表，包含每个交易对各周期的数据量
+    """
+    details = kline_service.get_available_symbols()
+    return details
+
+
 @router.get("/klines/range", summary="获取数据范围")
 async def get_data_range(
     symbol: str = Query(..., description="交易对"),

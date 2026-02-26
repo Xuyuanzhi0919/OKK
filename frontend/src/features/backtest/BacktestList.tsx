@@ -247,8 +247,19 @@ const BacktestList = () => {
   const { data: availableSymbols } = useQuery({
     queryKey: ['available-symbols'],
     queryFn: async () => {
-      // 这里需要后端提供所有K线数据的列表,暂时使用硬编码
-      return ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT']
+      try {
+        const response = await fetch(`${BACKTEST_API.base}/symbols`)
+        if (!response.ok) {
+          throw new Error('获取交易对列表失败')
+        }
+        const symbols = await response.json()
+        // 如果没有数据，返回默认列表
+        return symbols.length > 0 ? symbols : ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT']
+      } catch (error) {
+        console.error('获取交易对列表失败:', error)
+        // 请求失败时返回默认列表
+        return ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT']
+      }
     },
   })
 

@@ -733,7 +733,7 @@ const Dashboard = () => {
               ) : (
                 <>
                   <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace', color: '#737373' }}>--</div>
-                  <div style={{ marginTop: 8, fontSize: 11, color: '#737373' }}>无合约持仓</div>
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#737373' }}>未开仓（OKX 无持仓时不返回此值）</div>
                 </>
               )}
             </Card>

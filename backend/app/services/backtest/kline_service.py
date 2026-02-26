@@ -297,5 +297,48 @@ class KlineService:
         count = query.delete()
         self.db.commit()
 
+    def get_available_symbols(self) -> List[Dict]:
+        """
+        获取数据库中有K线数据的交易对列表
+
+        Returns:
+            交易对列表，包含symbol、interval和数据条数
+        """
+        from sqlalchemy import func
+
+        results = self.db.query(
+            Kline.symbol,
+            Kline.interval,
+            func.count(Kline.id).label('count'),
+            func.min(Kline.timestamp).label('earliest'),
+            func.max(Kline.timestamp).label('latest')
+        ).group_by(
+            Kline.symbol,
+            Kline.interval
+        ).all()
+
+        return [
+            {
+                "symbol": r.symbol,
+                "interval": r.interval,
+                "count": r.count,
+                "earliest": r.earliest,
+                "latest": r.latest
+            }
+            for r in results
+        ]
+
+    def get_symbols(self) -> List[str]:
+        """
+        获取所有有数据的交易对（去重）
+
+        Returns:
+            交易对列表
+        """
+        from sqlalchemy import distinct
+
+        results = self.db.query(distinct(Kline.symbol)).all()
+        return sorted([r[0] for r in results])
+
         logger.info(f"删除K线数据: {symbol} {interval} 共 {count} 条")
         return count
