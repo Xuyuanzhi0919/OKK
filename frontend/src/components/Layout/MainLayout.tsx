@@ -13,7 +13,6 @@ import {
   FlaskConical,
   Wallet,
   Shield,
-  Brain,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useWebSocketStore } from '@/stores/useWebSocketStore'
@@ -82,16 +81,6 @@ const MainLayout = () => {
       key: '/risk-control',
       icon: <Shield size={16} />,
       label: '风控管理',
-    },
-    {
-      key: '/ai-analysis',
-      icon: <Brain size={16} />,
-      label: 'AI分析',
-    },
-    {
-      key: '/ai-config',
-      icon: <Settings size={16} />,
-      label: 'AI配置',
     },
     {
       key: '/api-config',
