@@ -378,7 +378,8 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       {backtestData && (
         <Alert
           message="已自动填充回测参数，可按需调整"
-          type="info" showIcon
+          type="info"
+          showIcon
           style={{ marginBottom: 12 }}
         />
       )}
