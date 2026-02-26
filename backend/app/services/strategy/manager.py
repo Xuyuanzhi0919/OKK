@@ -4,10 +4,6 @@
 from typing import Dict, Optional
 from loguru import logger
 from .base import StrategyBase
-from .grid_strategy import GridStrategy
-from .swing_long_strategy import SwingLongStrategy
-from .swing_short_strategy import SwingShortStrategy
-from .ai_swing_long_strategy import AISwingLongStrategy
 from app.services.exchange.okx import OKXExchange
 from app.models.strategy import StrategyType, Strategy
 from app.core.database import SessionLocal
@@ -78,56 +74,25 @@ class StrategyManager:
         else:
             strategy_type_enum = strategy_type
 
-        # 根据策略类型创建对应的策略实例
+        # 所有策略类型暂未实现
         if strategy_type_enum == StrategyType.GRID:
-            strategy = GridStrategy(
-                strategy_id=strategy_id,
-                exchange=exchange,
-                symbol=symbol,
-                parameters=parameters,
-                user_id=user_id
-            )
+            raise NotImplementedError("网格策略已移除")
         elif strategy_type_enum == StrategyType.SWING_LONG:
-            strategy = SwingLongStrategy(
-                strategy_id=strategy_id,
-                exchange=exchange,
-                symbol=symbol,
-                parameters=parameters,
-                user_id=user_id
-            )
+            raise NotImplementedError("波段做多策略已移除")
         elif strategy_type_enum == StrategyType.AI_SWING_LONG:
-            strategy = AISwingLongStrategy(
-                strategy_id=strategy_id,
-                exchange=exchange,
-                symbol=symbol,
-                parameters=parameters,
-                user_id=user_id
-            )
+            raise NotImplementedError("AI波段做多策略已移除")
         elif strategy_type_enum == StrategyType.SWING_SHORT:
-            strategy = SwingShortStrategy(
-                strategy_id=strategy_id,
-                exchange=exchange,
-                symbol=symbol,
-                parameters=parameters,
-                user_id=user_id
-            )
+            raise NotImplementedError("波段做空策略已移除")
         elif strategy_type_enum == StrategyType.MARTIN:
-            # TODO: 实现马丁格尔策略
             raise NotImplementedError("马丁格尔策略尚未实现")
         elif strategy_type_enum == StrategyType.TREND:
-            # TODO: 实现趋势跟踪策略
             raise NotImplementedError("趋势跟踪策略尚未实现")
         elif strategy_type_enum == StrategyType.ARBITRAGE:
-            # TODO: 实现套利策略
             raise NotImplementedError("套利策略尚未实现")
         elif strategy_type_enum == StrategyType.CUSTOM:
-            # TODO: 实现自定义策略
             raise NotImplementedError("自定义策略尚未实现")
         else:
             raise ValueError(f"不支持的策略类型: {strategy_type_enum}")
-
-        logger.info(f"创建策略实例: ID={strategy_id}, 类型={strategy_type_enum}, 交易对={symbol}")
-        return strategy
 
     async def _persist_strategy_state(self, strategy_id: int, strategy: StrategyBase):
         """持久化策略状态到数据库"""
@@ -139,43 +104,30 @@ class StrategyManager:
                 logger.warning(f"策略 {strategy_id} 不存在于数据库中")
                 return
 
-            # 从GridStrategy获取运行时数据
-            if isinstance(strategy, GridStrategy):
-                # 计算未实现盈亏
-                unrealized_pnl = await strategy._calculate_unrealized_pnl()
-                total_pnl = float(strategy.realized_pnl + unrealized_pnl)
+            # 从策略获取运行时数据（通用方法）
+            db_strategy.total_profit = strategy.realized_pnl if hasattr(strategy, 'realized_pnl') else 0
+            db_strategy.total_trades = strategy.total_trades if hasattr(strategy, 'total_trades') else 0
+            db_strategy.win_rate = strategy.win_rate if hasattr(strategy, 'win_rate') else 0
 
-                # 计算胜率（简化版：基于已实现盈亏是否为正）
-                # TODO: 后续可以基于真实的交易记录计算更精确的胜率
-                win_rate = 0.0
-                if strategy.total_trades > 0:
-                    # 这里简化处理，实际应该统计盈利交易次数
-                    win_rate = max(0.0, min(100.0, 50.0 + (total_pnl / 100)))  # 临时公式
+            db.commit()
 
-                # 更新数据库字段
-                db_strategy.total_profit = total_pnl
-                db_strategy.total_trades = strategy.total_trades
-                db_strategy.win_rate = win_rate
+            logger.debug(
+                f"策略 {strategy_id} 状态已更新: "
+                f"盈亏={db_strategy.total_profit:.2f}, 交易数={db_strategy.total_trades}, 胜率={db_strategy.win_rate:.1f}%"
+            )
 
-                db.commit()
-
-                logger.debug(
-                    f"策略 {strategy_id} 状态已更新: "
-                    f"盈亏={total_pnl:.2f}, 交易数={strategy.total_trades}, 胜率={win_rate:.1f}%"
-                )
-
-                # 通过WebSocket广播策略状态更新
-                try:
-                    await broadcast_strategy_update(strategy_id, {
-                        "strategy_id": strategy_id,
-                        "total_profit": total_pnl,
-                        "total_trades": strategy.total_trades,
-                        "win_rate": win_rate,
-                        "status": "running",
-                        "timestamp": asyncio.get_event_loop().time()
-                    })
-                except Exception as ws_err:
-                    logger.error(f"广播策略状态失败: {ws_err}")
+            # 通过WebSocket广播策略状态更新
+            try:
+                await broadcast_strategy_update(strategy_id, {
+                    "strategy_id": strategy_id,
+                    "total_profit": db_strategy.total_profit,
+                    "total_trades": db_strategy.total_trades,
+                    "win_rate": db_strategy.win_rate,
+                    "status": "running",
+                    "timestamp": asyncio.get_event_loop().time()
+                })
+            except Exception as ws_err:
+                logger.error(f"广播策略状态失败: {ws_err}")
 
         except Exception as e:
             db.rollback()
@@ -188,9 +140,6 @@ class StrategyManager:
         """策略运行时监控循环"""
         logger.info(f"启动策略监控循环: strategy_id={strategy_id}")
 
-        # 订单状态缓存 {order_id: last_status}
-        order_status_cache = {}
-
         # 持久化计数器（每10次循环更新一次数据库，约50秒）
         persist_counter = 0
 
@@ -201,128 +150,7 @@ class StrategyManager:
                     ticker = await strategy.exchange.get_ticker(strategy.symbol)
                     await strategy.on_tick(ticker)
 
-                    # 2. 检查所有挂单的状态
-                    if isinstance(strategy, GridStrategy):
-                        for grid_index, orders in list(strategy.grid_orders.items()):
-                            for side in ["buy", "sell"]:
-                                order_info = orders.get(side)
-                                if not order_info:
-                                    continue
-
-                                order_id = order_info.get("order_id")
-                                if not order_id:
-                                    continue
-
-                                try:
-                                    # 查询订单最新状态
-                                    order_detail = await strategy.exchange.get_order(
-                                        symbol=strategy.symbol,
-                                        order_id=order_id
-                                    )
-
-                                    current_status = order_detail.get("state")
-                                    last_status = order_status_cache.get(order_id)
-
-                                    # 如果状态发生变化，触发 on_order_update
-                                    if current_status != last_status:
-                                        logger.info(
-                                            f"订单状态变化: {order_id} "
-                                            f"{last_status} -> {current_status}"
-                                        )
-
-                                        # 更新订单信息中的状态
-                                        order_info["status"] = current_status
-
-                                        # 调用策略的订单更新处理
-                                        await strategy.on_order_update({
-                                            "order_id": order_id,
-                                            "status": current_status,
-                                            "side": side,
-                                            "price": order_detail.get("px") or order_detail.get("avgPx"),
-                                            "size": order_detail.get("sz"),
-                                            "filled_size": order_detail.get("accFillSz"),
-                                        })
-
-                                        # 更新缓存
-                                        order_status_cache[order_id] = current_status
-
-                                except Exception as e:
-                                    logger.error(f"查询订单 {order_id} 状态失败: {e}")
-
-                    # 2.1 波段策略订单状态检查
-                    elif isinstance(strategy, SwingLongStrategy):
-                        from app.core.database import SessionLocal
-                        from app.models.order import Order as OrderModel, OrderStatus
-
-                        db = SessionLocal()
-                        try:
-                            # 查询该策略的所有未完成订单
-                            pending_orders = db.query(OrderModel).filter(
-                                OrderModel.strategy_id == strategy_id,
-                                OrderModel.status.in_([OrderStatus.SUBMITTED, OrderStatus.PARTIAL_FILLED])
-                            ).all()
-
-                            for db_order in pending_orders:
-                                order_id = db_order.order_id
-                                if not order_id:
-                                    continue
-
-                                try:
-                                    # 查询订单最新状态
-                                    order_detail = await strategy.exchange.get_order(
-                                        symbol=strategy.symbol,
-                                        order_id=order_id
-                                    )
-
-                                    current_status = order_detail.get("state")
-
-                                    # OKX状态映射
-                                    status_map = {
-                                        "live": OrderStatus.SUBMITTED,
-                                        "partially_filled": OrderStatus.PARTIAL_FILLED,
-                                        "filled": OrderStatus.FILLED,
-                                        "canceled": OrderStatus.CANCELED,
-                                    }
-
-                                    new_db_status = status_map.get(current_status, OrderStatus.SUBMITTED)
-
-                                    # 如果状态发生变化,更新数据库
-                                    if new_db_status != db_order.status:
-                                        logger.info(
-                                            f"波段策略订单状态变化: {order_id} "
-                                            f"{db_order.status} -> {new_db_status}"
-                                        )
-
-                                        db_order.status = new_db_status
-                                        db_order.filled_amount = float(order_detail.get("accFillSz", 0))
-                                        db_order.avg_price = float(order_detail.get("avgPx")) if order_detail.get("avgPx") else None
-
-                                        if new_db_status == OrderStatus.FILLED:
-                                            from datetime import datetime
-                                            db_order.filled_at = datetime.now()
-                                        elif new_db_status == OrderStatus.CANCELED:
-                                            from datetime import datetime
-                                            db_order.canceled_at = datetime.now()
-
-                                        db.commit()
-
-                                        # 调用策略的订单更新处理
-                                        await strategy.on_order_update({
-                                            "ordId": order_id,
-                                            "state": current_status,
-                                            "side": db_order.side.value,
-                                            "avgPx": order_detail.get("avgPx"),
-                                            "sz": order_detail.get("sz"),
-                                            "accFillSz": order_detail.get("accFillSz"),
-                                        })
-
-                                except Exception as e:
-                                    logger.error(f"查询波段策略订单 {order_id} 状态失败: {e}")
-
-                        finally:
-                            db.close()
-
-                    # 3. 定期持久化策略状态到数据库
+                    # 2. 定期持久化策略状态到数据库
                     persist_counter += 1
                     if persist_counter >= 10:  # 每10次循环（约50秒）更新一次
                         persist_counter = 0
@@ -331,7 +159,7 @@ class StrategyManager:
                         except Exception as e:
                             logger.error(f"持久化策略状态失败: {e}")
 
-                    # 4. 每次循环都广播策略实时统计（用于Dashboard实时更新）
+                    # 3. 每次循环都广播策略实时统计（用于Dashboard实时更新）
                     try:
                         stats = self.get_strategy_stats(strategy_id)
                         if stats:
@@ -395,109 +223,49 @@ class StrategyManager:
             # 启动策略
             await strategy.start()
 
-            # 检查策略是否成功启动（余额不足等原因可能导致启动失败）
-            if not strategy.is_running:
-                error_msg = "策略启动后立即停止（可能是余额不足或参数错误）"
-                logger.error(error_msg)
-                # 不发送通知，因为网格策略内部已经发送了
-                raise ValueError(error_msg)
-
-            # 添加到运行列表
+            # 保存策略实例
             self.strategies[strategy_id] = strategy
 
-            # 创建并启动监控任务
+            # 启动监控循环
             task = asyncio.create_task(self._run_strategy_loop(strategy_id, strategy))
             self.strategy_tasks[strategy_id] = task
 
-            logger.info(f"策略 {strategy_id} 启动成功，监控任务已创建")
-
-            # 发送策略启动成功通知
-            try:
-                await broadcast_notification({
-                    "type": "success",
-                    "title": "策略启动成功",
-                    "message": f"策略 {symbol} 已成功启动并开始运行",
-                    "strategy_id": strategy_id,
-                    "timestamp": time.time()
-                })
-            except Exception as e:
-                logger.error(f"发送策略启动通知失败: {e}")
-
+            logger.info(f"策略 {strategy_id} 启动成功")
             return True
 
+        except NotImplementedError as e:
+            logger.error(f"策略类型未实现: {e}")
+            raise
         except Exception as e:
             logger.error(f"启动策略 {strategy_id} 失败: {e}")
-
-            # 只有在非余额不足异常时才发送通知（余额不足通知已在网格策略中发送）
-            from app.services.strategy.base import InsufficientBalanceError
-            if not isinstance(e.__cause__, InsufficientBalanceError):
-                # 发送策略启动失败通知
-                try:
-                    await broadcast_notification({
-                        "type": "error",
-                        "title": "策略启动失败",
-                        "message": f"策略 {symbol} 启动失败: {str(e)}",
-                        "strategy_id": strategy_id,
-                        "timestamp": time.time()
-                    })
-                except Exception as notify_err:
-                    logger.error(f"发送策略启动失败通知失败: {notify_err}")
-
-            # 清理已创建的资源
-            if strategy_id in self.strategies:
-                del self.strategies[strategy_id]
-            if strategy_id in self.strategy_tasks:
-                self.strategy_tasks[strategy_id].cancel()
-                del self.strategy_tasks[strategy_id]
             raise
 
-    async def stop_strategy(self, strategy_id: int, cancel_orders: bool = True) -> bool:
-        """
-        停止策略
-
-        Args:
-            strategy_id: 策略ID
-            cancel_orders: 是否撤销所有未成交订单，默认True
-        """
+    async def stop_strategy(self, strategy_id: int) -> bool:
+        """停止策略"""
         try:
-            # 检查策略是否在运行
-            if strategy_id not in self.strategies:
+            strategy = self.strategies.get(strategy_id)
+            if not strategy:
                 logger.warning(f"策略 {strategy_id} 未在运行")
                 return False
 
-            # 获取策略实例
-            strategy = self.strategies[strategy_id]
-
-            # 停止策略（传递 cancel_orders 参数）
-            await strategy.stop(cancel_orders=cancel_orders)
+            # 停止策略
+            await strategy.stop()
 
             # 取消监控任务
-            if strategy_id in self.strategy_tasks:
-                task = self.strategy_tasks[strategy_id]
+            task = self.strategy_tasks.get(strategy_id)
+            if task and not task.done():
                 task.cancel()
                 try:
                     await task
                 except asyncio.CancelledError:
-                    logger.info(f"策略 {strategy_id} 监控任务已取消")
+                    pass
+
+            # 移除策略实例
+            del self.strategies[strategy_id]
+            if strategy_id in self.strategy_tasks:
                 del self.strategy_tasks[strategy_id]
 
-            # 从运行列表中移除
-            del self.strategies[strategy_id]
-
-            logger.info(f"策略 {strategy_id} 停止成功")
-
-            # 发送策略停止通知
-            try:
-                await broadcast_notification({
-                    "type": "info",
-                    "title": "策略已停止",
-                    "message": f"策略 {strategy.symbol} 已成功停止运行",
-                    "strategy_id": strategy_id,
-                    "timestamp": time.time()
-                })
-            except Exception as e:
-                logger.error(f"发送策略停止通知失败: {e}")
-
+            logger.info(f"策略 {strategy_id} 已停止")
             return True
 
         except Exception as e:
@@ -505,10 +273,10 @@ class StrategyManager:
             raise
 
     def get_strategy(self, strategy_id: int) -> Optional[StrategyBase]:
-        """获取运行中的策略实例"""
+        """获取策略实例"""
         return self.strategies.get(strategy_id)
 
-    def get_running_strategies(self) -> Dict[int, StrategyBase]:
+    def get_all_strategies(self) -> Dict[int, StrategyBase]:
         """获取所有运行中的策略"""
         return self.strategies.copy()
 
@@ -522,74 +290,12 @@ class StrategyManager:
         if not strategy:
             return None
 
-        # 获取策略状态信息
-        if isinstance(strategy, GridStrategy):
-            # 构建网格订单详情列表
-            grid_orders_detail = []
-            for grid_index in range(strategy.grid_num):
-                buy_price = float(strategy.grid_prices[grid_index])
-                sell_price = float(strategy.grid_prices[grid_index + 1]) if grid_index < strategy.grid_num else None
-
-                # 获取该网格的订单信息
-                grid_order = strategy.grid_orders.get(grid_index, {})
-                buy_order = grid_order.get("buy", {})
-                sell_order = grid_order.get("sell", {})
-
-                grid_orders_detail.append({
-                    "grid_index": grid_index,
-                    "buy_price": buy_price,
-                    "sell_price": sell_price,
-                    "buy_status": buy_order.get("status") if buy_order else None,
-                    "buy_order_id": buy_order.get("order_id") if buy_order else None,
-                    "buy_filled_amount": float(buy_order.get("filled_amount", 0)) if buy_order else 0,
-                    "sell_status": sell_order.get("status") if sell_order else None,
-                    "sell_order_id": sell_order.get("order_id") if sell_order else None,
-                    "sell_filled_amount": float(sell_order.get("filled_amount", 0)) if sell_order else 0,
-                })
-
-            return {
-                "strategy_id": strategy_id,
-                "is_running": strategy.is_running,
-                "position_size": float(strategy.position_size),
-                "position_cost": float(strategy.position_cost),
-                "realized_pnl": float(strategy.realized_pnl),
-                "total_trades": strategy.total_trades,
-                "total_buy_volume": float(strategy.total_buy_volume),
-                "total_sell_volume": float(strategy.total_sell_volume),
-                "grid_orders": len(strategy.grid_orders),
-                "grid_orders_detail": grid_orders_detail,
-            }
-
-        # 处理波段做多策略 (包括AI增强版本)
-        from .swing_long_strategy import SwingLongStrategy
-        from .ai_swing_long_strategy import AISwingLongStrategy
-        if isinstance(strategy, (SwingLongStrategy, AISwingLongStrategy)):
-            position_info = strategy.position or {}
-            stats = {
-                "strategy_id": strategy_id,
-                "is_running": strategy.is_running,
-                "position_size": float(position_info.get("amount", 0)) if position_info else 0.0,
-                "position_cost": float(position_info.get("entry_price", 0)) if position_info else 0.0,
-                "realized_pnl": 0.0,  # 波段策略的已实现盈亏需要从订单计算
-                "total_trades": 0,  # 从数据库统计
-                "current_position": float(position_info.get("amount", 0)) if position_info else 0.0,
-                "entry_price": float(position_info.get("entry_price", 0)) if position_info else 0.0,
-                "highest_price": float(strategy.highest_price) if hasattr(strategy, 'highest_price') else 0.0,
-                "waiting_reentry": strategy.waiting_reentry if hasattr(strategy, 'waiting_reentry') else False,
-                "reentry_trigger_price": float(strategy.reentry_trigger_price) if hasattr(strategy, 'reentry_trigger_price') else 0.0,
-            }
-
-            # AI增强策略的额外信息
-            if isinstance(strategy, AISwingLongStrategy):
-                stats["ai_enabled"] = strategy.enable_ai
-                stats["ai_last_analysis"] = strategy.last_ai_analysis_time.isoformat() if strategy.last_ai_analysis_time else None
-                stats["ai_last_result"] = strategy.last_ai_result
-
-            return stats
-
+        # 返回通用策略状态信息
         return {
             "strategy_id": strategy_id,
             "is_running": strategy.is_running,
+            "realized_pnl": strategy.realized_pnl if hasattr(strategy, 'realized_pnl') else 0,
+            "total_trades": strategy.total_trades if hasattr(strategy, 'total_trades') else 0,
         }
 
     async def stop_all_strategies(self):
@@ -612,5 +318,5 @@ class StrategyManager:
         logger.info("所有策略已停止")
 
 
-# 全局策略管理器实例
+# 全局单例实例
 strategy_manager = StrategyManager()

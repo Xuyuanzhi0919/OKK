@@ -1014,28 +1014,16 @@ async def get_strategy_pnl(
             pnl_data = await strategy_instance.calculate_pnl()
             return pnl_data
         else:
-            # 策略未运行,需要临时创建实例来计算盈亏
-            from app.services.strategy.grid_strategy import GridStrategy
-
-            # 获取API配置
-            exchange = await api_config_service.get_exchange(user_id=user_id, db=db)
-
-            # 创建临时策略实例
-            temp_strategy = GridStrategy(
-                strategy_id=strategy.id,
-                exchange=exchange,
-                symbol=strategy.symbol,
-                parameters=strategy.parameters,
-                user_id=user_id
-            )
-
-            # 计算盈亏
-            pnl_data = await temp_strategy.calculate_pnl()
-
-            # 关闭exchange连接
-            await exchange.close()
-
-            return pnl_data
+            # 策略未运行,返回数据库中存储的盈亏数据
+            return {
+                "total_pnl": strategy.total_profit or 0,
+                "realized_pnl": strategy.total_profit or 0,
+                "unrealized_pnl": 0,
+                "total_fee": 0,
+                "pnl_rate": 0,
+                "buy_count": 0,
+                "sell_count": 0,
+            }
 
     except HTTPException:
         raise

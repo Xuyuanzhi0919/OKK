@@ -73,71 +73,66 @@ const Dashboard = () => {
         accountApi.getAccountSnapshots(7).catch(() => null),
       ])
 
-      setBalance(balanceData)
+      // ── 计算派生值（在所有 async 工作完成前，不调用任何 setState）──
 
-      // OKX mgnRatio 是小数比率（如 10.5 = 1050%），统一乘以 100 转为百分比
+      // OKX mgnRatio 是小数比率，乘以 100 转为百分比
+      let newMarginRatio = 0
       if (balanceData?.mgnRatio) {
         const mgnRatio = parseFloat(balanceData.mgnRatio)
-        setMarginRatio(isFinite(mgnRatio) ? mgnRatio * 100 : 0)
+        newMarginRatio = isFinite(mgnRatio) ? mgnRatio * 100 : 0
       }
 
       // 今日盈亏基线
-      if (dailyPnlData?.has_baseline && dailyPnlData.baseline_equity != null) {
-        setDailyPnlBaseline(dailyPnlData.baseline_equity)
-      } else {
-        setDailyPnlBaseline(null)
-      }
+      const newDailyPnlBaseline: number | null =
+        dailyPnlData?.has_baseline && dailyPnlData.baseline_equity != null
+          ? dailyPnlData.baseline_equity
+          : null
 
       // 最大回撤
-      if (snapshotsData) {
-        setMaxDrawdown(snapshotsData.max_drawdown || 0)
-        setMaxDrawdownPct(snapshotsData.max_drawdown_pct || 0)
-      }
+      const newMaxDrawdown = snapshotsData?.max_drawdown || 0
+      const newMaxDrawdownPct = snapshotsData?.max_drawdown_pct || 0
 
-      // 从余额数据中提取现货余额显示为"持仓"
+      // 从余额数据提取现货余额
       const spotBalances: any[] = []
-      if (balanceData && balanceData.details) {
+      if (balanceData?.details) {
         for (const detail of balanceData.details) {
-          const eq = parseFloat(detail.eq || '0')
           const eqUsd = parseFloat(detail.eqUsd || '0')
-          const accAvgPx = parseFloat(detail.accAvgPx || '0')
-
           if (eqUsd > 0.5 && detail.ccy !== 'USDT') {
             spotBalances.push({
               ccy: detail.ccy,
-              eq,
+              eq: parseFloat(detail.eq || '0'),
               eqUsd,
-              accAvgPx,
+              accAvgPx: parseFloat(detail.accAvgPx || '0'),
               spotUpl: parseFloat(detail.spotUpl || '0'),
             })
           }
         }
       }
 
-      // 获取每个现货币种的当前价格
-      const spotPositions: any[] = []
-      if (spotBalances.length > 0) {
-        const balancesWithPrices = await Promise.all(
+      // 现货 + 合约 ticker 价格并行请求（避免顺序等待）
+      const posArr = Array.isArray(positionsData) ? positionsData : []
+
+      const [spotResults, contractResults] = await Promise.all([
+        // 现货：并行获取所有 ticker
+        Promise.all(
           spotBalances.map(async (bal: any) => {
             try {
               const symbol = `${bal.ccy}-USDT`
               const ticker = await marketApi.getTicker(symbol)
               const currentPrice = parseFloat((ticker as any)?.last || '0')
-              const avgPrice = bal.accAvgPx > 0 ? bal.accAvgPx : currentPrice
-
               return {
                 key: `spot-${bal.ccy}`,
                 type: 'SPOT',
-                symbol: symbol,
+                symbol,
                 amount: bal.eq,
-                avgPrice: avgPrice,
-                currentPrice: currentPrice,
+                avgPrice: bal.accAvgPx > 0 ? bal.accAvgPx : currentPrice,
+                currentPrice,
                 profit: bal.spotUpl,
                 profitPercent: bal.eqUsd > 0 ? (bal.spotUpl / bal.eqUsd) * 100 : 0,
                 value: bal.eqUsd,
                 margin: 0,
               }
-            } catch (error) {
+            } catch {
               return {
                 key: `spot-${bal.ccy}`,
                 type: 'SPOT',
@@ -152,54 +147,48 @@ const Dashboard = () => {
               }
             }
           })
-        )
-        spotPositions.push(...balancesWithPrices)
-      }
-
-      // 处理合约持仓数据
-      const posArr = Array.isArray(positionsData) ? positionsData : []
-      const contractPositions: any[] = []
-
-      if (posArr.length > 0) {
-        for (const pos of posArr) {
-          try {
-            const posData = pos as any
-            const symbol = posData.symbol || posData.instId
-            const ticker = await marketApi.getTicker(symbol)
-            const currentPrice = posData.current_price || parseFloat((ticker as any)?.last || '0')
-            const avgPx = posData.avg_price || parseFloat(posData.avgPx || '0')
-            const posSize = posData.size || parseFloat(posData.pos || '0')
-            const upl = posData.unrealized_pnl || parseFloat(posData.upl || '0')
-            const uplRatio = posData.unrealized_pnl_pct || parseFloat(posData.uplRatio || '0') * 100
-            // 优先使用OKX返回的notional_usd（持仓美元价值），这是准确的价值
-            // 如果没有则回退到 size * currentPrice（可能不准确，因为SWAP合约张数≠币数）
-            const value = posData.notional_usd || posData.notionalUsd || (posSize * currentPrice)
-
-            contractPositions.push({
-              key: `contract-${symbol}`,
-              type: 'SWAP',
-              symbol: symbol,
-              amount: posSize,
-              avgPrice: avgPx,
-              currentPrice: currentPrice,
-              profit: upl,
-              profitPercent: uplRatio,
-              value: value,
-              margin: posData.margin || 0,
-            })
-          } catch (error) {
-            // 跳过该持仓
-          }
-        }
-      }
-
-      setPositionsWithPrice([...spotPositions, ...contractPositions])
+        ),
+        // 合约：并行获取所有 ticker
+        Promise.all(
+          posArr.map(async (pos: any) => {
+            try {
+              const posData = pos as any
+              const symbol = posData.symbol || posData.instId
+              const ticker = await marketApi.getTicker(symbol)
+              const currentPrice = posData.current_price || parseFloat((ticker as any)?.last || '0')
+              const posSize = posData.size || parseFloat(posData.pos || '0')
+              return {
+                key: `contract-${symbol}`,
+                type: 'SWAP',
+                symbol,
+                amount: posSize,
+                avgPrice: posData.avg_price || parseFloat(posData.avgPx || '0'),
+                currentPrice,
+                profit: posData.unrealized_pnl || parseFloat(posData.upl || '0'),
+                profitPercent: posData.unrealized_pnl_pct || parseFloat(posData.uplRatio || '0') * 100,
+                // 优先用 notional_usd（OKX 准确持仓价值），否则 size*price（张数≠币数时不准）
+                value: posData.notional_usd || posData.notionalUsd || (posSize * currentPrice),
+                margin: posData.margin || 0,
+              }
+            } catch {
+              return null
+            }
+          })
+        ).then(results => results.filter(Boolean)),
+      ])
 
       const allStrategies = (strategiesData as any)?.items || []
       const running = allStrategies.filter((s: any) => s.status === 'running')
-      setRunningStrategiesWithRef(running)
-
       const orders = Array.isArray(ordersData) ? ordersData : []
+
+      // ── 所有异步工作完成，一次性批量更新 state（React 18 自动合并为单次渲染）──
+      setBalance(balanceData)
+      setMarginRatio(newMarginRatio)
+      setDailyPnlBaseline(newDailyPnlBaseline)
+      setMaxDrawdown(newMaxDrawdown)
+      setMaxDrawdownPct(newMaxDrawdownPct)
+      setPositionsWithPrice([...spotResults, ...(contractResults as any[])])
+      setRunningStrategiesWithRef(running)
       setRecentOrders(orders.slice(0, 10))
     } catch (error) {
       message.error((error as Error).message || t('dashboard.fetchDataFailed'))
