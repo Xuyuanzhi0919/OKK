@@ -2,7 +2,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict F8TAGL64Y2VaJnuCzAo1opubgEOMOcxLc2pzNx4rbtIS3MAcNwjJwXS8pzhAq0c
 
 -- Dumped from database version 18.1
 -- Dumped by pg_dump version 18.1
@@ -20,7 +19,7 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: order_side; Type: TYPE; Schema: public; Owner: postgres
+-- Name: order_side; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.order_side AS ENUM (
@@ -29,10 +28,8 @@ CREATE TYPE public.order_side AS ENUM (
 );
 
 
-ALTER TYPE public.order_side OWNER TO postgres;
-
 --
--- Name: order_status; Type: TYPE; Schema: public; Owner: postgres
+-- Name: order_status; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.order_status AS ENUM (
@@ -45,10 +42,8 @@ CREATE TYPE public.order_status AS ENUM (
 );
 
 
-ALTER TYPE public.order_status OWNER TO postgres;
-
 --
--- Name: order_type; Type: TYPE; Schema: public; Owner: postgres
+-- Name: order_type; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.order_type AS ENUM (
@@ -61,10 +56,8 @@ CREATE TYPE public.order_type AS ENUM (
 );
 
 
-ALTER TYPE public.order_type OWNER TO postgres;
-
 --
--- Name: strategy_status; Type: TYPE; Schema: public; Owner: postgres
+-- Name: strategy_status; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.strategy_status AS ENUM (
@@ -75,10 +68,8 @@ CREATE TYPE public.strategy_status AS ENUM (
 );
 
 
-ALTER TYPE public.strategy_status OWNER TO postgres;
-
 --
--- Name: strategy_type; Type: TYPE; Schema: public; Owner: postgres
+-- Name: strategy_type; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.strategy_type AS ENUM (
@@ -93,14 +84,12 @@ CREATE TYPE public.strategy_type AS ENUM (
 );
 
 
-ALTER TYPE public.strategy_type OWNER TO postgres;
-
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
 --
--- Name: ai_configs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: ai_configs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.ai_configs (
@@ -116,10 +105,8 @@ CREATE TABLE public.ai_configs (
 );
 
 
-ALTER TABLE public.ai_configs OWNER TO postgres;
-
 --
--- Name: ai_configs_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: ai_configs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.ai_configs_id_seq
@@ -131,17 +118,15 @@ CREATE SEQUENCE public.ai_configs_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.ai_configs_id_seq OWNER TO postgres;
-
 --
--- Name: ai_configs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: ai_configs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.ai_configs_id_seq OWNED BY public.ai_configs.id;
 
 
 --
--- Name: alerts; Type: TABLE; Schema: public; Owner: postgres
+-- Name: alerts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.alerts (
@@ -160,10 +145,8 @@ CREATE TABLE public.alerts (
 );
 
 
-ALTER TABLE public.alerts OWNER TO postgres;
-
 --
--- Name: alerts_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: alerts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.alerts_id_seq
@@ -175,17 +158,15 @@ CREATE SEQUENCE public.alerts_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.alerts_id_seq OWNER TO postgres;
-
 --
--- Name: alerts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: alerts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.alerts_id_seq OWNED BY public.alerts.id;
 
 
 --
--- Name: api_configs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: api_configs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.api_configs (
@@ -207,10 +188,8 @@ CREATE TABLE public.api_configs (
 );
 
 
-ALTER TABLE public.api_configs OWNER TO postgres;
-
 --
--- Name: api_configs_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: api_configs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.api_configs_id_seq
@@ -222,17 +201,15 @@ CREATE SEQUENCE public.api_configs_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.api_configs_id_seq OWNER TO postgres;
-
 --
--- Name: api_configs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: api_configs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.api_configs_id_seq OWNED BY public.api_configs.id;
 
 
 --
--- Name: backtest_trades; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backtest_trades; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backtest_trades (
@@ -252,10 +229,8 @@ CREATE TABLE public.backtest_trades (
 );
 
 
-ALTER TABLE public.backtest_trades OWNER TO postgres;
-
 --
--- Name: backtest_trades_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: backtest_trades_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.backtest_trades_id_seq
@@ -267,17 +242,15 @@ CREATE SEQUENCE public.backtest_trades_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.backtest_trades_id_seq OWNER TO postgres;
-
 --
--- Name: backtest_trades_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: backtest_trades_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.backtest_trades_id_seq OWNED BY public.backtest_trades.id;
 
 
 --
--- Name: backtests; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backtests; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backtests (
@@ -315,10 +288,8 @@ CREATE TABLE public.backtests (
 );
 
 
-ALTER TABLE public.backtests OWNER TO postgres;
-
 --
--- Name: backtests_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: backtests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.backtests_id_seq
@@ -330,17 +301,15 @@ CREATE SEQUENCE public.backtests_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.backtests_id_seq OWNER TO postgres;
-
 --
--- Name: backtests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: backtests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.backtests_id_seq OWNED BY public.backtests.id;
 
 
 --
--- Name: klines; Type: TABLE; Schema: public; Owner: postgres
+-- Name: klines; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.klines (
@@ -358,10 +327,8 @@ CREATE TABLE public.klines (
 );
 
 
-ALTER TABLE public.klines OWNER TO postgres;
-
 --
--- Name: klines_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: klines_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.klines_id_seq
@@ -373,17 +340,15 @@ CREATE SEQUENCE public.klines_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.klines_id_seq OWNER TO postgres;
-
 --
--- Name: klines_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: klines_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.klines_id_seq OWNED BY public.klines.id;
 
 
 --
--- Name: orders; Type: TABLE; Schema: public; Owner: postgres
+-- Name: orders; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.orders (
@@ -409,10 +374,8 @@ CREATE TABLE public.orders (
 );
 
 
-ALTER TABLE public.orders OWNER TO postgres;
-
 --
--- Name: orders_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: orders_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.orders_id_seq
@@ -424,17 +387,15 @@ CREATE SEQUENCE public.orders_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.orders_id_seq OWNER TO postgres;
-
 --
--- Name: orders_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: orders_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.orders_id_seq OWNED BY public.orders.id;
 
 
 --
--- Name: positions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: positions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.positions (
@@ -454,10 +415,8 @@ CREATE TABLE public.positions (
 );
 
 
-ALTER TABLE public.positions OWNER TO postgres;
-
 --
--- Name: positions_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: positions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.positions_id_seq
@@ -469,17 +428,15 @@ CREATE SEQUENCE public.positions_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.positions_id_seq OWNER TO postgres;
-
 --
--- Name: positions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: positions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.positions_id_seq OWNED BY public.positions.id;
 
 
 --
--- Name: risk_actions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: risk_actions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.risk_actions (
@@ -496,10 +453,8 @@ CREATE TABLE public.risk_actions (
 );
 
 
-ALTER TABLE public.risk_actions OWNER TO postgres;
-
 --
--- Name: risk_actions_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: risk_actions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.risk_actions_id_seq
@@ -511,17 +466,15 @@ CREATE SEQUENCE public.risk_actions_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.risk_actions_id_seq OWNER TO postgres;
-
 --
--- Name: risk_actions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: risk_actions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.risk_actions_id_seq OWNED BY public.risk_actions.id;
 
 
 --
--- Name: risk_controls; Type: TABLE; Schema: public; Owner: postgres
+-- Name: risk_controls; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.risk_controls (
@@ -555,10 +508,8 @@ CREATE TABLE public.risk_controls (
 );
 
 
-ALTER TABLE public.risk_controls OWNER TO postgres;
-
 --
--- Name: risk_controls_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: risk_controls_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.risk_controls_id_seq
@@ -570,17 +521,15 @@ CREATE SEQUENCE public.risk_controls_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.risk_controls_id_seq OWNER TO postgres;
-
 --
--- Name: risk_controls_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: risk_controls_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.risk_controls_id_seq OWNED BY public.risk_controls.id;
 
 
 --
--- Name: strategies; Type: TABLE; Schema: public; Owner: postgres
+-- Name: strategies; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.strategies (
@@ -606,10 +555,8 @@ CREATE TABLE public.strategies (
 );
 
 
-ALTER TABLE public.strategies OWNER TO postgres;
-
 --
--- Name: strategies_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: strategies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.strategies_id_seq
@@ -621,17 +568,15 @@ CREATE SEQUENCE public.strategies_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.strategies_id_seq OWNER TO postgres;
-
 --
--- Name: strategies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: strategies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.strategies_id_seq OWNED BY public.strategies.id;
 
 
 --
--- Name: users; Type: TABLE; Schema: public; Owner: postgres
+-- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.users (
@@ -649,10 +594,8 @@ CREATE TABLE public.users (
 );
 
 
-ALTER TABLE public.users OWNER TO postgres;
-
 --
--- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.users_id_seq
@@ -664,101 +607,99 @@ CREATE SEQUENCE public.users_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.users_id_seq OWNER TO postgres;
-
 --
--- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 
 --
--- Name: ai_configs id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: ai_configs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ai_configs ALTER COLUMN id SET DEFAULT nextval('public.ai_configs_id_seq'::regclass);
 
 
 --
--- Name: alerts id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: alerts id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.alerts ALTER COLUMN id SET DEFAULT nextval('public.alerts_id_seq'::regclass);
 
 
 --
--- Name: api_configs id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: api_configs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.api_configs ALTER COLUMN id SET DEFAULT nextval('public.api_configs_id_seq'::regclass);
 
 
 --
--- Name: backtest_trades id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: backtest_trades id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.backtest_trades ALTER COLUMN id SET DEFAULT nextval('public.backtest_trades_id_seq'::regclass);
 
 
 --
--- Name: backtests id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: backtests id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.backtests ALTER COLUMN id SET DEFAULT nextval('public.backtests_id_seq'::regclass);
 
 
 --
--- Name: klines id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: klines id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.klines ALTER COLUMN id SET DEFAULT nextval('public.klines_id_seq'::regclass);
 
 
 --
--- Name: orders id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: orders id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.orders ALTER COLUMN id SET DEFAULT nextval('public.orders_id_seq'::regclass);
 
 
 --
--- Name: positions id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: positions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.positions ALTER COLUMN id SET DEFAULT nextval('public.positions_id_seq'::regclass);
 
 
 --
--- Name: risk_actions id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: risk_actions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.risk_actions ALTER COLUMN id SET DEFAULT nextval('public.risk_actions_id_seq'::regclass);
 
 
 --
--- Name: risk_controls id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: risk_controls id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.risk_controls ALTER COLUMN id SET DEFAULT nextval('public.risk_controls_id_seq'::regclass);
 
 
 --
--- Name: strategies id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: strategies id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.strategies ALTER COLUMN id SET DEFAULT nextval('public.strategies_id_seq'::regclass);
 
 
 --
--- Name: users id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: users id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
 
 
 --
--- Name: ai_configs ai_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ai_configs ai_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ai_configs
@@ -766,7 +707,7 @@ ALTER TABLE ONLY public.ai_configs
 
 
 --
--- Name: alerts alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: alerts alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.alerts
@@ -774,7 +715,7 @@ ALTER TABLE ONLY public.alerts
 
 
 --
--- Name: api_configs api_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: api_configs api_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.api_configs
@@ -782,7 +723,7 @@ ALTER TABLE ONLY public.api_configs
 
 
 --
--- Name: backtest_trades backtest_trades_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: backtest_trades backtest_trades_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.backtest_trades
@@ -790,7 +731,7 @@ ALTER TABLE ONLY public.backtest_trades
 
 
 --
--- Name: backtests backtests_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: backtests backtests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.backtests
@@ -798,7 +739,7 @@ ALTER TABLE ONLY public.backtests
 
 
 --
--- Name: klines klines_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: klines klines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.klines
@@ -806,7 +747,7 @@ ALTER TABLE ONLY public.klines
 
 
 --
--- Name: orders orders_order_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: orders orders_order_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.orders
@@ -814,7 +755,7 @@ ALTER TABLE ONLY public.orders
 
 
 --
--- Name: orders orders_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: orders orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.orders
@@ -822,7 +763,7 @@ ALTER TABLE ONLY public.orders
 
 
 --
--- Name: positions positions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: positions positions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.positions
@@ -830,7 +771,7 @@ ALTER TABLE ONLY public.positions
 
 
 --
--- Name: risk_actions risk_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: risk_actions risk_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.risk_actions
@@ -838,7 +779,7 @@ ALTER TABLE ONLY public.risk_actions
 
 
 --
--- Name: risk_controls risk_controls_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: risk_controls risk_controls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.risk_controls
@@ -846,7 +787,7 @@ ALTER TABLE ONLY public.risk_controls
 
 
 --
--- Name: strategies strategies_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: strategies strategies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.strategies
@@ -854,7 +795,7 @@ ALTER TABLE ONLY public.strategies
 
 
 --
--- Name: klines uix_symbol_interval_timestamp; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: klines uix_symbol_interval_timestamp; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.klines
@@ -862,7 +803,7 @@ ALTER TABLE ONLY public.klines
 
 
 --
--- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -870,7 +811,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -878,7 +819,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: users users_username_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: users users_username_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -886,252 +827,252 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: idx_alerts_alert_type; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_alerts_alert_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_alerts_alert_type ON public.alerts USING btree (alert_type);
 
 
 --
--- Name: idx_alerts_created_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_alerts_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_alerts_created_at ON public.alerts USING btree (created_at DESC);
 
 
 --
--- Name: idx_alerts_is_read; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_alerts_is_read; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_alerts_is_read ON public.alerts USING btree (is_read);
 
 
 --
--- Name: idx_alerts_strategy_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_alerts_strategy_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_alerts_strategy_id ON public.alerts USING btree (strategy_id);
 
 
 --
--- Name: idx_alerts_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_alerts_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_alerts_user_id ON public.alerts USING btree (user_id);
 
 
 --
--- Name: idx_api_configs_is_active; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_api_configs_is_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_api_configs_is_active ON public.api_configs USING btree (is_active);
 
 
 --
--- Name: idx_api_configs_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_api_configs_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_api_configs_user_id ON public.api_configs USING btree (user_id);
 
 
 --
--- Name: idx_backtest_trades_backtest_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_backtest_trades_backtest_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_backtest_trades_backtest_id ON public.backtest_trades USING btree (backtest_id);
 
 
 --
--- Name: idx_backtest_trades_timestamp; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_backtest_trades_timestamp; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_backtest_trades_timestamp ON public.backtest_trades USING btree ("timestamp");
 
 
 --
--- Name: idx_backtests_created_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_backtests_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_backtests_created_at ON public.backtests USING btree (created_at);
 
 
 --
--- Name: idx_backtests_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_backtests_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_backtests_status ON public.backtests USING btree (status);
 
 
 --
--- Name: idx_backtests_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_backtests_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_backtests_user_id ON public.backtests USING btree (user_id);
 
 
 --
--- Name: idx_klines_interval; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_klines_interval; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_klines_interval ON public.klines USING btree ("interval");
 
 
 --
--- Name: idx_klines_symbol; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_klines_symbol; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_klines_symbol ON public.klines USING btree (symbol);
 
 
 --
--- Name: idx_klines_symbol_interval_timestamp; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_klines_symbol_interval_timestamp; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_klines_symbol_interval_timestamp ON public.klines USING btree (symbol, "interval", "timestamp");
 
 
 --
--- Name: idx_klines_timestamp; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_klines_timestamp; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_klines_timestamp ON public.klines USING btree ("timestamp");
 
 
 --
--- Name: idx_orders_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_orders_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_orders_status ON public.orders USING btree (status);
 
 
 --
--- Name: idx_orders_strategy_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_orders_strategy_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_orders_strategy_id ON public.orders USING btree (strategy_id);
 
 
 --
--- Name: idx_orders_symbol; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_orders_symbol; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_orders_symbol ON public.orders USING btree (symbol);
 
 
 --
--- Name: idx_orders_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_orders_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_orders_user_id ON public.orders USING btree (user_id);
 
 
 --
--- Name: idx_positions_symbol; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_positions_symbol; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_positions_symbol ON public.positions USING btree (symbol);
 
 
 --
--- Name: idx_positions_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_positions_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_positions_user_id ON public.positions USING btree (user_id);
 
 
 --
--- Name: idx_risk_actions_action_type; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_risk_actions_action_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_risk_actions_action_type ON public.risk_actions USING btree (action_type);
 
 
 --
--- Name: idx_risk_actions_created_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_risk_actions_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_risk_actions_created_at ON public.risk_actions USING btree (created_at DESC);
 
 
 --
--- Name: idx_risk_actions_risk_control_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_risk_actions_risk_control_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_risk_actions_risk_control_id ON public.risk_actions USING btree (risk_control_id);
 
 
 --
--- Name: idx_risk_actions_strategy_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_risk_actions_strategy_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_risk_actions_strategy_id ON public.risk_actions USING btree (strategy_id);
 
 
 --
--- Name: idx_risk_actions_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_risk_actions_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_risk_actions_user_id ON public.risk_actions USING btree (user_id);
 
 
 --
--- Name: idx_risk_controls_is_enabled; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_risk_controls_is_enabled; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_risk_controls_is_enabled ON public.risk_controls USING btree (is_enabled);
 
 
 --
--- Name: idx_risk_controls_is_triggered; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_risk_controls_is_triggered; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_risk_controls_is_triggered ON public.risk_controls USING btree (is_triggered);
 
 
 --
--- Name: idx_risk_controls_level; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_risk_controls_level; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_risk_controls_level ON public.risk_controls USING btree (level);
 
 
 --
--- Name: idx_risk_controls_risk_type; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_risk_controls_risk_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_risk_controls_risk_type ON public.risk_controls USING btree (risk_type);
 
 
 --
--- Name: idx_risk_controls_strategy_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_risk_controls_strategy_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_risk_controls_strategy_id ON public.risk_controls USING btree (strategy_id);
 
 
 --
--- Name: idx_risk_controls_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_risk_controls_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_risk_controls_user_id ON public.risk_controls USING btree (user_id);
 
 
 --
--- Name: idx_strategies_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_strategies_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_strategies_status ON public.strategies USING btree (status);
 
 
 --
--- Name: idx_strategies_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_strategies_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_strategies_user_id ON public.strategies USING btree (user_id);
 
 
 --
--- Name: alerts alerts_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: alerts alerts_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.alerts
@@ -1139,7 +1080,7 @@ ALTER TABLE ONLY public.alerts
 
 
 --
--- Name: alerts alerts_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: alerts alerts_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.alerts
@@ -1147,7 +1088,7 @@ ALTER TABLE ONLY public.alerts
 
 
 --
--- Name: api_configs api_configs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: api_configs api_configs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.api_configs
@@ -1155,7 +1096,7 @@ ALTER TABLE ONLY public.api_configs
 
 
 --
--- Name: backtest_trades backtest_trades_backtest_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: backtest_trades backtest_trades_backtest_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.backtest_trades
@@ -1163,7 +1104,7 @@ ALTER TABLE ONLY public.backtest_trades
 
 
 --
--- Name: orders orders_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: orders orders_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.orders
@@ -1171,7 +1112,7 @@ ALTER TABLE ONLY public.orders
 
 
 --
--- Name: orders orders_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: orders orders_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.orders
@@ -1179,7 +1120,7 @@ ALTER TABLE ONLY public.orders
 
 
 --
--- Name: positions positions_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: positions positions_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.positions
@@ -1187,7 +1128,7 @@ ALTER TABLE ONLY public.positions
 
 
 --
--- Name: positions positions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: positions positions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.positions
@@ -1195,7 +1136,7 @@ ALTER TABLE ONLY public.positions
 
 
 --
--- Name: risk_actions risk_actions_risk_control_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: risk_actions risk_actions_risk_control_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.risk_actions
@@ -1203,7 +1144,7 @@ ALTER TABLE ONLY public.risk_actions
 
 
 --
--- Name: risk_actions risk_actions_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: risk_actions risk_actions_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.risk_actions
@@ -1211,7 +1152,7 @@ ALTER TABLE ONLY public.risk_actions
 
 
 --
--- Name: risk_actions risk_actions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: risk_actions risk_actions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.risk_actions
@@ -1219,7 +1160,7 @@ ALTER TABLE ONLY public.risk_actions
 
 
 --
--- Name: risk_controls risk_controls_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: risk_controls risk_controls_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.risk_controls
@@ -1227,7 +1168,7 @@ ALTER TABLE ONLY public.risk_controls
 
 
 --
--- Name: risk_controls risk_controls_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: risk_controls risk_controls_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.risk_controls
@@ -1235,7 +1176,7 @@ ALTER TABLE ONLY public.risk_controls
 
 
 --
--- Name: strategies strategies_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: strategies strategies_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.strategies
@@ -1246,5 +1187,5 @@ ALTER TABLE ONLY public.strategies
 -- PostgreSQL database dump complete
 --
 
-\unrestrict F8TAGL64Y2VaJnuCzAo1opubgEOMOcxLc2pzNx4rbtIS3MAcNwjJwXS8pzhAq0c
+\unrestrict rsRPDmw99SdFXBnegZdZ4J0pedF61P06VU2YziI5Mo1EcN0afp9egADqTHiiMCa
 
