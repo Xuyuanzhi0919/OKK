@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Row, Col, Card, Table, Spin, message, Button, Statistic, Progress, Tag, Tooltip } from 'antd'
 import {
   TrendingUp,
@@ -20,12 +20,14 @@ import { formatPrice, formatQuantityDisplay, formatAmount, formatPercent } from 
 
 const Dashboard = () => {
   const { t } = useTranslation()
+  // loading 仅用于首次加载的全屏 Spinner；后台定时刷新用 refreshing
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [balance, setBalance] = useState<any>(null)
-  const [positions, setPositions] = useState<any[]>([])
   const [positionsWithPrice, setPositionsWithPrice] = useState<any[]>([])
-  const [strategies, setStrategies] = useState<any[]>([])
   const [runningStrategies, setRunningStrategies] = useState<any[]>([])
+  // ref 保持最新值，供 WS 闭包读取（避免过期闭包捕获初始空数组）
+  const runningStrategiesRef = useRef<any[]>([])
   const [wsConnected, setWsConnected] = useState(false)
   const [lastUpdateTime, setLastUpdateTime] = useState<Date>(new Date())
   const [currentTime, setCurrentTime] = useState<Date>(new Date())
@@ -49,10 +51,17 @@ const Dashboard = () => {
     return `${Math.floor(hours / 24)}天前`
   }
 
-  // 获取账户数据
-  const fetchDashboardData = async () => {
+  // 同步更新 runningStrategies state 和 ref，保证 WS 闭包始终读到最新值
+  const setRunningStrategiesWithRef = (strategies: any[]) => {
+    runningStrategiesRef.current = strategies
+    setRunningStrategies(strategies)
+  }
+
+  // silent=true 时为后台静默刷新，不触发 loading 状态（避免表格闪烁）
+  const fetchDashboardData = async (silent = false) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
+      else setRefreshing(true)
 
       // 并行获取余额、持仓、策略、最近订单、今日基线、最大回撤
       const [balanceData, positionsData, strategiesData, ordersData, dailyPnlData, snapshotsData] = await Promise.all([
@@ -66,10 +75,9 @@ const Dashboard = () => {
 
       setBalance(balanceData)
 
-      // 提取保证金率（OKX 返回的 mgnRatio 字段）
-      if (balanceData && balanceData.mgnRatio) {
+      // OKX mgnRatio 是小数比率（如 10.5 = 1050%），统一乘以 100 转为百分比
+      if (balanceData?.mgnRatio) {
         const mgnRatio = parseFloat(balanceData.mgnRatio)
-        // OKX mgnRatio 是比率（如 0.9 = 90%），乘以100转为百分比
         setMarginRatio(isFinite(mgnRatio) ? mgnRatio * 100 : 0)
       }
 
@@ -185,15 +193,11 @@ const Dashboard = () => {
         }
       }
 
-      const allPositions = [...spotPositions, ...contractPositions]
-      setPositionsWithPrice(allPositions)
-      setPositions(posArr)
+      setPositionsWithPrice([...spotPositions, ...contractPositions])
 
       const allStrategies = (strategiesData as any)?.items || []
-      setStrategies(allStrategies)
-
       const running = allStrategies.filter((s: any) => s.status === 'running')
-      setRunningStrategies(running)
+      setRunningStrategiesWithRef(running)
 
       const orders = Array.isArray(ordersData) ? ordersData : []
       setRecentOrders(orders.slice(0, 10))
@@ -201,12 +205,14 @@ const Dashboard = () => {
       message.error((error as Error).message || t('dashboard.fetchDataFailed'))
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
   useEffect(() => {
     fetchDashboardData()
-    const timer = setInterval(fetchDashboardData, 30000)
+    // 定时刷新：静默模式，不触发 loading 避免表格闪烁
+    const timer = setInterval(() => fetchDashboardData(true), 30000)
 
     const timeUpdateTimer = setInterval(() => {
       setCurrentTime(new Date())
@@ -247,7 +253,7 @@ const Dashboard = () => {
     const unsubscribeOrder = wsService.onOrderUpdate((orderData: OrderUpdateData) => {
       setLastUpdateTime(new Date())
       const sideText = orderData.side === 'buy' ? '买入' : '卖出'
-      const strategyName = runningStrategies.find(s => s.id === orderData.strategy_id)?.name || `策略${orderData.strategy_id}`
+      const strategyName = runningStrategiesRef.current.find(s => s.id === orderData.strategy_id)?.name || `策略${orderData.strategy_id}`
 
       if (orderData.event === 'filled') {
         message.success({
@@ -271,11 +277,9 @@ const Dashboard = () => {
         total_upl: data.unrealized_pnl.toString(),
         details: data.details,
       })
-      // 实时更新保证金率
+      // 实时更新保证金率：OKX mgnRatio 是小数比率，统一乘以100转为百分比（与REST一致）
       if (data.margin_ratio != null && isFinite(data.margin_ratio)) {
-        // OKX mgnRatio 是比率（0~1），乘以100转为百分比；若已是百分比则不乘
-        const ratio = data.margin_ratio > 1 ? data.margin_ratio : data.margin_ratio * 100
-        setMarginRatio(ratio)
+        setMarginRatio(data.margin_ratio * 100)
       }
     })
 
@@ -912,8 +916,8 @@ const Dashboard = () => {
             <Button
               type="text"
               size="small"
-              icon={<RefreshCw size={14} className={loading ? 'animate-spin' : ''} />}
-              onClick={fetchDashboardData}
+              icon={<RefreshCw size={14} className={(loading || refreshing) ? 'animate-spin' : ''} />}
+              onClick={() => fetchDashboardData()}
               style={{ color: '#a3a3a3' }}
             >
               {t('common.refresh')}
@@ -1065,7 +1069,7 @@ const Dashboard = () => {
                     key={order.id || index}
                     style={{
                       padding: '8px 0',
-                      borderBottom: index < recentOrders.length - 1 ? '1px solid #f0f0f0' : 'none',
+                      borderBottom: index < recentOrders.length - 1 ? '1px solid #2a2a2a' : 'none',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',

@@ -129,6 +129,7 @@ export interface PositionsUpdateData {
     liquidation_price?: number
     leverage: number
     inst_type: string
+    notional_usd?: number  // OKX返回的持仓美元价值（准确值）
   }>
   total_positions: number
   total_unrealized_pnl: number
