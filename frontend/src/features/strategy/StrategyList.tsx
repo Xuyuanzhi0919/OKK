@@ -1,4 +1,4 @@
-import { Card, Table, Button, Tag, Space, App, Modal, Input, Select, Row, Col, Dropdown } from 'antd'
+import { Card, Table, Button, Tag, Space, App, Modal, Input, Select, Row, Col, Dropdown, Radio } from 'antd'
 import {
   Play,
   Pause,
@@ -153,17 +153,36 @@ const StrategyList = () => {
 
   // 停止策略
   const handleStopStrategy = (id: number, name: string) => {
+    let closePosition = true  // 默认停止并平仓
     modal.confirm({
       title: '停止策略',
-      icon: <AlertCircle size={24} />,
-      content: <p>确定要停止策略 <strong>{name}</strong> 吗？</p>,
-      okText: '确定停止',
-      okType: 'primary',
+      icon: <AlertCircle size={24} className="text-yellow-500" />,
+      content: (
+        <div>
+          <p style={{ marginBottom: 12 }}>确定要停止策略 <strong>{name}</strong> 吗？</p>
+          <Radio.Group
+            defaultValue={true}
+            onChange={e => { closePosition = e.target.value }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+          >
+            <Radio value={true}>
+              <span>停止并平仓</span>
+              <span style={{ color: '#8c8c8c', fontSize: 12, marginLeft: 6 }}>市价立即平掉当前持仓（推荐）</span>
+            </Radio>
+            <Radio value={false}>
+              <span>仅停止策略</span>
+              <span style={{ color: '#8c8c8c', fontSize: 12, marginLeft: 6 }}>保留持仓，可手动管理</span>
+            </Radio>
+          </Radio.Group>
+        </div>
+      ),
+      okText: '确认停止',
+      okType: 'danger',
       cancelText: '取消',
       onOk: async () => {
         try {
           setActionLoading({ ...actionLoading, [id]: true })
-          await strategyApi.stop(id, true)
+          await strategyApi.stop(id, true, closePosition)
           await fetchStrategies(true)
         } catch (error) {
           message.error((error as any)?.response?.data?.message || t('strategy.stopStrategyFailed'))
@@ -175,12 +194,21 @@ const StrategyList = () => {
   }
 
   // 删除策略
-  const handleDeleteStrategy = (id: number, name: string) => {
+  const handleDeleteStrategy = (id: number, name: string, isRunning: boolean) => {
     modal.confirm({
       title: '删除策略',
-      icon: <AlertCircle size={24} />,
-      content: <p>确定要删除策略 <strong>{name}</strong> 吗？此操作不可恢复。</p>,
-      okText: '确定删除',
+      icon: <AlertCircle size={24} className="text-red-500" />,
+      content: isRunning ? (
+        <div>
+          <p style={{ marginBottom: 8 }}>确定要删除策略 <strong>{name}</strong> 吗？</p>
+          <p style={{ color: '#ff4d4f', fontSize: 13, margin: 0 }}>
+            ⚠️ 该策略正在运行，删除前将自动<strong>停止策略并市价平仓</strong>，请确认。
+          </p>
+        </div>
+      ) : (
+        <p>确定要删除策略 <strong>{name}</strong> 吗？此操作不可恢复。</p>
+      ),
+      okText: isRunning ? '平仓并删除' : '确定删除',
       okType: 'danger',
       cancelText: '取消',
       onOk: async () => {
@@ -377,7 +405,7 @@ const StrategyList = () => {
                 type="text"
                 size="small"
                 icon={<Trash2 size={14} />}
-                onClick={() => handleDeleteStrategy(record.id, record.name)}
+                onClick={() => handleDeleteStrategy(record.id, record.name, record.status === StrategyStatus.RUNNING)}
                 danger
               >
                 {t('common.delete')}

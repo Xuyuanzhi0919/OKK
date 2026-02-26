@@ -393,12 +393,13 @@ async def delete_strategy(
                 detail=f"策略 {strategy_id} 不存在"
             )
 
-        # 检查策略是否在运行
+        # 若策略正在运行，先停止并平仓，再执行删除
         if strategy.status == StrategyStatus.RUNNING.value or strategy.status == 'running':
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="策略正在运行，无法删除。请先停止策略。"
-            )
+            logger.info(f"删除前自动停止并平仓策略 {strategy_id}")
+            try:
+                await strategy_manager.stop_strategy(strategy_id, cancel_orders=True, close_position=True)
+            except Exception as e:
+                logger.warning(f"删除时停止策略 {strategy_id} 失败（继续删除）: {e}")
 
         # 删除前先撤销所有未成交订单（安全措施）
         pending_orders = db.query(Order).filter(
@@ -527,6 +528,7 @@ async def start_strategy(
 async def stop_strategy(
     strategy_id: int,
     cancel_orders: bool = True,
+    close_position: bool = True,
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id)
 ):
@@ -535,7 +537,8 @@ async def stop_strategy(
 
     Args:
         strategy_id: 策略ID
-        cancel_orders: 是否撤销所有未成交订单，默认True（安全选项）
+        cancel_orders: 是否撤销所有未成交订单，默认True
+        close_position: 是否市价平掉当前持仓，默认True
     """
     try:
         # 查询策略
@@ -558,8 +561,10 @@ async def stop_strategy(
                 detail="策略未在运行"
             )
 
-        # 停止策略（传递 cancel_orders 参数）
-        success = await strategy_manager.stop_strategy(strategy_id, cancel_orders=cancel_orders)
+        # 停止策略（传递 cancel_orders / close_position 参数）
+        success = await strategy_manager.stop_strategy(
+            strategy_id, cancel_orders=cancel_orders, close_position=close_position
+        )
 
         if not success:
             raise HTTPException(

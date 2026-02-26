@@ -248,7 +248,7 @@ class StrategyManager:
             logger.error(f"启动策略 {strategy_id} 失败: {e}")
             raise
 
-    async def stop_strategy(self, strategy_id: int, cancel_orders: bool = True) -> bool:
+    async def stop_strategy(self, strategy_id: int, cancel_orders: bool = True, close_position: bool = True) -> bool:
         """停止策略"""
         try:
             strategy = self.strategies.get(strategy_id)
@@ -256,13 +256,15 @@ class StrategyManager:
                 logger.warning(f"策略 {strategy_id} 未在运行")
                 return False
 
-            # 停止策略（兼容有无 cancel_orders 参数的实现）
+            # 停止策略（兼容有无 cancel_orders/close_position 参数的实现）
             import inspect
             stop_sig = inspect.signature(strategy.stop)
+            kwargs = {}
             if 'cancel_orders' in stop_sig.parameters:
-                await strategy.stop(cancel_orders=cancel_orders)
-            else:
-                await strategy.stop()
+                kwargs['cancel_orders'] = cancel_orders
+            if 'close_position' in stop_sig.parameters:
+                kwargs['close_position'] = close_position
+            await strategy.stop(**kwargs)
 
             # 取消监控任务
             task = self.strategy_tasks.get(strategy_id)

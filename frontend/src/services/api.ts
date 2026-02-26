@@ -53,8 +53,8 @@ export const strategyApi = {
     api.put(`/strategies/${id}`, data),
   delete: (id: number) => api.delete(`/strategies/${id}`),
   start: (id: number) => api.post(`/strategies/${id}/start`),
-  stop: (id: number, cancelOrders: boolean = true) =>
-    api.post(`/strategies/${id}/stop`, null, { params: { cancel_orders: cancelOrders } }),
+  stop: (id: number, cancelOrders: boolean = true, closePosition: boolean = true) =>
+    api.post(`/strategies/${id}/stop`, null, { params: { cancel_orders: cancelOrders, close_position: closePosition } }),
   getStats: (id: number) => api.get(`/strategies/${id}/stats`),
   getOrders: (id: number, skip?: number, limit?: number) =>
     api.get<{ code: number; msg: string; data: { total: number; items: Order[] } }>(

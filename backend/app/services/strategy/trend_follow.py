@@ -182,11 +182,11 @@ class TrendFollowStrategy(StrategyBase):
 
         logger.info(f"策略 {self.strategy_id} [{self.symbol}] 已启动")
 
-    async def stop(self, cancel_orders: bool = True):
+    async def stop(self, cancel_orders: bool = True, close_position: bool = True):
         self.is_running = False
-        if self._in_position:
+        if close_position and self._in_position:
             await self._close_position(reason="stop")
-        logger.info(f"策略 {self.strategy_id} [{self.symbol}] 已停止")
+        logger.info(f"策略 {self.strategy_id} [{self.symbol}] 已停止 (平仓={close_position})")
 
     # ═══════════════════════════════════════════════════════════
     # 核心 Tick 回调（由 manager 每 5 秒调用）
