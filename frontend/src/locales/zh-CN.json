@@ -125,6 +125,7 @@
   },
   "strategy": {
     "title": "策略管理",
+    "strategyList": "策略列表",
     "strategies": "策略",
     "createStrategy": "创建策略",
     "strategyName": "策略名称",

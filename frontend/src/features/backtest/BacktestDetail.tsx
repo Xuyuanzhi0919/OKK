@@ -321,8 +321,8 @@ const BacktestDetail = () => {
       <Card title={`交易记录 (${trades?.length || 0}笔)`} style={{ marginTop: 16 }}>
         <Table
           columns={tradeColumns}
-          dataSource={trades}
-          rowKey={(record, index) => `${record.timestamp}-${record.side}-${record.price}-${index}`}
+          dataSource={trades?.map((t, i) => ({ ...t, _key: i }))}
+          rowKey="_key"
           loading={tradesLoading}
           pagination={{
             pageSize: 20,
