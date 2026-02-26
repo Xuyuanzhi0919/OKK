@@ -511,6 +511,7 @@ const StrategyList = () => {
           setIsCopyMode(false)
           fetchStrategies(true)
         }}
+        editStrategyId={!isCopyMode && editingStrategy ? editingStrategy.id : undefined}
         backtestData={editingStrategy ? {
           strategy_type: editingStrategy.type,
           symbol: editingStrategy.symbol,

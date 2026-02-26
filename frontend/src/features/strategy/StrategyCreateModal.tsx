@@ -16,6 +16,8 @@ interface StrategyCreateModalProps {
   onSuccess: () => void
   /** 从下拉菜单预选的策略类型，打开时自动填入 */
   initialType?: string
+  /** 若有值则为编辑模式，提交时调用 update 而非 create */
+  editStrategyId?: number
   backtestData?: {
     strategy_type: string
     symbol: string
@@ -75,7 +77,7 @@ function buildAutoName(type: string, symbol: string): string {
 }
 
 const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
-  open, onCancel, onSuccess, initialType, backtestData,
+  open, onCancel, onSuccess, initialType, editStrategyId, backtestData,
 }) => {
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
@@ -104,17 +106,30 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
     }
   }, [initialType, open, backtestData, form])
 
-  // 从回测预填数据
+  // 从回测/策略预填数据
   useEffect(() => {
     if (backtestData && open) {
+      const params = backtestData.parameters || {}
+      const isEdit = editStrategyId != null
       form.setFieldsValue({
         type: backtestData.strategy_type,
         symbol: backtestData.symbol,
         name: backtestData.name || `${backtestData.symbol} ${backtestData.strategy_type}策略`,
-        ...backtestData.parameters,
+        // 编辑模式：DB 里存的是小数（0.4/0.01/0.08），需转回百分比供表单使用
+        position_ratio: isEdit && params.position_ratio != null
+          ? Math.round(params.position_ratio * 100)
+          : params.position_ratio,
+        stop_loss: isEdit && params.stop_loss != null
+          ? params.stop_loss * 100
+          : params.stop_loss,
+        take_profit: isEdit && params.take_profit != null
+          ? params.take_profit * 100
+          : params.take_profit,
+        use_rsi_filter: params.use_rsi_filter,
+        leverage: params.leverage,
       })
     }
-  }, [backtestData, open, form])
+  }, [backtestData, open, form, editStrategyId])
 
   // 自动命名：监听类型和交易对，只要名称为空或等于上次自动生成的值就覆盖
   const watchedType   = Form.useWatch('type',   form)
@@ -152,14 +167,20 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         // fast_period / slow_period 使用策略内置最优值（12/40），不对外暴露
       }
 
-      await strategyApi.create({
+      const payload = {
         name: values.name,
         type: values.type as any,
         symbol: values.symbol,
         timeframe: values.type === 'trend' ? '15m' : (values.timeframe ?? '1H'),
         parameters,
         description: values.description,
-      } as any)
+      } as any
+
+      if (editStrategyId != null) {
+        await strategyApi.update(editStrategyId, payload)
+      } else {
+        await strategyApi.create(payload)
+      }
 
       form.resetFields()
       onSuccess()
@@ -180,11 +201,11 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
 
   return (
     <Modal
-      title={backtestData ? '从回测创建策略' : '创建策略'}
+      title={editStrategyId != null ? '编辑策略' : backtestData ? '从回测创建策略' : '创建策略'}
       open={open}
       onCancel={handleCancel}
       onOk={handleSubmit}
-      okText="创建"
+      okText={editStrategyId != null ? '保存' : '创建'}
       cancelText="取消"
       width={600}
       confirmLoading={loading}
