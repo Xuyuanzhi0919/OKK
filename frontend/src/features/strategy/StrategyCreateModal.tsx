@@ -34,11 +34,20 @@ const STRATEGY_TYPES = [
   { value: 'trend', label: '趋势跟踪策略', description: '追踪市场趋势进行交易', icon: '➡️' },
 ]
 
-// 交易对列表
+// 交易对列表：合约（SWAP）优先，后接现货（SPOT）
 const DEFAULT_SYMBOLS = [
-  'BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT', 
+  // ── 合约（USDT 本位永续）──
+  'BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP',
+  'XRP-USDT-SWAP', 'DOGE-USDT-SWAP', 'ADA-USDT-SWAP', 'AVAX-USDT-SWAP',
+  'LINK-USDT-SWAP', 'DOT-USDT-SWAP', 'LTC-USDT-SWAP', 'ATOM-USDT-SWAP',
+  'ETC-USDT-SWAP', 'ARB-USDT-SWAP', 'OP-USDT-SWAP', 'APT-USDT-SWAP',
+  'NEAR-USDT-SWAP', 'SUI-USDT-SWAP', 'TRX-USDT-SWAP', 'TON-USDT-SWAP',
+  'KSM-USDT-SWAP', 'INJ-USDT-SWAP', 'SEI-USDT-SWAP', 'ORDI-USDT-SWAP',
+  'WLD-USDT-SWAP', 'PEPE-USDT-SWAP',
+  // ── 现货（SPOT）──
+  'BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT',
   'XRP-USDT', 'DOGE-USDT', 'ADA-USDT', 'AVAX-USDT',
-  'DOT-USDT', 'MATIC-USDT', 'LINK-USDT', 'UNI-USDT'
+  'LINK-USDT', 'DOT-USDT', 'LTC-USDT', 'ATOM-USDT',
 ]
 
 // K线周期
@@ -67,15 +76,15 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
     estimatedFunds: number
   } | null>(null)
 
-  // 获取可用交易对
+  // 获取可用交易对：DB 中已有 K 线的排在前面，再合并默认列表（去重）
   const { data: availableSymbols } = useQuery({
-    queryKey: ['available-symbols'],
+    queryKey: ['available-symbols-strategy'],
     queryFn: async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/v1/backtest/symbols`)
         if (!response.ok) throw new Error('获取交易对失败')
-        const symbols = await response.json()
-        return symbols.length > 0 ? symbols : DEFAULT_SYMBOLS
+        const symbols: string[] = await response.json()
+        return [...new Set([...symbols, ...DEFAULT_SYMBOLS])]
       } catch {
         return DEFAULT_SYMBOLS
       }
@@ -183,14 +192,14 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
 
       const payload = {
         name: values.name,
-        type: strategyType,
+        type: strategyType as any,  // 类型转换
         symbol: values.symbol,
         timeframe: values.timeframe || '1H',
         parameters,
         description: values.description,
       }
 
-      await strategyApi.create(payload)
+      await strategyApi.create(payload as any)
       form.resetFields()
       onSuccess()
     } catch (error: any) {

@@ -1,10 +1,12 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { Card, Descriptions, Statistic, Row, Col, Table, Button, Tag, Spin, Empty } from 'antd'
-import { ArrowLeft } from 'lucide-react'
+import { Card, Descriptions, Statistic, Row, Col, Table, Button, Tag, Spin, Empty, Space, App } from 'antd'
+import { ArrowLeft, Rocket } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import EquityCurve from './components/EquityCurve'
+import StrategyCreateModal from '@/features/strategy/StrategyCreateModal'
 import { BACKTEST_API } from '@/config/api'
 import { formatAmount, formatQuantityDisplay, formatFeeDisplay, formatPercent } from '@/utils/format'
 
@@ -48,6 +50,8 @@ interface Trade {
 const BacktestDetail = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { message } = App.useApp()
+  const [createModalOpen, setCreateModalOpen] = useState(false)
 
   // 获取回测详情
   const { data: backtest, isLoading } = useQuery<BacktestDetail>({
@@ -144,13 +148,23 @@ const BacktestDetail = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <Button
-        icon={<ArrowLeft size={14} />}
-        onClick={() => navigate('/backtest')}
-        style={{ marginBottom: 16 }}
-      >
-        返回列表
-      </Button>
+      <Space style={{ marginBottom: 16 }}>
+        <Button
+          icon={<ArrowLeft size={14} />}
+          onClick={() => navigate('/backtest')}
+        >
+          返回列表
+        </Button>
+        {backtest.status === 'completed' && (
+          <Button
+            type="primary"
+            icon={<Rocket size={14} />}
+            onClick={() => setCreateModalOpen(true)}
+          >
+            创建实盘策略
+          </Button>
+        )}
+      </Space>
 
       {/* 基本信息 */}
       <Card title="回测信息" style={{ marginBottom: 16 }}>

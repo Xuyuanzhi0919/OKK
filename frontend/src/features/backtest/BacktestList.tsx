@@ -243,14 +243,22 @@ const BacktestList = () => {
         })
     : []
 
-  // 默认交易对列表（API 请求失败或无 K 线数据时使用）
+  // 默认交易对列表：合约（SWAP）优先，后接现货（SPOT）
+  // API 请求失败或无 K 线数据时使用；API 有数据时与此列表去重合并
   const DEFAULT_SYMBOLS = [
+    // ── 合约（USDT 本位永续）──
+    'BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP',
+    'XRP-USDT-SWAP', 'DOGE-USDT-SWAP', 'ADA-USDT-SWAP', 'AVAX-USDT-SWAP',
+    'LINK-USDT-SWAP', 'DOT-USDT-SWAP', 'LTC-USDT-SWAP', 'ATOM-USDT-SWAP',
+    'ETC-USDT-SWAP', 'ARB-USDT-SWAP', 'OP-USDT-SWAP', 'APT-USDT-SWAP',
+    'NEAR-USDT-SWAP', 'SUI-USDT-SWAP', 'TRX-USDT-SWAP', 'KSM-USDT-SWAP',
+    'INJ-USDT-SWAP', 'SEI-USDT-SWAP', 'ORDI-USDT-SWAP', 'WLD-USDT-SWAP',
+    'PEPE-USDT-SWAP', 'SHIB-USDT-SWAP',
+    // ── 现货（SPOT）──
     'BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT', 'XRP-USDT',
     'DOGE-USDT', 'ADA-USDT', 'AVAX-USDT', 'LINK-USDT', 'DOT-USDT',
-    'LTC-USDT', 'ATOM-USDT', 'ETC-USDT', 'FIL-USDT', 'ARB-USDT',
-    'OP-USDT', 'APT-USDT', 'NEAR-USDT', 'SUI-USDT', 'TRX-USDT',
-    'KSM-USDT', 'INJ-USDT', 'SEI-USDT', 'TIA-USDT', 'ORDI-USDT',
-    'WLD-USDT', 'PEPE-USDT', 'SHIB-USDT',
+    'LTC-USDT', 'ATOM-USDT', 'ETC-USDT', 'ARB-USDT', 'OP-USDT',
+    'APT-USDT', 'NEAR-USDT', 'KSM-USDT', 'INJ-USDT', 'PEPE-USDT',
   ]
 
   // 获取可用的交易对列表(从已有K线数据中获取，并与默认列表合并)

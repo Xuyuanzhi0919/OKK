@@ -1,4 +1,4 @@
-import { Card, Table, Button, Tag, Space, App, Modal, Form, Input, Select } from 'antd'
+import { Card, Table, Button, Tag, Space, App, Modal } from 'antd'
 import {
   Play,
   Pause,
@@ -13,6 +13,7 @@ import { StrategyStatus, Strategy } from '@/types'
 import { useState, useEffect } from 'react'
 import StrategyDetailModal from './StrategyDetailModal'
 import StrategyPerformanceModal from './StrategyPerformanceModal'
+import StrategyCreateModal from './StrategyCreateModal'
 import { strategyApi } from '@/services/api'
 import { useTranslation } from 'react-i18next'
 import { wsService, StrategyUpdateData } from '@/services/websocket'
@@ -41,8 +42,6 @@ const StrategyList = () => {
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null)
   const [actionLoading, setActionLoading] = useState<{ [key: number]: boolean }>({})
   const [createModalOpen, setCreateModalOpen] = useState(false)
-  const [createLoading, setCreateLoading] = useState(false)
-  const [createForm] = Form.useForm()
 
   const fetchStrategies = async (silent = false) => {
     try {
@@ -140,24 +139,6 @@ const StrategyList = () => {
   const handleViewPerformance = (strategy: Strategy) => {
     setSelectedStrategy(strategy)
     setPerformanceModalOpen(true)
-  }
-
-  // 创建策略
-  const handleCreate = async () => {
-    try {
-      const values = await createForm.validateFields()
-      setCreateLoading(true)
-      await strategyApi.create(values)
-      message.success('策略创建成功')
-      setCreateModalOpen(false)
-      createForm.resetFields()
-      await fetchStrategies(true)
-    } catch (error: any) {
-      if (error?.errorFields) return // 表单校验错误，不提示
-      message.error(error?.response?.data?.detail || '创建策略失败')
-    } finally {
-      setCreateLoading(false)
-    }
   }
 
   const statusColorMap: Record<string, string> = {
@@ -354,57 +335,14 @@ const StrategyList = () => {
       />
 
       {/* 创建策略 Modal */}
-      <Modal
-        title="创建策略"
+      <StrategyCreateModal
         open={createModalOpen}
-        onOk={handleCreate}
-        onCancel={() => { setCreateModalOpen(false); createForm.resetFields() }}
-        okText="创建"
-        cancelText="取消"
-        confirmLoading={createLoading}
-        width={520}
-        destroyOnClose
-      >
-        <Form form={createForm} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item name="name" label="策略名称" rules={[{ required: true, message: '请输入策略名称' }]}>
-            <Input placeholder="如：BTC网格策略01" />
-          </Form.Item>
-
-          <Form.Item name="type" label="策略类型" rules={[{ required: true, message: '请选择策略类型' }]}>
-            <Select placeholder="选择策略类型">
-              <Select.Option value="grid">网格交易（Grid）</Select.Option>
-              <Select.Option value="swing_long">波段做多（Swing Long）</Select.Option>
-              <Select.Option value="swing_short">波段做空（Swing Short）</Select.Option>
-              <Select.Option value="ai_swing_long">AI增强波段做多（AI Swing Long）</Select.Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="symbol" label="交易对" rules={[{ required: true, message: '请选择或输入交易对' }]}>
-            <Select
-              showSearch
-              allowClear
-              placeholder="选择或输入交易对，如 BTC-USDT-SWAP"
-              options={SYMBOL_OPTIONS}
-              filterOption={(input, option) =>
-                String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-              }
-            />
-          </Form.Item>
-
-          <Form.Item name="timeframe" label="时间周期">
-            <Select placeholder="选择时间周期（可选）" allowClear>
-              <Select.Option value="1m">1分钟</Select.Option>
-              <Select.Option value="3m">3分钟</Select.Option>
-              <Select.Option value="5m">5分钟</Select.Option>
-              <Select.Option value="15m">15分钟</Select.Option>
-              <Select.Option value="30m">30分钟</Select.Option>
-              <Select.Option value="1H">1小时</Select.Option>
-              <Select.Option value="4H">4小时</Select.Option>
-              <Select.Option value="1D">1天</Select.Option>
-            </Select>
-          </Form.Item>
-        </Form>
-      </Modal>
+        onCancel={() => setCreateModalOpen(false)}
+        onSuccess={() => {
+          setCreateModalOpen(false)
+          fetchStrategies(true)
+        }}
+      />
     </div>
   )
 }
