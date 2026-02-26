@@ -163,7 +163,9 @@ const Dashboard = () => {
             const posSize = posData.size || parseFloat(posData.pos || '0')
             const upl = posData.unrealized_pnl || parseFloat(posData.upl || '0')
             const uplRatio = posData.unrealized_pnl_pct || parseFloat(posData.uplRatio || '0') * 100
-            const value = posSize * currentPrice
+            // 优先使用OKX返回的notional_usd（持仓美元价值），这是准确的价值
+            // 如果没有则回退到 size * currentPrice（可能不准确，因为SWAP合约张数≠币数）
+            const value = posData.notional_usd || posData.notionalUsd || (posSize * currentPrice)
 
             contractPositions.push({
               key: `contract-${symbol}`,
@@ -285,6 +287,9 @@ const Dashboard = () => {
           try {
             const ticker = await marketApi.getTicker(pos.symbol)
             const currentPrice = pos.current_price || parseFloat((ticker as any)?.last || '0')
+            // 优先使用OKX返回的notional_usd（持仓美元价值），这是准确的价值
+            // 如果没有则回退到 size * currentPrice（可能不准确，因为SWAP合约张数≠币数）
+            const positionValue = pos.notional_usd || (pos.size * currentPrice)
 
             return {
               key: `contract-${pos.symbol}`,
@@ -295,10 +300,11 @@ const Dashboard = () => {
               currentPrice: currentPrice,
               profit: pos.unrealized_pnl,
               profitPercent: pos.unrealized_pnl_pct,
-              value: pos.size * currentPrice,
+              value: positionValue,
               margin: pos.margin || 0,
             }
           } catch (error) {
+            const positionValue = pos.notional_usd || (pos.size * pos.current_price)
             return {
               key: `contract-${pos.symbol}`,
               type: pos.inst_type || 'SWAP',
@@ -308,7 +314,7 @@ const Dashboard = () => {
               currentPrice: pos.current_price,
               profit: pos.unrealized_pnl,
               profitPercent: pos.unrealized_pnl_pct,
-              value: pos.size * pos.current_price,
+              value: positionValue,
               margin: pos.margin || 0,
             }
           }

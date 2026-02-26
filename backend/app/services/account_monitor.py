@@ -172,6 +172,7 @@ class AccountMonitor:
                             "liquidation_price": safe_float(pos.get("liqPx")) if pos.get("liqPx") else None,
                             "leverage": safe_float(pos.get("lever")),
                             "inst_type": pos.get("instType", "SWAP"),
+                            "notional_usd": safe_float(pos.get("notionalUsd")),  # OKX返回的持仓美元价值
                         })
 
                 # 构造WebSocket推送数据

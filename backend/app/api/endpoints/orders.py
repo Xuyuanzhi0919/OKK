@@ -13,6 +13,7 @@ from app.models.order import Order as OrderModel
 from app.models.strategy import Strategy
 from loguru import logger
 from datetime import datetime
+import asyncio
 
 router = APIRouter()
 
@@ -261,25 +262,44 @@ async def list_orders(
 
         # 如果没有指定strategy_id，还要查询OKX API（手动交易订单）
         if strategy_id is None:
-            logger.info("同时从OKX API查询手动交易订单")
+            logger.info("同时从OKX API查询手动交易订单（SPOT + SWAP）")
             exchange = get_okx_exchange()
             all_orders = []
 
+            # OKX instType 枚举：orders-history 接口 instType 为必填
+            # 需要分别查询 SPOT 和 SWAP，再合并
+            inst_types = ["SPOT", "SWAP"]
+
             if status == "pending" or status is None:
-                pending_orders = await exchange.get_orders_pending(
-                    inst_type="SPOT",
-                    inst_id=symbol
-                )
-                all_orders.extend(pending_orders)
+                # orders-pending 的 instType 非必填，但传入可加速
+                pending_tasks = [
+                    exchange.get_orders_pending(inst_type=it, inst_id=symbol)
+                    for it in inst_types
+                ]
+                pending_results = await asyncio.gather(*pending_tasks, return_exceptions=True)
+                for r in pending_results:
+                    if isinstance(r, list):
+                        all_orders.extend(r)
+                    else:
+                        logger.warning(f"查询未完成订单部分失败: {r}")
 
             if status in ["filled", "canceled"] or status is None:
-                history_orders = await exchange.get_orders_history(
-                    inst_type="SPOT",
-                    inst_id=symbol,
-                    state=status,
-                    limit=limit
-                )
-                all_orders.extend(history_orders)
+                # 并发查 SPOT 和 SWAP 历史订单
+                history_tasks = [
+                    exchange.get_orders_history(
+                        inst_type=it,
+                        inst_id=symbol,
+                        state=status,
+                        limit=limit
+                    )
+                    for it in inst_types
+                ]
+                history_results = await asyncio.gather(*history_tasks, return_exceptions=True)
+                for r in history_results:
+                    if isinstance(r, list):
+                        all_orders.extend(r)
+                    else:
+                        logger.warning(f"查询历史订单部分失败: {r}")
 
             await exchange.close()
 
@@ -291,6 +311,7 @@ async def list_orders(
                 if okx_order_id in existing_order_ids:
                     logger.debug(f"跳过重复订单: {okx_order_id} (已在数据库结果中)")
                     continue
+
                 okx_state = order.get('state', '')
                 if okx_state == 'live':
                     fe_status = 'pending'
@@ -311,15 +332,22 @@ async def list_orders(
                 created_at = datetime.fromtimestamp(int(order.get('cTime', '0')) / 1000).isoformat()
                 updated_at = datetime.fromtimestamp(int(order.get('uTime', '0')) / 1000).isoformat()
 
+                # avgPx 为实际成交均价；px 为委托价（市价单为空字符串）
+                avg_px = order.get('avgPx', '')
+                px = order.get('px', '')
+                avg_price = float(avg_px) if avg_px else 0.0
+                price = float(px) if px else avg_price  # 优先展示成交价
+
                 result.append({
-                    "id": order.get('ordId', ''),
-                    "order_id": order.get('ordId', ''),
+                    "id": okx_order_id,
+                    "order_id": okx_order_id,
                     "strategy_id": None,
                     "strategy_name": None,
                     "symbol": order.get('instId', ''),
                     "side": order.get('side', ''),
                     "order_type": order.get('ordType', ''),
-                    "price": float(order.get('px', 0)) if order.get('px') else 0,
+                    "price": price,
+                    "avg_price": avg_price,
                     "size": float(order.get('sz', 0)),
                     "filled_size": float(order.get('accFillSz', 0)),
                     "status": fe_status,
@@ -327,7 +355,7 @@ async def list_orders(
                     "updated_at": updated_at,
                 })
 
-            logger.info(f"从OKX API获取到 {len(all_orders)} 个手动交易订单")
+            logger.info(f"从OKX API获取到 {len(all_orders)} 个手动交易订单（SPOT+SWAP）")
 
         logger.info(f"总共返回 {len(result)} 个订单（策略订单 + 手动交易订单）")
         return result
