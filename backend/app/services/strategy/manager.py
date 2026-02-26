@@ -83,6 +83,15 @@ class StrategyManager:
                 parameters=parameters,
                 user_id=user_id,
             )
+        elif strategy_type_enum == StrategyType.ORDER_BOOK_IMBALANCE:
+            from app.services.strategy.order_book_imbalance import OrderBookImbalanceStrategy
+            return OrderBookImbalanceStrategy(
+                strategy_id=strategy_id,
+                exchange=exchange,
+                symbol=symbol,
+                parameters=parameters,
+                user_id=user_id,
+            )
         elif strategy_type_enum == StrategyType.GRID:
             raise NotImplementedError("网格策略已移除")
         elif strategy_type_enum == StrategyType.SWING_LONG:

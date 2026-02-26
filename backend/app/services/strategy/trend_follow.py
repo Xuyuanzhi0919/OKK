@@ -413,20 +413,26 @@ class TrendFollowStrategy(StrategyBase):
                 logger.warning(f"[{self.symbol}] 可用 USDT 余额不足({available:.2f})，跳过开仓")
                 return
 
-            budget = available * self.pos_ratio
+            # pos_ratio 表示用账户可用资金的 X% 作为保证金
+            margin_budget = available * self.pos_ratio
 
             if self._is_swap:
-                # 合约张数 = 预算 / (价格 × 合约面值)，向下取整，最少 1 张
-                contracts = budget / (price * self._ct_val) if self._ct_val > 0 else 1
+                # 合约名义价值 = 保证金预算 × 杠杆倍数
+                # 合约张数 = 名义价值 ÷ (价格 × 合约面值)
+                notional = margin_budget * self.leverage
+                contracts = notional / (price * self._ct_val) if self._ct_val > 0 else 1
                 qty = max(self._min_sz, int(contracts / self._lot_sz) * self._lot_sz)
             else:
-                qty = round(budget / price, 6)
+                qty = round(margin_budget / price, 6)
 
             if qty <= 0:
-                logger.warning(f"[{self.symbol}] 计算数量为 0（budget={budget:.2f} price={price:.2f}），跳过")
+                logger.warning(f"[{self.symbol}] 计算数量为 0（margin={margin_budget:.2f} price={price:.2f}），跳过")
                 return
 
-            logger.info(f"[{self.symbol}] 准备开多: qty={qty} budget={budget:.2f} USDT @ {price:.2f}")
+            logger.info(
+                f"[{self.symbol}] 准备开多: qty={qty} "
+                f"保证金={margin_budget:.2f} USDT 名义价值={margin_budget * self.leverage:.2f} USDT @ {price:.2f}"
+            )
 
             order = await self.place_order_with_retry(
                 side="buy",
