@@ -127,13 +127,26 @@ class StrategyManager:
             db_strategy.win_rate = strategy.win_rate if hasattr(strategy, 'win_rate') else 0
 
             # 持仓状态持久化（用于重启后恢复，防止重复开仓）
-            if hasattr(strategy, '_in_position'):
+            position_side = getattr(strategy, '_position_side', None)
+            if position_side is not None:
+                # 新版双向持仓策略（TrendFollowStrategy）
+                db_strategy.position_in_position   = position_side != ""
+                db_strategy.position_side          = position_side
+                db_strategy.position_entry_price   = getattr(strategy, '_entry_price', 0.0)
+                db_strategy.position_qty           = getattr(strategy, '_position_qty', 0.0)
+                db_strategy.position_open_time     = getattr(strategy, '_open_time', 0.0)
+                db_strategy.position_highest_price = getattr(strategy, '_extreme_price',
+                                                     getattr(strategy, '_highest_price', 0.0))
+                db_strategy.position_trail_stop_px = getattr(strategy, '_trail_stop_px', 0.0)
+            elif hasattr(strategy, '_in_position'):
+                # 旧版单向持仓策略（向后兼容）
                 db_strategy.position_in_position   = strategy._in_position
-                db_strategy.position_entry_price    = getattr(strategy, '_entry_price', 0.0)
-                db_strategy.position_qty            = getattr(strategy, '_position_qty', 0.0)
-                db_strategy.position_open_time      = getattr(strategy, '_open_time', 0.0)
-                db_strategy.position_highest_price  = getattr(strategy, '_highest_price', 0.0)
-                db_strategy.position_trail_stop_px  = getattr(strategy, '_trail_stop_px', 0.0)
+                db_strategy.position_side          = "long" if strategy._in_position else ""
+                db_strategy.position_entry_price   = getattr(strategy, '_entry_price', 0.0)
+                db_strategy.position_qty           = getattr(strategy, '_position_qty', 0.0)
+                db_strategy.position_open_time     = getattr(strategy, '_open_time', 0.0)
+                db_strategy.position_highest_price = getattr(strategy, '_highest_price', 0.0)
+                db_strategy.position_trail_stop_px = getattr(strategy, '_trail_stop_px', 0.0)
 
             db.commit()
 

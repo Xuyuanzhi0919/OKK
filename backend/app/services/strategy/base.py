@@ -252,7 +252,8 @@ class StrategyBase(ABC):
         price: Optional[Decimal] = None,
         order_type: str = "limit",
         max_retries: int = 3,
-        retry_delay: float = 1.0
+        retry_delay: float = 1.0,
+        pos_side: Optional[str] = None,
     ) -> Optional[Dict]:
         """
         带重试机制的下单方法
@@ -264,6 +265,11 @@ class StrategyBase(ABC):
             order_type: 订单类型
             max_retries: 最大重试次数
             retry_delay: 重试间隔（秒）
+            pos_side: 持仓方向 "long"/"short"(开平仓双向模式) 或 None(自动判断)
+                开多: side="buy",  pos_side="long"
+                平多: side="sell", pos_side="long"
+                开空: side="sell", pos_side="short"
+                平空: side="buy",  pos_side="short"
 
         Returns:
             订单信息，如果所有重试都失败则返回None
@@ -274,7 +280,7 @@ class StrategyBase(ABC):
             try:
                 logger.info(
                     f"下单尝试 {attempt + 1}/{max_retries}: "
-                    f"{side} {amount} @ {price} ({order_type})"
+                    f"{side} {amount} @ {price} ({order_type}) pos_side={pos_side}"
                 )
 
                 # 根据交易对类型设置交易模式
@@ -283,10 +289,12 @@ class StrategyBase(ABC):
                     # 从策略参数获取保证金模式，默认逐仓
                     margin_mode = self.parameters.get("margin_mode", "isolated")
                     td_mode = margin_mode  # isolated(逐仓) 或 cross(全仓)
-                    pos_side = "net"   # 买卖模式(双向持仓用long/short)
+                    # 若调用方明确传入 pos_side("long"/"short")，使用双向持仓模式
+                    # 否则默认 "net"（买卖模式）保持向后兼容
+                    effective_pos_side = pos_side if pos_side in ("long", "short") else "net"
                 else:
                     td_mode = "cash"   # 非保证金(现货)
-                    pos_side = None
+                    effective_pos_side = None  # 现货无 posSide
 
                 order = await self.exchange.create_order(
                     symbol=self.symbol,
@@ -295,7 +303,7 @@ class StrategyBase(ABC):
                     amount=amount,
                     price=price,
                     td_mode=td_mode,
-                    pos_side=pos_side
+                    pos_side=effective_pos_side
                 )
 
                 order_id = order.get("ordId")

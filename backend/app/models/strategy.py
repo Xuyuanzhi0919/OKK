@@ -59,10 +59,11 @@ class Strategy(Base):
 
     # 持仓状态（用于重启后恢复）
     position_in_position = Column(Boolean, default=False, comment="是否有持仓")
+    position_side = Column(String(10), default="", comment="持仓方向: long/short/空字符串")
     position_entry_price = Column(Float, default=0.0, comment="开仓均价")
     position_qty = Column(Float, default=0.0, comment="持仓数量")
     position_open_time = Column(Float, default=0.0, comment="开仓时间戳(unix秒)")
-    position_highest_price = Column(Float, default=0.0, comment="持仓期间最高价(移动止损用)")
+    position_highest_price = Column(Float, default=0.0, comment="极值价格(多仓=最高价,空仓=最低价,移动止损用)")
     position_trail_stop_px = Column(Float, default=0.0, comment="当前移动止损触发价")
 
     # 描述
