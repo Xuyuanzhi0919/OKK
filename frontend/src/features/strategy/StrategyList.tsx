@@ -1,4 +1,4 @@
-import { Card, Table, Button, Tag, Space, App, Modal, Input, Select, Row, Col } from 'antd'
+import { Card, Table, Button, Tag, Space, App, Modal, Input, Select, Row, Col, Dropdown } from 'antd'
 import {
   Play,
   Pause,
@@ -18,6 +18,7 @@ import StrategyDetailModal from './StrategyDetailModal'
 import StrategyPerformanceModal from './StrategyPerformanceModal'
 import StrategyCreateModal from './StrategyCreateModal'
 import { strategyApi } from '@/services/api'
+import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { wsService, StrategyUpdateData } from '@/services/websocket'
 import { formatPrice, formatPercent } from '@/utils/format'
@@ -62,16 +63,22 @@ const STATUS_OPTIONS = [
   { label: '错误', value: StrategyStatus.ERROR },
 ]
 
+// 创建策略下拉菜单（与 STRATEGY_TYPES 保持一致）
+const CREATE_MENU_ITEMS = [
+  { key: 'trend', label: 'EMA 趋势跟踪' },
+]
+
 const StrategyList = () => {
   const { t } = useTranslation()
   const { message } = App.useApp()
+  const navigate = useNavigate()
   const [strategies, setStrategies] = useState<Strategy[]>([])
   const [loading, setLoading] = useState(false)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [performanceModalOpen, setPerformanceModalOpen] = useState(false)
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null)
   const [actionLoading, setActionLoading] = useState<{ [key: number]: boolean }>({})
-  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createModalOpen, setCreateModalOpen] = useState(false)  // 保留：用于编辑/复制
   
   // 筛选状态
   const [searchText, setSearchText] = useState('')
@@ -393,13 +400,17 @@ const StrategyList = () => {
               <Button onClick={() => fetchStrategies()}>
                 {t('common.refresh')}
               </Button>
-              <Button
-                type="primary"
-                icon={<Plus size={14} />}
-                onClick={() => setCreateModalOpen(true)}
+              <Dropdown
+                menu={{
+                  items: CREATE_MENU_ITEMS,
+                  onClick: ({ key }) => navigate(`/strategies/create/${key}`),
+                }}
+                placement="bottomRight"
               >
-                创建策略
-              </Button>
+                <Button type="primary" icon={<Plus size={14} />}>
+                  创建策略
+                </Button>
+              </Dropdown>
             </Space>
           </div>
         }
@@ -472,15 +483,7 @@ const StrategyList = () => {
         }}
       />
 
-      {/* 创建策略 Modal */}
-      <StrategyCreateModal
-        open={createModalOpen}
-        onCancel={() => setCreateModalOpen(false)}
-        onSuccess={() => {
-          setCreateModalOpen(false)
-          fetchStrategies(true)
-        }}
-      />
+      {/* 创建策略：已改为跳转到独立页面 /strategies/create/:type，Modal 不再使用 */}
 
       {/* 编辑/复制策略 Modal */}
       <StrategyCreateModal
