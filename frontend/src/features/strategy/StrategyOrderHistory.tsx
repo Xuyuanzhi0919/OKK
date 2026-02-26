@@ -176,7 +176,9 @@ const StrategyOrderHistory = ({ strategyId }: StrategyOrderHistoryProps) => {
   if (isLoading) {
     return (
       <div style={{ textAlign: 'center', padding: '40px' }}>
-        <Spin size="large" tip="加载订单历史..." />
+        <Spin size="large" tip="加载订单历史...">
+          <div style={{ minHeight: 60 }} />
+        </Spin>
       </div>
     )
   }

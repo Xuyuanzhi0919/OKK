@@ -1210,7 +1210,7 @@ const BacktestList = () => {
                   showTime
                   style={{ width: '100%' }}
                   placement="bottomLeft"
-                  popupClassName="backtest-range-picker-dropdown"
+                  classNames={{ popup: { root: 'backtest-range-picker-dropdown' } }}
                   disabledDate={(current) => {
                     // 禁止选择未来时间
                     return current && current > dayjs().endOf('day')
@@ -1731,7 +1731,6 @@ const BacktestList = () => {
                       </span>
                     }
                     rules={[{ required: true, message: '请输入手续费率' }]}
-                    initialValue={0.001}
                   >
                     <InputNumber min={0} max={1} step={0.0001} style={{ width: '100%' }} placeholder="0.001" />
                   </Form.Item>

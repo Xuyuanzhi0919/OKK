@@ -37,7 +37,9 @@ export default function RecentTrades({ symbol, maxTrades = 50 }: RecentTradesPro
   if (loading && trades.length === 0) {
     return (
       <div style={{ padding: '40px 0', textAlign: 'center' }}>
-        <Spin tip="Loading..." />
+        <Spin tip="Loading...">
+          <div style={{ minHeight: 60 }} />
+        </Spin>
       </div>
     )
   }

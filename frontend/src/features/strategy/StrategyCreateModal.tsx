@@ -177,43 +177,47 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
 
   const handleCancel = () => { form.resetFields(); setGridCalc(null); onCancel() }
 
+  // ── 紧凑样式 ──────────────────────────────────────────────
+  const compactDivider = { fontSize: 12, color: '#8c8c8c', margin: '12px 0 8px' }
+  const compactItem = { marginBottom: 8 }
+
   // ── 参数区块 ──────────────────────────────────────────────
   const GridParams = () => (
     <>
-      <Divider orientation="left" style={{ fontSize: 13, color: '#8c8c8c' }}>网格参数</Divider>
-      <Row gutter={16}>
+      <Divider orientation="left" style={compactDivider}>网格参数</Divider>
+      <Row gutter={12}>
         <Col span={12}>
-          <Form.Item name="grid_lower" label="价格下限" rules={[{ required: true, message: '请输入' }]}>
+          <Form.Item name="grid_lower" label="价格下限" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
             <InputNumber style={{ width: '100%' }} placeholder="下限价格" min={0} precision={4} onChange={calcGrid} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="grid_upper" label="价格上限" rules={[{ required: true, message: '请输入' }]}>
+          <Form.Item name="grid_upper" label="价格上限" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
             <InputNumber style={{ width: '100%' }} placeholder="上限价格" min={0} precision={4} onChange={calcGrid} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="grid_num" label="网格数量" rules={[{ required: true, message: '请输入' }]}>
+          <Form.Item name="grid_num" label="网格数量" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
             <InputNumber style={{ width: '100%' }} placeholder="2 ~ 100" min={2} max={100} onChange={calcGrid} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="amount_per_grid" label="每格投入 (USDT)" rules={[{ required: true, message: '请输入' }]}>
+          <Form.Item name="amount_per_grid" label="每格投入 (USDT)" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
             <InputNumber style={{ width: '100%' }} placeholder="金额" min={1} precision={2} onChange={calcGrid} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="total_amount" label="总投入 (USDT)">
+          <Form.Item name="total_amount" label="总投入 (USDT)" style={compactItem}>
             <InputNumber style={{ width: '100%' }} placeholder="可选" min={10} precision={2} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="fee_rate" label="手续费率" initialValue={0.001}>
+          <Form.Item name="fee_rate" label="手续费率" initialValue={0.001} style={compactItem}>
             <InputNumber style={{ width: '100%' }} min={0} max={0.01} step={0.0001} precision={4} />
           </Form.Item>
         </Col>
       </Row>
-      <Space style={{ marginBottom: 12 }}>
+      <Space style={{ marginBottom: 8 }}>
         <Button size="small" icon={<ThunderboltOutlined />} onClick={fetchRecommended}>
           智能推荐参数
         </Button>
@@ -239,25 +243,25 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
 
   const GridMMParams = () => (
     <>
-      <Divider orientation="left" style={{ fontSize: 13, color: '#8c8c8c' }}>网格做市参数</Divider>
-      <Row gutter={16}>
+      <Divider orientation="left" style={compactDivider}>网格做市参数</Divider>
+      <Row gutter={12}>
         <Col span={12}>
-          <Form.Item name="grid_spread" label="网格间距 (%)" rules={[{ required: true, message: '请输入' }]}>
+          <Form.Item name="grid_spread" label="网格间距 (%)" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
             <InputNumber style={{ width: '100%' }} placeholder="0.1 ~ 10" min={0.1} max={10} step={0.1} precision={2} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="grid_levels" label="每侧层数" rules={[{ required: true, message: '请输入' }]}>
+          <Form.Item name="grid_levels" label="每侧层数" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
             <InputNumber style={{ width: '100%' }} placeholder="1 ~ 20" min={1} max={20} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="amount_per_grid" label="每格投入 (USDT)" rules={[{ required: true, message: '请输入' }]}>
+          <Form.Item name="amount_per_grid" label="每格投入 (USDT)" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
             <InputNumber style={{ width: '100%' }} min={1} precision={2} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="total_amount" label="总投入 (USDT)">
+          <Form.Item name="total_amount" label="总投入 (USDT)" style={compactItem}>
             <InputNumber style={{ width: '100%' }} placeholder="可选" min={10} precision={2} />
           </Form.Item>
         </Col>
@@ -267,20 +271,20 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
 
   const MAParams = () => (
     <>
-      <Divider orientation="left" style={{ fontSize: 13, color: '#8c8c8c' }}>均线参数</Divider>
-      <Row gutter={16}>
+      <Divider orientation="left" style={compactDivider}>均线参数</Divider>
+      <Row gutter={12}>
         <Col span={12}>
-          <Form.Item name="fast_period" label="快速均线周期" initialValue={5}>
+          <Form.Item name="fast_period" label="快速均线周期" initialValue={5} style={compactItem}>
             <InputNumber style={{ width: '100%' }} min={1} max={100} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="slow_period" label="慢速均线周期" initialValue={20}>
+          <Form.Item name="slow_period" label="慢速均线周期" initialValue={20} style={compactItem}>
             <InputNumber style={{ width: '100%' }} min={1} max={200} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="ma_type" label="均线类型" initialValue="EMA">
+          <Form.Item name="ma_type" label="均线类型" initialValue="EMA" style={compactItem}>
             <Select>
               <Select.Option value="EMA">EMA（指数移动平均）</Select.Option>
               <Select.Option value="SMA">SMA（简单移动平均）</Select.Option>
@@ -288,7 +292,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="amount_per_trade" label="每次交易数量" initialValue={0.01}>
+          <Form.Item name="amount_per_trade" label="每次交易数量" initialValue={0.01} style={compactItem}>
             <InputNumber style={{ width: '100%' }} placeholder="单位：币" min={0.001} precision={4} />
           </Form.Item>
         </Col>
@@ -299,30 +303,30 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
   const DualMAParams = () => (
     <>
       <MAParams />
-      <Divider orientation="left" style={{ fontSize: 13, color: '#8c8c8c' }}>多空参数</Divider>
-      <Row gutter={16}>
+      <Divider orientation="left" style={compactDivider}>多空参数</Divider>
+      <Row gutter={12}>
         <Col span={12}>
-          <Form.Item name="position_ratio" label="仓位比例" initialValue={0.5}>
+          <Form.Item name="position_ratio" label="仓位比例" initialValue={0.5} style={compactItem}>
             <InputNumber style={{ width: '100%' }} min={0.1} max={1} step={0.1} precision={1} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="leverage" label="杠杆倍数" initialValue={1}>
+          <Form.Item name="leverage" label="杠杆倍数" initialValue={1} style={compactItem}>
             <InputNumber style={{ width: '100%' }} min={1} max={20} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="stop_loss" label="止损 (%)">
+          <Form.Item name="stop_loss" label="止损 (%)" style={compactItem}>
             <InputNumber style={{ width: '100%' }} placeholder="可选" min={0} max={50} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="take_profit" label="止盈 (%)">
+          <Form.Item name="take_profit" label="止盈 (%)" style={compactItem}>
             <InputNumber style={{ width: '100%' }} placeholder="可选" min={0} max={200} />
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name="enable_short" label="启用做空" initialValue={false}>
+          <Form.Item name="enable_short" label="启用做空" initialValue={false} style={compactItem}>
             <Select>
               <Select.Option value={false}>否</Select.Option>
               <Select.Option value={true}>是</Select.Option>
@@ -356,14 +360,14 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       cancelText="取消"
       width={680}
       confirmLoading={loading}
-      destroyOnClose
-      styles={{ body: { maxHeight: '72vh', overflowY: 'auto', paddingRight: 4 } }}
+      destroyOnHidden
+      styles={{ body: { maxHeight: '65vh', overflowY: 'auto', paddingRight: 4 } }}
     >
       {backtestData && (
         <Alert
           message="已自动填充回测参数，可按需调整"
           type="info" showIcon
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 12 }}
         />
       )}
 
@@ -378,15 +382,15 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         }}
       >
         {/* ── 基础信息 ── */}
-        <Divider orientation="left" style={{ fontSize: 13, color: '#8c8c8c' }}>基础信息</Divider>
-        <Row gutter={16}>
+        <Divider orientation="left" style={compactDivider}>基础信息</Divider>
+        <Row gutter={12}>
           <Col span={24}>
-            <Form.Item name="name" label="策略名称" rules={[{ required: true, message: '请输入策略名称' }]}>
+            <Form.Item name="name" label="策略名称" rules={[{ required: true, message: '请输入策略名称' }]} style={compactItem}>
               <Input placeholder="为策略起一个名字，如：BTC网格01" />
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item name="type" label="策略类型" rules={[{ required: true }]}>
+            <Form.Item name="type" label="策略类型" rules={[{ required: true }]} style={compactItem}>
               <Select
                 onChange={(v) => { setStrategyType(v); setGridCalc(null) }}
                 placeholder="选择策略类型"
@@ -404,7 +408,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item name="timeframe" label="K线周期">
+            <Form.Item name="timeframe" label="K线周期" style={compactItem}>
               <Select placeholder="选择周期">
                 {TIMEFRAMES.map(tf => (
                   <Select.Option key={tf.value} value={tf.value}>{tf.label}</Select.Option>
@@ -424,6 +428,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                 </Space>
               }
               rules={[{ required: true, message: '请选择交易对' }]}
+              style={compactItem}
             >
               <Select
                 showSearch
@@ -452,9 +457,9 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         {currentType && (
           <div style={{
             background: '#1a1a2e', border: '1px solid #2a2a4a',
-            borderRadius: 6, padding: '8px 12px', marginBottom: 16, fontSize: 13,
+            borderRadius: 6, padding: '6px 10px', marginBottom: 12, fontSize: 12,
           }}>
-            <Tag color="blue" style={{ marginRight: 8 }}>{currentType.label}</Tag>
+            <Tag color="blue" style={{ marginRight: 6 }}>{currentType.label}</Tag>
             <span style={{ color: '#8c8c8c' }}>{currentType.desc}</span>
           </div>
         )}
@@ -463,9 +468,9 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         {renderParams()}
 
         {/* ── 备注 ── */}
-        <Divider orientation="left" style={{ fontSize: 13, color: '#8c8c8c' }}>备注</Divider>
-        <Form.Item name="description">
-          <TextArea placeholder="可选：描述策略目标、注意事项等" rows={2} />
+        <Divider orientation="left" style={compactDivider}>备注</Divider>
+        <Form.Item name="description" style={compactItem}>
+          <TextArea placeholder="可选：描述策略目标、注意事项等" rows={1} />
         </Form.Item>
       </Form>
     </Modal>

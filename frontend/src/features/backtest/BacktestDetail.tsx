@@ -134,7 +134,9 @@ const BacktestDetail = () => {
   if (isLoading) {
     return (
       <div style={{ padding: '24px', textAlign: 'center' }}>
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" tip="加载中...">
+          <div style={{ minHeight: 60 }} />
+        </Spin>
       </div>
     )
   }
