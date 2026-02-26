@@ -1,4 +1,4 @@
-import { Card, Table, Button, Tag, Space, App, Modal } from 'antd'
+import { Card, Table, Button, Tag, Space, App, Modal, Input, Select, Row, Col } from 'antd'
 import {
   Play,
   Pause,
@@ -7,10 +7,13 @@ import {
   AlertCircle,
   BarChart3,
   Plus,
+  Search,
+  Copy,
+  Edit3,
 } from 'lucide-react'
 import type { ColumnsType } from 'antd/es/table'
 import { StrategyStatus, Strategy } from '@/types'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import StrategyDetailModal from './StrategyDetailModal'
 import StrategyPerformanceModal from './StrategyPerformanceModal'
 import StrategyCreateModal from './StrategyCreateModal'
@@ -18,6 +21,8 @@ import { strategyApi } from '@/services/api'
 import { useTranslation } from 'react-i18next'
 import { wsService, StrategyUpdateData } from '@/services/websocket'
 import { formatPrice, formatPercent } from '@/utils/format'
+
+const { Search: AntSearch } = Input
 
 // 常用 OKX 合约交易对（USDT 本位永续）
 const SYMBOL_OPTIONS = [
@@ -32,6 +37,26 @@ const SYMBOL_OPTIONS = [
   'PEPE-USDT-SWAP', 'SHIB-USDT-SWAP', 'FLOKI-USDT-SWAP', 'BONK-USDT-SWAP',
 ].map(s => ({ label: s, value: s }))
 
+// 策略类型选项
+const STRATEGY_TYPE_OPTIONS = [
+  { label: '网格策略', value: 'grid' },
+  { label: '波段做多', value: 'swing_long' },
+  { label: '波段做空', value: 'swing_short' },
+  { label: 'AI波段做多', value: 'ai_swing_long' },
+  { label: '马丁格尔', value: 'martin' },
+  { label: '趋势跟踪', value: 'trend' },
+  { label: '套利', value: 'arbitrage' },
+  { label: '自定义', value: 'custom' },
+]
+
+// 状态选项
+const STATUS_OPTIONS = [
+  { label: '运行中', value: StrategyStatus.RUNNING },
+  { label: '已停止', value: StrategyStatus.STOPPED },
+  { label: '已暂停', value: StrategyStatus.PAUSED },
+  { label: '错误', value: StrategyStatus.ERROR },
+]
+
 const StrategyList = () => {
   const { t } = useTranslation()
   const { message } = App.useApp()
@@ -42,6 +67,36 @@ const StrategyList = () => {
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null)
   const [actionLoading, setActionLoading] = useState<{ [key: number]: boolean }>({})
   const [createModalOpen, setCreateModalOpen] = useState(false)
+  
+  // 筛选状态
+  const [searchText, setSearchText] = useState('')
+  const [filterStatus, setFilterStatus] = useState<string | null>(null)
+  const [filterType, setFilterType] = useState<string | null>(null)
+  
+  // 编辑/复制策略状态
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null)
+  const [isCopyMode, setIsCopyMode] = useState(false)
+
+  // 过滤后的策略列表
+  const filteredStrategies = useMemo(() => {
+    return strategies.filter(s => {
+      // 搜索过滤
+      if (searchText && !s.name.toLowerCase().includes(searchText.toLowerCase()) &&
+          !s.symbol.toLowerCase().includes(searchText.toLowerCase())) {
+        return false
+      }
+      // 状态过滤
+      if (filterStatus && s.status !== filterStatus) {
+        return false
+      }
+      // 类型过滤
+      if (filterType && s.type !== filterType) {
+        return false
+      }
+      return true
+    })
+  }, [strategies, searchText, filterStatus, filterType])
 
   const fetchStrategies = async (silent = false) => {
     try {
@@ -132,6 +187,28 @@ const StrategyList = () => {
   // 查看详情
   const handleViewDetail = (strategy: Strategy) => {
     setSelectedStrategy(strategy)
+    setDetailModalOpen(true)
+  }
+
+  // 编辑策略
+  const handleEditStrategy = (strategy: Strategy) => {
+    setEditingStrategy(strategy)
+    setIsCopyMode(false)
+    setEditModalOpen(true)
+  }
+
+  // 复制策略
+  const handleCopyStrategy = (strategy: Strategy) => {
+    setEditingStrategy(strategy)
+    setIsCopyMode(true)
+    setEditModalOpen(true)
+  }
+
+  // 清空筛选
+  const handleClearFilters = () => {
+    setSearchText('')
+    setFilterStatus(null)
+    setFilterType(null)
     setDetailModalOpen(true)
   }
 
@@ -226,7 +303,7 @@ const StrategyList = () => {
     {
       title: t('common.actions'),
       key: 'actions',
-      width: 200,
+      width: 280,
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
@@ -269,15 +346,33 @@ const StrategyList = () => {
             {t('strategy.performance')}
           </Button>
           {record.status !== StrategyStatus.RUNNING && (
-            <Button
-              type="text"
-              size="small"
-              icon={<Trash2 size={14} />}
-              onClick={() => handleDeleteStrategy(record.id, record.name)}
-              danger
-            >
-              {t('common.delete')}
-            </Button>
+            <>
+              <Button
+                type="text"
+                size="small"
+                icon={<Edit3 size={14} />}
+                onClick={() => handleEditStrategy(record)}
+              >
+                编辑
+              </Button>
+              <Button
+                type="text"
+                size="small"
+                icon={<Copy size={14} />}
+                onClick={() => handleCopyStrategy(record)}
+              >
+                复制
+              </Button>
+              <Button
+                type="text"
+                size="small"
+                icon={<Trash2 size={14} />}
+                onClick={() => handleDeleteStrategy(record.id, record.name)}
+                danger
+              >
+                {t('common.delete')}
+              </Button>
+            </>
           )}
         </Space>
       ),
@@ -305,13 +400,51 @@ const StrategyList = () => {
           </div>
         }
       >
+        {/* 筛选栏 */}
+        <Row gutter={16} style={{ marginBottom: 16 }}>
+          <Col span={8}>
+            <AntSearch
+              placeholder="搜索策略名称/交易对"
+              allowClear
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              onSearch={(v) => setSearchText(v)}
+            />
+          </Col>
+          <Col span={6}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="筛选状态"
+              allowClear
+              value={filterStatus}
+              onChange={(v) => setFilterStatus(v)}
+              options={STATUS_OPTIONS}
+            />
+          </Col>
+          <Col span={6}>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="筛选类型"
+              allowClear
+              value={filterType}
+              onChange={(v) => setFilterType(v)}
+              options={STRATEGY_TYPE_OPTIONS}
+            />
+          </Col>
+          <Col span={4}>
+            <Button onClick={handleClearFilters} disabled={!searchText && !filterStatus && !filterType}>
+              清空筛选
+            </Button>
+          </Col>
+        </Row>
+
         <Table
           columns={columns}
-          dataSource={strategies}
+          dataSource={filteredStrategies}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 1000 }}
+          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+          scroll={{ x: 1200 }}
           locale={{ emptyText: '暂无策略' }}
         />
       </Card>
@@ -342,6 +475,28 @@ const StrategyList = () => {
           setCreateModalOpen(false)
           fetchStrategies(true)
         }}
+      />
+
+      {/* 编辑/复制策略 Modal */}
+      <StrategyCreateModal
+        open={editModalOpen}
+        onCancel={() => {
+          setEditModalOpen(false)
+          setEditingStrategy(null)
+          setIsCopyMode(false)
+        }}
+        onSuccess={() => {
+          setEditModalOpen(false)
+          setEditingStrategy(null)
+          setIsCopyMode(false)
+          fetchStrategies(true)
+        }}
+        backtestData={editingStrategy ? {
+          strategy_type: editingStrategy.type,
+          symbol: editingStrategy.symbol,
+          parameters: editingStrategy.parameters || {},
+          name: isCopyMode ? `${editingStrategy.name} (副本)` : editingStrategy.name,
+        } : null}
       />
     </div>
   )

@@ -1264,479 +1264,341 @@ const BacktestList = () => {
 
             {/* 第二步: 策略参数 */}
             <div style={{ display: currentStep === 1 ? 'block' : 'none' }}>
+              {/* ── 网格策略 ── */}
               {strategyType === 'grid' && (
                 <>
-                  {/* 价格参考和智能推荐 */}
                   {priceReference ? (
                     <Alert
                       message="价格参考"
                       description={
-                        <Space direction="vertical" style={{ width: '100%' }}>
-                          <div>
-                            <strong>历史价格范围:</strong> {priceReference.suggestedLower.toLocaleString()} - {priceReference.suggestedUpper.toLocaleString()} USDT
-                            <br />
-                            <span style={{ fontSize: 12, color: '#8c8c8c' }}>
-                              (基于选定时间范围内的历史数据分析)
-                            </span>
-                          </div>
-                          <Button size="small" type="primary" onClick={applySmartGridRange}>
-                            一键应用推荐范围
-                          </Button>
+                        <Space>
+                          <span><strong>{priceReference.suggestedLower.toLocaleString()} - {priceReference.suggestedUpper.toLocaleString()} USDT</strong>（基于历史数据）</span>
+                          <Button size="small" type="primary" onClick={applySmartGridRange}>一键应用</Button>
                         </Space>
                       }
-                      type="success"
-                      showIcon
-                      closable
-                      onClose={() => setPriceReference(null)}
-                      style={{ marginBottom: 16 }}
+                      type="success" showIcon closable onClose={() => setPriceReference(null)}
+                      style={{ marginBottom: 12 }}
                     />
                   ) : (
                     <Alert
-                      message="智能网格范围"
-                      description={
+                      message={
                         <Space>
-                          <span>根据历史数据智能推荐网格范围</span>
-                          <Button size="small" type="primary" onClick={fetchPriceReference}>
-                            获取价格参考
-                          </Button>
+                          <span>智能网格范围</span>
+                          <Button size="small" type="primary" onClick={fetchPriceReference}>获取价格参考</Button>
+                          <Button size="small" onClick={() => applyGridTemplate('conservative')}>保守型(5格)</Button>
+                          <Button size="small" onClick={() => applyGridTemplate('balanced')}>平衡型(10格)</Button>
+                          <Button size="small" onClick={() => applyGridTemplate('aggressive')}>激进型(20格)</Button>
                         </Space>
                       }
-                      type="info"
-                      showIcon
-                      style={{ marginBottom: 16 }}
+                      type="info" showIcon style={{ marginBottom: 12 }}
                     />
                   )}
 
-                  {/* 参数模板快捷选择 */}
-                  <Alert
-                    message="参数模板"
-                    description={
-                      <Space>
-                        <span style={{ marginRight: 8 }}>快速应用:</span>
-                        <Button size="small" onClick={() => applyGridTemplate('conservative')}>
-                          保守型(5格)
-                        </Button>
-                        <Button size="small" onClick={() => applyGridTemplate('balanced')}>
-                          平衡型(10格)
-                        </Button>
-                        <Button size="small" onClick={() => applyGridTemplate('aggressive')}>
-                          激进型(20格)
-                        </Button>
-                      </Space>
-                    }
-                    type="info"
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                  />
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="grid_lower"
+                        label={<span>网格下限 <Tooltip title="网格交易的最低价格,建议设置为历史低点附近"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[
+                          { required: true, message: '请输入网格下限' },
+                          ({ getFieldValue }) => ({
+                            validator(_, value) {
+                              if (!value || !getFieldValue('grid_upper')) return Promise.resolve()
+                              if (value >= getFieldValue('grid_upper')) return Promise.reject(new Error('下限必须小于上限'))
+                              return Promise.resolve()
+                            },
+                          }),
+                        ]}
+                      >
+                        <InputNumber min={0} style={{ width: '100%' }} onChange={calculateGridParams} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="grid_upper"
+                        label={<span>网格上限 <Tooltip title="网格交易的最高价格,建议设置为历史高点附近"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[
+                          { required: true, message: '请输入网格上限' },
+                          ({ getFieldValue }) => ({
+                            validator(_, value) {
+                              if (!value || !getFieldValue('grid_lower')) return Promise.resolve()
+                              if (value <= getFieldValue('grid_lower')) return Promise.reject(new Error('上限必须大于下限'))
+                              return Promise.resolve()
+                            },
+                          }),
+                        ]}
+                      >
+                        <InputNumber min={0} style={{ width: '100%' }} onChange={calculateGridParams} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
 
-                  <Form.Item
-                    name="grid_lower"
-                    label={
-                      <span>
-                        网格下限{' '}
-                        <Tooltip title="网格交易的最低价格,建议设置为历史低点附近">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[
-                      { required: true, message: '请输入网格下限' },
-                      ({ getFieldValue }) => ({
-                        validator(_, value) {
-                          if (!value || !getFieldValue('grid_upper')) {
-                            return Promise.resolve()
-                          }
-                          if (value >= getFieldValue('grid_upper')) {
-                            return Promise.reject(new Error('网格下限必须小于网格上限'))
-                          }
-                          return Promise.resolve()
-                        },
-                      }),
-                    ]}
-                  >
-                    <InputNumber min={0} style={{ width: '100%' }} onChange={calculateGridParams} />
-                  </Form.Item>
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="grid_num"
+                        label={<span>网格数量 <Tooltip title="将价格区间划分为多少个网格"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[{ required: true, message: '请输入网格数量' }]}
+                      >
+                        <InputNumber min={2} max={100} style={{ width: '100%' }} onChange={calculateGridParams} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="amount_per_grid"
+                        label={<span>每格数量 <Tooltip title="每个网格买入/卖出的数量（基础币种）"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[{ required: true, message: '请输入每格数量' }]}
+                      >
+                        <InputNumber min={0} step={0.001} style={{ width: '100%' }} onChange={calculateGridParams} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
 
-                  <Form.Item
-                    name="grid_upper"
-                    label={
-                      <span>
-                        网格上限{' '}
-                        <Tooltip title="网格交易的最高价格,建议设置为历史高点附近">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[
-                      { required: true, message: '请输入网格上限' },
-                      ({ getFieldValue }) => ({
-                        validator(_, value) {
-                          if (!value || !getFieldValue('grid_lower')) {
-                            return Promise.resolve()
-                          }
-                          if (value <= getFieldValue('grid_lower')) {
-                            return Promise.reject(new Error('网格上限必须大于网格下限'))
-                          }
-                          return Promise.resolve()
-                        },
-                      }),
-                    ]}
-                  >
-                    <InputNumber min={0} style={{ width: '100%' }} onChange={calculateGridParams} />
-                  </Form.Item>
-
-                  <Form.Item
-                    name="grid_num"
-                    label={
-                      <span>
-                        网格数量{' '}
-                        <Tooltip title="将价格区间划分为多少个网格,网格越多,买卖越频繁">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[{ required: true, message: '请输入网格数量' }]}
-                  >
-                    <InputNumber min={2} max={100} style={{ width: '100%' }} onChange={calculateGridParams} />
-                  </Form.Item>
-
-                  <Form.Item
-                    name="amount_per_grid"
-                    label={
-                      <span>
-                        每格数量{' '}
-                        <Tooltip title="每个网格买入/卖出的数量,单位为交易对的基础币种(如BTC)">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[{ required: true, message: '请输入每格数量' }]}
-                  >
-                    <InputNumber min={0} step={0.001} style={{ width: '100%' }} onChange={calculateGridParams} />
-                  </Form.Item>
-
-                  {/* 网格计算结果显示 */}
                   {gridCalculations && (
                     <Alert
                       message={
                         <Row gutter={16}>
                           <Col span={12}>
-                            <Statistic
-                              title="网格间距"
-                              value={formatAmount(gridCalculations.gridSpacing)}
-                              suffix="USDT"
-                              valueStyle={{ fontSize: 16 }}
-                            />
+                            <Statistic title="网格间距" value={formatAmount(gridCalculations.gridSpacing)} suffix="USDT" valueStyle={{ fontSize: 16 }} />
                           </Col>
                           <Col span={12}>
-                            <Statistic
-                              title="估算资金需求"
-                              value={formatAmount(gridCalculations.estimatedFunds)}
-                              suffix="USDT"
-                              valueStyle={{ fontSize: 16, color: gridCalculations.warningMessage ? '#ff4d4f' : '#52c41a' }}
-                            />
+                            <Statistic title="估算资金需求" value={formatAmount(gridCalculations.estimatedFunds)} suffix="USDT" valueStyle={{ fontSize: 16, color: gridCalculations.warningMessage ? '#ff4d4f' : '#52c41a' }} />
                           </Col>
                         </Row>
                       }
                       description={gridCalculations.warningMessage}
                       type={gridCalculations.warningMessage.includes('不足') ? 'error' : gridCalculations.warningMessage ? 'warning' : 'info'}
-                      showIcon
-                      icon={<Calculator size={14} />}
-                      style={{ marginBottom: 16 }}
+                      showIcon icon={<Calculator size={14} />} style={{ marginBottom: 12 }}
                     />
                   )}
 
-                  <Form.Item
-                    name="fee_rate"
-                    label={
-                      <span>
-                        手续费率{' '}
-                        <Tooltip title="OKX现货交易手续费率,普通用户为0.1%(0.001),VIP用户更低">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[{ required: true, message: '请输入手续费率' }]}
-                    help="OKX现货手续费: Maker 0.08%, Taker 0.1%"
-                  >
-                    <InputNumber min={0} max={1} step={0.0001} style={{ width: '100%' }} placeholder="0.001" />
-                  </Form.Item>
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="fee_rate"
+                        label={<span>手续费率 <Tooltip title="OKX现货手续费: Maker 0.08%, Taker 0.1%"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[{ required: true, message: '请输入手续费率' }]}
+                      >
+                        <InputNumber min={0} max={1} step={0.0001} style={{ width: '100%' }} placeholder="0.001" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
 
                   <Form.Item name="description" label="描述">
-                    <TextArea rows={3} placeholder="回测描述(可选)" />
+                    <TextArea rows={2} placeholder="回测描述(可选)" />
                   </Form.Item>
                 </>
               )}
 
-              {/* 网格做市策略参数 */}
+              {/* ── 网格做市策略 ── */}
               {strategyType === 'grid_mm' && (
                 <>
                   <Alert
-                    message="网格做市策略说明"
+                    message="网格做市策略"
                     description="在当前价格上下挂买卖单，通过价差持续做市获利。适合震荡行情，不适合单边行情。"
-                    type="info"
-                    showIcon
-                    style={{ marginBottom: 16 }}
+                    type="info" showIcon style={{ marginBottom: 12 }}
                   />
 
-                  <Form.Item
-                    name="grid_spread"
-                    label={
-                      <span>
-                        网格间距{' '}
-                        <Tooltip title="每个网格之间的价差百分比,例如0.01表示1%。建议0.5%-2%之间">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[{ required: true, message: '请输入网格间距' }]}
-                  >
-                    <InputNumber
-                      min={0.001}
-                      max={0.1}
-                      step={0.001}
-                      style={{ width: '100%' }}
-                      placeholder="0.01 (1%)"
-                      addonAfter={
-                        <span>{form.getFieldValue('grid_spread') ? `${formatPercent(form.getFieldValue('grid_spread') * 100)}%` : '0%'}</span>
-                      }
-                    />
-                  </Form.Item>
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="grid_spread"
+                        label={<span>网格间距 <Tooltip title="每个网格之间的价差百分比，建议0.5%-2%"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[{ required: true, message: '请输入网格间距' }]}
+                      >
+                        <InputNumber
+                          min={0.001} max={0.1} step={0.001} style={{ width: '100%' }} placeholder="0.01 (1%)"
+                          addonAfter={<span>{form.getFieldValue('grid_spread') ? `${formatPercent(form.getFieldValue('grid_spread') * 100)}%` : '0%'}</span>}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="grid_levels"
+                        label={<span>网格层数 <Tooltip title="价格上下各挂多少层，总挂单数 = 层数×2，建议3-10层"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[{ required: true, message: '请输入网格层数' }]}
+                      >
+                        <InputNumber min={1} max={20} style={{ width: '100%' }} placeholder="5" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
 
-                  <Form.Item
-                    name="grid_levels"
-                    label={
-                      <span>
-                        网格层数{' '}
-                        <Tooltip title="价格上下各挂多少层网格。总共挂单数 = 层数 * 2。建议3-10层">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[{ required: true, message: '请输入网格层数' }]}
-                  >
-                    <InputNumber min={1} max={20} style={{ width: '100%' }} placeholder="5" />
-                  </Form.Item>
-
-                  <Form.Item
-                    name="amount_per_grid"
-                    label={
-                      <span>
-                        每格数量{' '}
-                        <Tooltip title="每个网格买入/卖出的数量,单位为交易对的基础币种(如BTC)">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[{ required: true, message: '请输入每格数量' }]}
-                  >
-                    <InputNumber min={0} step={0.001} style={{ width: '100%' }} placeholder="0.001" />
-                  </Form.Item>
-
-                  <Form.Item
-                    name="fee_rate"
-                    label={
-                      <span>
-                        手续费率{' '}
-                        <Tooltip title="OKX现货交易手续费率,普通用户为0.1%(0.001),VIP用户更低">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[{ required: true, message: '请输入手续费率' }]}
-                    help="OKX现货手续费: Maker 0.08%, Taker 0.1%"
-                  >
-                    <InputNumber min={0} max={1} step={0.0001} style={{ width: '100%' }} placeholder="0.001" />
-                  </Form.Item>
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="amount_per_grid"
+                        label={<span>每格数量 <Tooltip title="每个网格买入/卖出的数量（基础币种）"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[{ required: true, message: '请输入每格数量' }]}
+                      >
+                        <InputNumber min={0} step={0.001} style={{ width: '100%' }} placeholder="0.001" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="fee_rate"
+                        label={<span>手续费率 <Tooltip title="OKX现货手续费: Maker 0.08%, Taker 0.1%"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[{ required: true, message: '请输入手续费率' }]}
+                      >
+                        <InputNumber min={0} max={1} step={0.0001} style={{ width: '100%' }} placeholder="0.001" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
 
                   <Form.Item name="description" label="描述">
-                    <TextArea rows={3} placeholder="回测描述(可选)" />
+                    <TextArea rows={2} placeholder="回测描述(可选)" />
                   </Form.Item>
                 </>
               )}
 
-              {/* 均线交叉策略参数 */}
+              {/* ── 均线交叉 / 双均线策略 ── */}
               {(strategyType === 'ma_cross' || strategyType === 'dual_ma_cross') && (
                 <>
                   <Alert
-                    message={strategyType === 'ma_cross' ? "均线交叉策略说明" : "双均线策略说明"}
+                    message={strategyType === 'ma_cross' ? '均线交叉策略' : '双均线策略'}
                     description={
                       strategyType === 'ma_cross'
-                        ? "快均线上穿慢均线时买入（金叉），快均线下穿慢均线时卖出（死叉）。适合趋势行情。"
-                        : "双均线多空策略：金叉开多，死叉开空。支持杠杆和止损止盈。适合双向波动的市场。"
+                        ? '金叉买入，死叉卖出。适合趋势行情。'
+                        : '金叉开多，死叉开空。支持杠杆和止损止盈，适合双向波动市场。'
                     }
-                    type="info"
-                    showIcon
-                    style={{ marginBottom: 16 }}
+                    type="info" showIcon style={{ marginBottom: 12 }}
                   />
 
-                  <Form.Item
-                    name="fast_period"
-                    label={
-                      <span>
-                        快线周期{' '}
-                        <Tooltip title="快速均线的计算周期，建议5-10">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[{ required: true, message: '请输入快线周期' }]}
-                    initialValue={5}
-                  >
-                    <InputNumber min={1} max={50} style={{ width: '100%' }} placeholder="5" />
-                  </Form.Item>
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="fast_period"
+                        label={<span>快线周期 <Tooltip title="快速均线计算周期，建议5-10"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[{ required: true, message: '请输入快线周期' }]}
+                        initialValue={5}
+                      >
+                        <InputNumber min={1} max={50} style={{ width: '100%' }} placeholder="5" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="slow_period"
+                        label={<span>慢线周期 <Tooltip title="慢速均线计算周期，建议20-60"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[{ required: true, message: '请输入慢线周期' }]}
+                        initialValue={20}
+                      >
+                        <InputNumber min={1} max={200} style={{ width: '100%' }} placeholder="20" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
 
-                  <Form.Item
-                    name="slow_period"
-                    label={
-                      <span>
-                        慢线周期{' '}
-                        <Tooltip title="慢速均线的计算周期，建议20-60">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[{ required: true, message: '请输入慢线周期' }]}
-                    initialValue={20}
-                  >
-                    <InputNumber min={1} max={200} style={{ width: '100%' }} placeholder="20" />
-                  </Form.Item>
-
-                  <Form.Item
-                    name="ma_type"
-                    label={
-                      <span>
-                        均线类型{' '}
-                        <Tooltip title="SMA为简单移动平均，EMA为指数移动平均（对近期价格更敏感）">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    initialValue="EMA"
-                  >
-                    <Select>
-                      <Select.Option value="EMA">EMA（指数移动平均）</Select.Option>
-                      <Select.Option value="SMA">SMA（简单移动平均）</Select.Option>
-                    </Select>
-                  </Form.Item>
-
-                  <Form.Item
-                    name="amount_per_trade"
-                    label={
-                      <span>
-                        每次交易数量{' '}
-                        <Tooltip title="每次开仓的交易数量，单位为基础币种">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[{ required: strategyType === 'ma_cross', message: '请输入每次交易数量' }]}
-                    initialValue={0.01}
-                  >
-                    <InputNumber min={0.001} step={0.001} style={{ width: '100%' }} placeholder="0.01" />
-                  </Form.Item>
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="ma_type"
+                        label={<span>均线类型 <Tooltip title="SMA为简单移动平均，EMA对近期价格更敏感"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        initialValue="EMA"
+                      >
+                        <Select>
+                          <Select.Option value="EMA">EMA（指数移动平均）</Select.Option>
+                          <Select.Option value="SMA">SMA（简单移动平均）</Select.Option>
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="amount_per_trade"
+                        label={<span>每次交易量 <Tooltip title="每次开仓的交易数量（基础币种）"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        rules={[{ required: strategyType === 'ma_cross', message: '请输入每次交易数量' }]}
+                        initialValue={0.01}
+                      >
+                        <InputNumber min={0.001} step={0.001} style={{ width: '100%' }} placeholder="0.01" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
 
                   {/* 双均线策略特有参数 */}
                   {strategyType === 'dual_ma_cross' && (
                     <>
-                      <Form.Item
-                        name="position_ratio"
-                        label={
-                          <span>
-                            仓位比例{' '}
-                            <Tooltip title="每次开仓使用资金的比例，0.9表示使用90%的可用资金">
-                              <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                            </Tooltip>
-                          </span>
-                        }
-                        initialValue={0.9}
-                      >
-                        <InputNumber min={0.1} max={1} step={0.1} style={{ width: '100%' }} placeholder="0.9" />
-                      </Form.Item>
+                      <Row gutter={12}>
+                        <Col span={12}>
+                          <Form.Item
+                            name="position_ratio"
+                            label={<span>仓位比例 <Tooltip title="每次开仓使用资金的比例，0.9=90%"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                            initialValue={0.9}
+                          >
+                            <InputNumber min={0.1} max={1} step={0.1} style={{ width: '100%' }} placeholder="0.9" />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            name="leverage"
+                            label={<span>杠杆倍数 <Tooltip title="1表示不使用杠杆"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                            initialValue={1}
+                          >
+                            <InputNumber min={1} max={125} style={{ width: '100%' }} placeholder="1" />
+                          </Form.Item>
+                        </Col>
+                      </Row>
 
-                      <Form.Item
-                        name="leverage"
-                        label={
-                          <span>
-                            杠杆倍数{' '}
-                            <Tooltip title="交易杠杆倍数，1表示不使用杠杆">
-                              <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                            </Tooltip>
-                          </span>
-                        }
-                        initialValue={1}
-                      >
-                        <InputNumber min={1} max={125} style={{ width: '100%' }} placeholder="1" />
-                      </Form.Item>
+                      <Row gutter={12}>
+                        <Col span={12}>
+                          <Form.Item
+                            name="stop_loss"
+                            label={<span>止损比例 <Tooltip title="亏损达到该比例时止损，0表示不启用"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                            initialValue={0}
+                          >
+                            <InputNumber min={0} max={0.5} step={0.01} style={{ width: '100%' }} placeholder="0.05 (5%)" />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            name="take_profit"
+                            label={<span>止盈比例 <Tooltip title="盈利达到该比例时止盈，0表示不启用"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                            initialValue={0}
+                          >
+                            <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} placeholder="0.1 (10%)" />
+                          </Form.Item>
+                        </Col>
+                      </Row>
 
-                      <Form.Item
-                        name="enable_short"
-                        label={
-                          <span>
-                            启用做空{' '}
-                            <Tooltip title="是否在死叉时开空仓">
-                              <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                            </Tooltip>
-                          </span>
-                        }
-                        valuePropName="checked"
-                        initialValue={true}
-                      >
-                        <Select>
-                          <Select.Option value={true}>是</Select.Option>
-                          <Select.Option value={false}>否</Select.Option>
-                        </Select>
-                      </Form.Item>
-
-                      <Form.Item
-                        name="stop_loss"
-                        label={
-                          <span>
-                            止损比例{' '}
-                            <Tooltip title="亏损达到该比例时止损，0表示不启用">
-                              <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                            </Tooltip>
-                          </span>
-                        }
-                        initialValue={0}
-                      >
-                        <InputNumber min={0} max={0.5} step={0.01} style={{ width: '100%' }} placeholder="0.05 (5%)" />
-                      </Form.Item>
-
-                      <Form.Item
-                        name="take_profit"
-                        label={
-                          <span>
-                            止盈比例{' '}
-                            <Tooltip title="盈利达到该比例时止盈，0表示不启用">
-                              <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                            </Tooltip>
-                          </span>
-                        }
-                        initialValue={0}
-                      >
-                        <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} placeholder="0.1 (10%)" />
-                      </Form.Item>
+                      <Row gutter={12}>
+                        <Col span={12}>
+                          <Form.Item
+                            name="enable_short"
+                            label={<span>启用做空 <Tooltip title="是否在死叉时开空仓"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                            valuePropName="checked"
+                            initialValue={true}
+                          >
+                            <Select>
+                              <Select.Option value={true}>是</Select.Option>
+                              <Select.Option value={false}>否</Select.Option>
+                            </Select>
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            name="fee_rate"
+                            label={<span>手续费率 <Tooltip title="OKX现货手续费: Maker 0.08%, Taker 0.1%"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                            rules={[{ required: true, message: '请输入手续费率' }]}
+                          >
+                            <InputNumber min={0} max={1} step={0.0001} style={{ width: '100%' }} placeholder="0.001" />
+                          </Form.Item>
+                        </Col>
+                      </Row>
                     </>
                   )}
 
-                  <Form.Item
-                    name="fee_rate"
-                    label={
-                      <span>
-                        手续费率{' '}
-                        <Tooltip title="OKX现货交易手续费率">
-                          <HelpCircle size={14} style={{ color: '#8c8c8c' }} />
-                        </Tooltip>
-                      </span>
-                    }
-                    rules={[{ required: true, message: '请输入手续费率' }]}
-                  >
-                    <InputNumber min={0} max={1} step={0.0001} style={{ width: '100%' }} placeholder="0.001" />
-                  </Form.Item>
+                  {strategyType === 'ma_cross' && (
+                    <Row gutter={12}>
+                      <Col span={12}>
+                        <Form.Item
+                          name="fee_rate"
+                          label={<span>手续费率 <Tooltip title="OKX现货手续费: Maker 0.08%, Taker 0.1%"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                          rules={[{ required: true, message: '请输入手续费率' }]}
+                        >
+                          <InputNumber min={0} max={1} step={0.0001} style={{ width: '100%' }} placeholder="0.001" />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  )}
 
                   <Form.Item name="description" label="描述">
-                    <TextArea rows={3} placeholder="回测描述(可选)" />
+                    <TextArea rows={2} placeholder="回测描述(可选)" />
                   </Form.Item>
                 </>
               )}
