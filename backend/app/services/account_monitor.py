@@ -196,15 +196,38 @@ class AccountMonitor:
             from app.models.account_snapshot import AccountSnapshot
             db = SessionLocal()
             try:
+                new_equity = data["total_equity"]
+
+                # 校验：equity <= 0 直接跳过，不保存
+                if new_equity <= 0:
+                    logger.warning(f"快照 equity={new_equity:.2f} 异常，跳过保存")
+                    return
+
+                # 校验：与最近一次快照对比，变化超过 80% 视为异常数据，跳过
+                last = (
+                    db.query(AccountSnapshot)
+                    .filter(AccountSnapshot.user_id == 1)
+                    .order_by(AccountSnapshot.created_at.desc())
+                    .first()
+                )
+                if last and last.total_equity > 0:
+                    change_pct = abs(new_equity - last.total_equity) / last.total_equity
+                    if change_pct > 0.8:
+                        logger.warning(
+                            f"快照 equity 波动异常 ({last.total_equity:.2f} → {new_equity:.2f}"
+                            f"，变化 {change_pct*100:.1f}%)，跳过保存"
+                        )
+                        return
+
                 snapshot = AccountSnapshot(
                     user_id=1,
-                    total_equity=data["total_equity"],
+                    total_equity=new_equity,
                     available_balance=data.get("available_balance", 0.0),
                     unrealized_pnl=data.get("unrealized_pnl", 0.0),
                 )
                 db.add(snapshot)
                 db.commit()
-                logger.info(f"账户净值快照已保存: equity={data['total_equity']:.2f}")
+                logger.info(f"账户净值快照已保存: equity={new_equity:.2f}")
             except Exception as e:
                 db.rollback()
                 logger.error(f"保存账户净值快照失败: {e}")
