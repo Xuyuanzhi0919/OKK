@@ -307,13 +307,175 @@ sequenceDiagram
     API-->>User: 显示回测结果
 ```
 
-## 九、待确认事项
+## 九、做空与杠杆支持
 
-1. **策略选择**：是否需要实现全部5种策略，还是优先实现部分？
-2. **做空支持**：是否需要支持做空交易？
-3. **杠杆支持**：是否需要支持杠杆交易？
-4. **多品种组合**：是否需要支持多交易对组合回测？
+### 9.1 做空机制设计
+
+#### 9.1.1 回测引擎扩展
+
+修改 [`backtest_engine.py`](backend/app/services/backtest/backtest_engine.py) 添加做空支持：
+
+```python
+@dataclass
+class Position:
+    """持仓信息"""
+    amount: float = 0.0          # 持仓数量（正数做多，负数做空）
+    avg_price: float = 0.0       # 平均成本价
+    unrealized_pnl: float = 0.0  # 未实现盈亏
+    direction: str = 'flat'      # 持仓方向: long/short/flat
+
+class BacktestEngine:
+    def short(self, price: float, amount: float, timestamp: int) -> Optional[Trade]:
+        """做空开仓 - 卖出获得资金，记录负持仓"""
+        
+    def cover(self, price: float, amount: float, timestamp: int) -> Optional[Trade]:
+        """平空仓 - 买入归还，计算盈亏"""
+```
+
+#### 9.1.2 做空交易信号
+
+| 策略 | 做多信号 | 做空信号 |
+|------|----------|----------|
+| trend | 突破近期高点 | 跌破近期低点 |
+| ma_cross | 快线上穿慢线 | 快线下穿慢线 |
+| rsi | RSI上穿超卖区 | RSI下穿超买区 |
+| bollinger | 触及下轨反弹 | 触及上轨回落 |
+| macd | MACD金叉 | MACD死叉 |
+
+#### 9.1.3 做空参数
+
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| enable_short | bool | False | 是否启用做空 |
+| short_ratio | float | 1.0 | 做空仓位比例 |
+
+### 9.2 杠杆机制设计
+
+#### 9.2.1 杠杆模型
+
+```python
+@dataclass
+class MarginAccount:
+    """保证金账户"""
+    balance: float           # 保证金余额
+    leverage: int = 1        # 杠杆倍数
+    margin_used: float = 0   # 已用保证金
+    liquidation_price: float = 0  # 强平价格
+
+class BacktestEngine:
+    def __init__(
+        self,
+        symbol: str,
+        initial_capital: float,
+        fee_rate: float = 0.001,
+        leverage: int = 1,           # 杠杆倍数
+        margin_call_ratio: float = 0.8,  # 追保比例
+    ):
+        self.leverage = leverage
+        self.margin_call_ratio = margin_call_ratio
+        self.liquidated = False  # 是否已强平
+```
+
+#### 9.2.2 杠杆计算逻辑
+
+```
+保证金 = 持仓价值 / 杠杆倍数
+未实现盈亏 = (当前价格 - 开仓价格) * 持仓数量 * 方向
+维持保证金率 = (保证金 + 未实现盈亏) / 持仓价值
+
+强平条件: 维持保证金率 < (1 - margin_call_ratio)
+```
+
+#### 9.2.3 杠杆参数
+
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| leverage | int | 1 | 杠杆倍数 (1-125) |
+| margin_call_ratio | float | 0.8 | 追保比例阈值 |
+| auto_deleverage | bool | True | 是否自动减仓 |
+
+### 9.3 回测模型扩展
+
+修改 [`backtest.py`](backend/app/models/backtest.py)：
+
+```python
+class Backtest(Base):
+    # 新增字段
+    leverage = Column(Integer, default=1, comment='杠杆倍数')
+    enable_short = Column(Boolean, default=False, comment='是否启用做空')
+    liquidation_count = Column(Integer, default=0, comment='强平次数')
+    margin_call_count = Column(Integer, default=0, comment='追保次数')
+```
+
+### 9.4 风控模块
+
+```python
+class RiskControl:
+    """回测风控"""
+    
+    @staticmethod
+    def check_liquidation(
+        position: Position,
+        current_price: float,
+        leverage: int,
+        margin_balance: float
+    ) -> bool:
+        """检查是否触发强平"""
+        if position.amount == 0:
+            return False
+        position_value = abs(position.amount) * current_price
+        unrealized_pnl = position.unrealized_pnl
+        margin_ratio = (margin_balance + unrealized_pnl) / position_value
+        liquidation_threshold = 1 / leverage * 0.9
+        return margin_ratio < liquidation_threshold
+```
+
+## 十、更新后的数据流程
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant API as API端点
+    participant Service as BacktestService
+    participant Engine as 策略引擎
+    participant Risk as 风控模块
+    participant DB as 数据库
+
+    User->>API: 创建回测-含杠杆/做空配置
+    API->>Service: create_backtest
+    Service->>DB: 保存回测记录
+    User->>API: 运行回测
+    API->>Service: run_backtest
+    Service->>DB: 查询K线数据
+    Service->>Engine: 创建策略引擎-含杠杆参数
+    loop 每根K线
+        Engine->>Engine: 计算技术指标
+        Engine->>Engine: 生成交易信号-多/空
+        Engine->>Engine: 执行买卖操作
+        Engine->>Risk: 检查强平
+        alt 触发强平
+            Risk-->>Engine: 执行强平
+            Engine->>Engine: 记录强平事件
+        end
+    end
+    Service->>DB: 保存回测结果-含强平统计
+    Service-->>API: 返回回测报告
+    API-->>User: 显示回测结果
+```
+
+## 十一、实现优先级（更新）
+
+| 优先级 | 任务 | 复杂度 | 说明 |
+|--------|------|--------|------|
+| P0 | indicators.py | 中 | 基础设施 |
+| P0 | backtest_engine.py 扩展 | 高 | 添加做空/杠杆支持 |
+| P0 | ma_cross + 做空 | 低 | 验证架构 |
+| P1 | rsi + 做空 | 低 | 常用策略 |
+| P1 | bollinger + 做空 | 低 | 常用策略 |
+| P1 | macd + 做空 | 中 | 常用策略 |
+| P2 | trend + 做空 | 高 | 复杂策略 |
+| P2 | 前端杠杆/做空配置 | 中 | UI支持 |
 
 ---
 
-请确认以上方案，或提出修改意见。
+**方案已确认，可切换到Code模式开始实现。**
