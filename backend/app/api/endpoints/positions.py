@@ -183,16 +183,28 @@ async def get_account_snapshots(
         max_drawdown = 0.0
         max_drawdown_pct = 0.0
         if snap_list:
-            peak = snap_list[0]["total_equity"]
-            for snap in snap_list:
-                equity = snap["total_equity"]
-                if equity > peak:
-                    peak = equity
-                elif peak > 0:
-                    dd_pct = (peak - equity) / peak * 100
-                    if dd_pct > max_drawdown_pct:
-                        max_drawdown_pct = dd_pct
-                        max_drawdown = peak - equity
+            # 过滤异常快照：equity <= 0 的点直接跳过
+            # 同时过滤极端异常值：若某点低于所有快照中位数的 20%，视为数据异常
+            valid_equities = [s["total_equity"] for s in snap_list if s["total_equity"] > 0]
+            if valid_equities:
+                sorted_eq = sorted(valid_equities)
+                median_eq = sorted_eq[len(sorted_eq) // 2]
+                threshold = median_eq * 0.2  # 低于中位数 20% 视为异常
+                valid_snaps = [s for s in snap_list if s["total_equity"] >= threshold]
+            else:
+                valid_snaps = []
+
+            if valid_snaps:
+                peak = valid_snaps[0]["total_equity"]
+                for snap in valid_snaps:
+                    equity = snap["total_equity"]
+                    if equity > peak:
+                        peak = equity
+                    if peak > 0:
+                        dd_pct = (peak - equity) / peak * 100
+                        if dd_pct > max_drawdown_pct:
+                            max_drawdown_pct = dd_pct
+                            max_drawdown = peak - equity
 
         return {
             "code": 0,

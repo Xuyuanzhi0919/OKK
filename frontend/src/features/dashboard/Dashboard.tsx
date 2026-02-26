@@ -119,9 +119,9 @@ const Dashboard = () => {
           ? dailyPnlData.baseline_equity
           : null
 
-      // 最大回撤
+      // 最大回撤（限制在 100% 以内，防止异常快照数据导致显示异常）
       const newMaxDrawdown = snapshotsData?.max_drawdown || 0
-      const newMaxDrawdownPct = snapshotsData?.max_drawdown_pct || 0
+      const newMaxDrawdownPct = Math.min(100, snapshotsData?.max_drawdown_pct || 0)
 
       // 从余额数据提取现货余额
       const spotBalances: any[] = []
