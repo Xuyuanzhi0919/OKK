@@ -87,10 +87,13 @@ class TrendFollowStrategy(StrategyBase):
         self._last_kline_period: int = 0
 
         # 统计数据（供 manager 广播）
-        self.realized_pnl: float = 0.0
-        self.total_trades: int   = 0
-        self._win_trades:  int   = 0
-        self.win_rate:     float = 0.0
+        self.realized_pnl:   float = 0.0
+        self.total_trades:   int   = 0      # 完整开平仓轮次（用于胜率）
+        self._win_trades:    int   = 0
+        self.win_rate:       float = 0.0
+        self._buy_count:     int   = 0      # 买入订单次数
+        self._sell_count:    int   = 0      # 卖出订单次数
+        self._unrealized_pnl: float = 0.0   # 当前未实现盈亏缓存（每 tick 更新）
 
         logger.info(
             f"TrendFollowStrategy 初始化: {symbol} "
@@ -183,6 +186,13 @@ class TrendFollowStrategy(StrategyBase):
         if price <= 0:
             return
 
+        # ── 更新未实现盈亏缓存（每 tick，供 manager 广播）────────
+        if self._in_position and self._entry_price > 0 and self._position_qty > 0:
+            ct_val = self._ct_val if self._is_swap else 1.0
+            self._unrealized_pnl = (price - self._entry_price) * self._position_qty * ct_val
+        else:
+            self._unrealized_pnl = 0.0
+
         # ── 止损 / 止盈（实时触发）───────────────────────────────
         if self._in_position and self._entry_price > 0:
             pnl_pct = (price - self._entry_price) / self._entry_price
@@ -208,15 +218,17 @@ class TrendFollowStrategy(StrategyBase):
         """
         返回当前盈亏统计，供 /api/v1/strategies/{id}/pnl 接口调用。
         """
-        unrealized = 0.0
+        # 优先使用实时 ticker 计算；失败则用缓存值
+        unrealized = self._unrealized_pnl
         try:
             if self._in_position and self._entry_price > 0 and self._position_qty > 0:
                 ticker = await self.exchange.get_ticker(self.symbol)
                 current_price = float(ticker.get("last", 0))
                 if current_price > 0:
-                    unrealized = (current_price - self._entry_price) * self._position_qty
+                    ct_val = self._ct_val if self._is_swap else 1.0
+                    unrealized = (current_price - self._entry_price) * self._position_qty * ct_val
         except Exception as e:
-            logger.warning(f"[{self.symbol}] 计算未实现盈亏失败: {e}")
+            logger.warning(f"[{self.symbol}] 计算未实现盈亏失败，使用缓存值: {e}")
 
         return {
             "total_pnl":      round(self.realized_pnl + unrealized, 4),
@@ -224,8 +236,8 @@ class TrendFollowStrategy(StrategyBase):
             "unrealized_pnl": round(unrealized, 4),
             "total_fee":      0,
             "pnl_rate":       0,
-            "buy_count":      self.total_trades,
-            "sell_count":     self.total_trades,
+            "buy_count":      self._buy_count,
+            "sell_count":     self._sell_count,
             "win_rate":       round(self.win_rate, 1),
             "in_position":    self._in_position,
             "entry_price":    self._entry_price,
@@ -396,10 +408,14 @@ class TrendFollowStrategy(StrategyBase):
             )
             if order:
                 self._in_position = True
-                self._entry_price = price
+                # 使用实际成交均价（place_order_with_retry 已查询订单详情）
+                avg_px = order.get("avgPx") or order.get("fillPx")
+                self._entry_price = float(avg_px) if avg_px and float(avg_px) > 0 else price
                 self._position_qty = qty
+                self._buy_count += 1
                 logger.info(
-                    f"[{self.symbol}] 开多成功 qty={qty} @ {price:.2f}"
+                    f"[{self.symbol}] 开多成功 qty={qty} "
+                    f"entry={self._entry_price:.2f}（均价）"
                 )
         except Exception as e:
             logger.error(f"[{self.symbol}] 开多失败: {e}")
@@ -426,10 +442,11 @@ class TrendFollowStrategy(StrategyBase):
                 order_type="market",
             )
             if order:
-                # 估算盈亏（avg_price 可能为 0，用最新成交价估算）
-                close_price = float(order.get("avgPx") or order.get("avg_price") or
+                close_price = float(order.get("avgPx") or order.get("fillPx") or
                                     self._entry_price)
-                pnl = (close_price - self._entry_price) * qty
+                ct_val = self._ct_val if self._is_swap else 1.0
+                pnl = (close_price - self._entry_price) * qty * ct_val
+                self._sell_count += 1
 
                 # 更新统计
                 self.realized_pnl += pnl

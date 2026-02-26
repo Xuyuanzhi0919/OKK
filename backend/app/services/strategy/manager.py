@@ -111,7 +111,9 @@ class StrategyManager:
                 return
 
             # 从策略获取运行时数据（通用方法）
-            db_strategy.total_profit = strategy.realized_pnl if hasattr(strategy, 'realized_pnl') else 0
+            realized = strategy.realized_pnl if hasattr(strategy, 'realized_pnl') else 0
+            unrealized = getattr(strategy, '_unrealized_pnl', 0)
+            db_strategy.total_profit = round(realized + unrealized, 4)  # 总盈亏 = 已实现 + 未实现
             db_strategy.total_trades = strategy.total_trades if hasattr(strategy, 'total_trades') else 0
             db_strategy.win_rate = strategy.win_rate if hasattr(strategy, 'win_rate') else 0
 
@@ -301,12 +303,20 @@ class StrategyManager:
         if not strategy:
             return None
 
+        realized = strategy.realized_pnl if hasattr(strategy, 'realized_pnl') else 0
+        unrealized = getattr(strategy, '_unrealized_pnl', 0)
+
         # 返回通用策略状态信息
         return {
             "strategy_id": strategy_id,
             "is_running": strategy.is_running,
-            "realized_pnl": strategy.realized_pnl if hasattr(strategy, 'realized_pnl') else 0,
+            "realized_pnl": realized,
+            "unrealized_pnl": unrealized,
+            "total_pnl": round(realized + unrealized, 4),
             "total_trades": strategy.total_trades if hasattr(strategy, 'total_trades') else 0,
+            "buy_count": getattr(strategy, '_buy_count', 0),
+            "sell_count": getattr(strategy, '_sell_count', 0),
+            "win_rate": strategy.win_rate if hasattr(strategy, 'win_rate') else 0,
             "consecutive_losses": strategy.consecutive_losses,
             "max_consecutive_losses": strategy.max_consecutive_losses,
             "trade_pnl_history": strategy.trade_pnl_history,
