@@ -65,6 +65,7 @@ class TrendFollowStrategy(StrategyBase):
         self.pos_ratio:     float = float(p.get("position_ratio", 0.4))
         self.use_rsi:       bool  = bool(p.get("use_rsi_filter", True))
         self.rsi_threshold: float = float(p.get("rsi_threshold",  _RSI_THRESHOLD))
+        self.leverage:      int   = int(p.get("leverage", 10))  # 默认 10x
 
         # EMA 状态（仅保留最近两个值用于交叉判断）
         self._fast_prev: Optional[float] = None
@@ -131,6 +132,18 @@ class TrendFollowStrategy(StrategyBase):
                     )
             except Exception as e:
                 logger.warning(f"[{self.symbol}] 获取合约规格失败，使用默认值: {e}")
+
+            # 设置杠杆
+            try:
+                margin_mode = self.parameters.get("margin_mode", "isolated")
+                await self.exchange.set_leverage(
+                    lever=str(self.leverage),
+                    mgn_mode=margin_mode,
+                    inst_id=self.symbol,
+                )
+                logger.info(f"[{self.symbol}] 杠杆已设置为 {self.leverage}x ({margin_mode})")
+            except Exception as e:
+                logger.warning(f"[{self.symbol}] 设置杠杆失败: {e}")
 
         # 用历史 K 线预热 EMA
         await self._init_ema()

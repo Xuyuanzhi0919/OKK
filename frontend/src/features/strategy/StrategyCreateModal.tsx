@@ -148,6 +148,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         parameters.stop_loss       = (values.stop_loss ?? 1) / 100
         parameters.take_profit     = (values.take_profit ?? 8) / 100
         parameters.use_rsi_filter  = values.use_rsi_filter ?? true
+        parameters.leverage        = values.leverage ?? 10
         // fast_period / slow_period 使用策略内置最优值（12/40），不对外暴露
       }
 
@@ -220,6 +221,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
           position_ratio: 40,
           stop_loss: 1,
           take_profit: 8,
+          leverage: 10,
           use_rsi_filter: true,
         }}
       >
@@ -329,7 +331,16 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                   <InputNumber min={1} max={50} step={1} suffix="%" style={{ width: '100%' }} />
                 </Form.Item>
               </Col>
-              <Col span={24}>
+              <Col span={8}>
+                <Form.Item
+                  name="leverage"
+                  label={<Space size={4}>杠杆倍数<Tooltip title="合约杠杆倍数，策略启动时自动设置到交易所。趋势策略建议 5~20x，过高容易强平"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={1} max={100} step={1} suffix="x" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={16}>
                 <Form.Item
                   name="use_rsi_filter"
                   label={<Space size={4}>RSI 超买过滤<Tooltip title="开启后：金叉信号出现时如果 RSI14 ≥ 65（超买区），则跳过本次开仓。回测验证可将收益从 +3.2% 提升到 +7.7%"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
