@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next'
 import MainLayout from './components/Layout/MainLayout'
 import Dashboard from './features/dashboard/Dashboard'
 import StrategyList from './features/strategy/StrategyList'
-import StrategyCreatePage from './features/strategy/StrategyCreatePage'
 import TradingView from './features/trading/TradingView'
 import TradingManagement from './features/trading/TradingManagement'
 import Settings from './features/settings/Settings'
@@ -81,7 +80,6 @@ function AppContent() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="strategies" element={<StrategyList />} />
-          <Route path="strategies/create/:type" element={<StrategyCreatePage />} />
           <Route path="trading" element={<TradingView />} />
           <Route path="trading-management" element={<TradingManagement />} />
           <Route path="backtest" element={<BacktestList />} />

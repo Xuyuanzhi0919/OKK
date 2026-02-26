@@ -14,6 +14,8 @@ interface StrategyCreateModalProps {
   open: boolean
   onCancel: () => void
   onSuccess: () => void
+  /** 从下拉菜单预选的策略类型，打开时自动填入 */
+  initialType?: string
   backtestData?: {
     strategy_type: string
     symbol: string
@@ -55,7 +57,7 @@ const TIMEFRAMES = [
 ]
 
 const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
-  open, onCancel, onSuccess, backtestData,
+  open, onCancel, onSuccess, initialType, backtestData,
 }) => {
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
@@ -74,6 +76,13 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       }
     },
   })
+
+  // 从下拉菜单预选类型
+  useEffect(() => {
+    if (initialType && open && !backtestData) {
+      form.setFieldValue('type', initialType)
+    }
+  }, [initialType, open, backtestData, form])
 
   // 从回测预填数据
   useEffect(() => {

@@ -18,7 +18,6 @@ import StrategyDetailModal from './StrategyDetailModal'
 import StrategyPerformanceModal from './StrategyPerformanceModal'
 import StrategyCreateModal from './StrategyCreateModal'
 import { strategyApi } from '@/services/api'
-import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { wsService, StrategyUpdateData } from '@/services/websocket'
 import { formatPrice, formatPercent } from '@/utils/format'
@@ -71,14 +70,14 @@ const CREATE_MENU_ITEMS = [
 const StrategyList = () => {
   const { t } = useTranslation()
   const { message } = App.useApp()
-  const navigate = useNavigate()
   const [strategies, setStrategies] = useState<Strategy[]>([])
   const [loading, setLoading] = useState(false)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [performanceModalOpen, setPerformanceModalOpen] = useState(false)
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null)
   const [actionLoading, setActionLoading] = useState<{ [key: number]: boolean }>({})
-  const [createModalOpen, setCreateModalOpen] = useState(false)  // 保留：用于编辑/复制
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [selectedCreateType, setSelectedCreateType] = useState<string>('')
   
   // 筛选状态
   const [searchText, setSearchText] = useState('')
@@ -403,7 +402,10 @@ const StrategyList = () => {
               <Dropdown
                 menu={{
                   items: CREATE_MENU_ITEMS,
-                  onClick: ({ key }) => navigate(`/strategies/create/${key}`),
+                  onClick: ({ key }) => {
+                    setSelectedCreateType(key)
+                    setCreateModalOpen(true)
+                  },
                 }}
                 placement="bottomRight"
               >
@@ -483,7 +485,17 @@ const StrategyList = () => {
         }}
       />
 
-      {/* 创建策略：已改为跳转到独立页面 /strategies/create/:type，Modal 不再使用 */}
+      {/* 创建策略 Modal */}
+      <StrategyCreateModal
+        open={createModalOpen}
+        initialType={selectedCreateType}
+        onCancel={() => { setCreateModalOpen(false); setSelectedCreateType('') }}
+        onSuccess={() => {
+          setCreateModalOpen(false)
+          setSelectedCreateType('')
+          fetchStrategies(true)
+        }}
+      />
 
       {/* 编辑/复制策略 Modal */}
       <StrategyCreateModal
