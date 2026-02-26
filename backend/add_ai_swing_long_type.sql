@@ -1,0 +1,31 @@
+-- 添加 ai_swing_long 策略类型到数据库枚举
+
+-- 方法1: 如果PostgreSQL版本 >= 9.1，可以直接添加
+ALTER TYPE strategy_type ADD VALUE IF NOT EXISTS 'ai_swing_long';
+
+-- 如果上面的命令不支持，使用方法2（注释掉方法1，使用下面的）
+-- BEGIN;
+--
+-- -- 创建新的枚举类型
+-- CREATE TYPE strategy_type_new AS ENUM (
+--     'grid',
+--     'swing_long',
+--     'ai_swing_long',
+--     'martin',
+--     'trend',
+--     'arbitrage',
+--     'custom'
+-- );
+--
+-- -- 修改列类型
+-- ALTER TABLE strategies
+--     ALTER COLUMN type TYPE strategy_type_new
+--     USING type::text::strategy_type_new;
+--
+-- -- 删除旧类型
+-- DROP TYPE strategy_type;
+--
+-- -- 重命名新类型
+-- ALTER TYPE strategy_type_new RENAME TO strategy_type;
+--
+-- COMMIT;
