@@ -173,14 +173,15 @@ export const accountApi = {
       params: { ccy },
     }).then(res => (res as any).data),
 
+  // 后端直接返回数组，拦截器已提取 response.data，无需再取 .data
   getPositions: (instType?: string, instId?: string, posId?: string) =>
-    api.get<{ code: number; msg: string; data: Position[] }>('/positions/list', {
+    api.get<Position[]>('/positions/list', {
       params: {
         inst_type: instType,
         inst_id: instId,
         pos_id: posId
       },
-    }).then(res => (res as any).data as Position[]),
+    }),
 
   // 获取账户净值历史快照（用于计算最大回撤）
   getAccountSnapshots: (days: number = 7) =>
