@@ -20,9 +20,10 @@ import { formatPrice, formatQuantityDisplay, formatAmount, formatPercent } from 
 
 const Dashboard = () => {
   const { t } = useTranslation()
-  // loading 仅用于首次加载的全屏 Spinner；后台定时刷新用 refreshing
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  const [loading, setLoading] = useState(true)   // 仅首次无数据时全屏 Spinner
+  const [refreshing, setRefreshing] = useState(false) // 后续刷新时按钮图标旋转
+  // 是否已完成过至少一次成功加载（用 ref 避免 setInterval 闭包过期问题）
+  const hasLoadedRef = useRef(false)
   const [balance, setBalance] = useState<any>(null)
   const [positionsWithPrice, setPositionsWithPrice] = useState<any[]>([])
   const [runningStrategies, setRunningStrategies] = useState<any[]>([])
@@ -57,10 +58,10 @@ const Dashboard = () => {
     setRunningStrategies(strategies)
   }
 
-  // silent=true 时为后台静默刷新，不触发 loading 状态（避免表格闪烁）
-  const fetchDashboardData = async (silent = false) => {
+  // 首次加载前显示全屏 Spinner；首次成功后所有刷新均为透明后台更新
+  const fetchDashboardData = async () => {
     try {
-      if (!silent) setLoading(true)
+      if (!hasLoadedRef.current) setLoading(true)
       else setRefreshing(true)
 
       // 并行获取余额、持仓、策略、最近订单、今日基线、最大回撤
@@ -182,14 +183,18 @@ const Dashboard = () => {
       const orders = Array.isArray(ordersData) ? ordersData : []
 
       // ── 所有异步工作完成，一次性批量更新 state（React 18 自动合并为单次渲染）──
-      setBalance(balanceData)
-      setMarginRatio(newMarginRatio)
-      setDailyPnlBaseline(newDailyPnlBaseline)
-      setMaxDrawdown(newMaxDrawdown)
-      setMaxDrawdownPct(newMaxDrawdownPct)
-      setPositionsWithPrice([...spotResults, ...(contractResults as any[])])
-      setRunningStrategiesWithRef(running)
-      setRecentOrders(orders.slice(0, 10))
+      // 仅当主要数据（balance）获取成功时才更新，避免 API 失败时清空已有数据
+      if (balanceData !== null) {
+        setBalance(balanceData)
+        setMarginRatio(newMarginRatio)
+        setDailyPnlBaseline(newDailyPnlBaseline)
+        setMaxDrawdown(newMaxDrawdown)
+        setMaxDrawdownPct(newMaxDrawdownPct)
+        setPositionsWithPrice([...spotResults, ...(contractResults as any[])])
+        setRunningStrategiesWithRef(running)
+        setRecentOrders(orders.slice(0, 10))
+        hasLoadedRef.current = true  // 标记已完成首次加载
+      }
     } catch (error) {
       message.error((error as Error).message || t('dashboard.fetchDataFailed'))
     } finally {
@@ -200,8 +205,8 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchDashboardData()
-    // 定时刷新：静默模式，不触发 loading 避免表格闪烁
-    const timer = setInterval(() => fetchDashboardData(true), 30000)
+    // 定时刷新：hasLoadedRef.current=true 后自动静默，不触发 loading
+    const timer = setInterval(fetchDashboardData, 30000)
 
     const timeUpdateTimer = setInterval(() => {
       setCurrentTime(new Date())
@@ -905,8 +910,8 @@ const Dashboard = () => {
             <Button
               type="text"
               size="small"
-              icon={<RefreshCw size={14} className={(loading || refreshing) ? 'animate-spin' : ''} />}
-              onClick={() => fetchDashboardData()}
+              icon={<RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />}
+              onClick={fetchDashboardData}
               style={{ color: '#a3a3a3' }}
             >
               {t('common.refresh')}
@@ -920,7 +925,7 @@ const Dashboard = () => {
         <Table
           columns={positionColumns}
           dataSource={positionsWithPrice}
-          loading={loading}
+          loading={loading && balance === null}
           pagination={false}
           size="small"
           scroll={{ x: 800 }}
