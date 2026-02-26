@@ -79,11 +79,16 @@ class TrendFollowStrategy(StrategyBase):
         self._min_sz: float = 1.0    # 最小下单量（张）
         self._is_swap: bool = symbol.endswith("-SWAP") or symbol.endswith("-FUTURES")
 
+        # 移动止损参数
+        self.trailing_stop: float = float(p.get("trailing_stop", 0.0))  # 0 表示禁用，例如 0.02 = 2%
+
         # 仓位状态
-        self._in_position: bool = False
-        self._entry_price:  float = 0.0
-        self._position_qty: float = 0.0   # 持仓数量（合约张数 or 币数）
-        self._open_time:    float = 0.0   # 开仓时间（unix 秒），用于最短持仓保护
+        self._in_position:    bool  = False
+        self._entry_price:    float = 0.0
+        self._position_qty:   float = 0.0   # 持仓数量（合约张数 or 币数）
+        self._open_time:      float = 0.0   # 开仓时间（unix 秒），用于最短持仓保护
+        self._highest_price:  float = 0.0   # 持仓期间最高价（移动止损用）
+        self._trail_stop_px:  float = 0.0   # 当前移动止损触发价
 
         # K 线周期追踪（毫秒级时间戳，以 15min 对齐）
         self._last_kline_period: int = 0
@@ -215,10 +220,31 @@ class TrendFollowStrategy(StrategyBase):
         # ── 止损 / 止盈（实时触发）───────────────────────────────
         if self._in_position and self._entry_price > 0:
             pnl_pct = (price - self._entry_price) / self._entry_price
-            if pnl_pct <= -self.stop_loss:
-                logger.info(f"[{self.symbol}] 触发止损 {pnl_pct*100:.2f}%")
-                await self._close_position(reason="stop_loss")
-                return
+
+            # 移动止损：更新最高价，并随之上移止损价
+            if self.trailing_stop > 0:
+                if price > self._highest_price:
+                    self._highest_price = price
+                    self._trail_stop_px = price * (1 - self.trailing_stop)
+                    logger.debug(
+                        f"[{self.symbol}] 移动止损上移: 最高价={self._highest_price:.2f}"
+                        f" 止损价={self._trail_stop_px:.2f}"
+                    )
+                if price <= self._trail_stop_px:
+                    logger.info(
+                        f"[{self.symbol}] 触发移动止损 当前={price:.2f}"
+                        f" 止损价={self._trail_stop_px:.2f}"
+                        f" 持仓盈亏={pnl_pct*100:.2f}%"
+                    )
+                    await self._close_position(reason="trailing_stop")
+                    return
+            else:
+                # 固定止损
+                if pnl_pct <= -self.stop_loss:
+                    logger.info(f"[{self.symbol}] 触发止损 {pnl_pct*100:.2f}%")
+                    await self._close_position(reason="stop_loss")
+                    return
+
             if pnl_pct >= self.take_profit:
                 logger.info(f"[{self.symbol}] 触发止盈 {pnl_pct*100:.2f}%")
                 await self._close_position(reason="take_profit")
@@ -447,10 +473,19 @@ class TrendFollowStrategy(StrategyBase):
                 self._entry_price = float(avg_px) if avg_px and float(avg_px) > 0 else price
                 self._position_qty = qty
                 self._buy_count += 1
-                logger.info(
-                    f"[{self.symbol}] 开多成功 qty={qty} "
-                    f"entry={self._entry_price:.2f}（均价）"
-                )
+                # 初始化移动止损
+                self._highest_price = self._entry_price
+                if self.trailing_stop > 0:
+                    self._trail_stop_px = self._entry_price * (1 - self.trailing_stop)
+                    logger.info(
+                        f"[{self.symbol}] 开多成功 qty={qty} entry={self._entry_price:.2f}"
+                        f" 移动止损初始价={self._trail_stop_px:.2f}"
+                    )
+                else:
+                    self._trail_stop_px = 0.0
+                    logger.info(
+                        f"[{self.symbol}] 开多成功 qty={qty} entry={self._entry_price:.2f}（均价）"
+                    )
         except Exception as e:
             logger.error(f"[{self.symbol}] 开多失败: {e}")
 

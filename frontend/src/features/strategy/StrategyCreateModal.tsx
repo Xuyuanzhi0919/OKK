@@ -176,10 +176,13 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       const parameters: Record<string, any> = {}
       if (values.type === 'trend') {
         parameters.position_ratio  = (values.position_ratio ?? 40) / 100   // 百分比 → 小数
-        parameters.stop_loss       = (values.stop_loss ?? 1) / 100
+        parameters.stop_loss       = (values.stop_loss ?? 3) / 100
         parameters.take_profit     = (values.take_profit ?? 8) / 100
         parameters.use_rsi_filter  = values.use_rsi_filter ?? true
         parameters.leverage        = values.leverage ?? 10
+        parameters.trailing_stop   = values.use_trailing_stop
+          ? (values.trailing_stop ?? 2) / 100
+          : 0  // 0 表示禁用移动止损，使用固定止损
         // fast_period / slow_period 使用策略内置最优值（12/40），不对外暴露
       }
 
@@ -214,6 +217,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
 
   const noTypes = STRATEGY_TYPES.length === 0
   const selectedType = Form.useWatch('type', form)
+  const useTrailingStop = Form.useWatch('use_trailing_stop', form)
 
   return (
     <Modal
@@ -256,10 +260,12 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
           symbol: backtestData?.symbol || 'BTC-USDT-SWAP',
           timeframe: '15m',
           position_ratio: 40,
-          stop_loss: 1,
+          stop_loss: 3,
           take_profit: 8,
           leverage: 10,
           use_rsi_filter: true,
+          use_trailing_stop: false,
+          trailing_stop: 2,
         }}
       >
         {/* ── 基础信息 ── */}
@@ -351,15 +357,38 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                   <InputNumber min={5} max={90} step={5} suffix="%" style={{ width: '100%' }} />
                 </Form.Item>
               </Col>
+              {/* 止损：固定 or 移动，二选一 */}
               <Col span={8}>
                 <Form.Item
-                  name="stop_loss"
-                  label={<Space size={4}>止损(%)<Tooltip title="持仓亏损达到此比例时触发市价平仓（实时价格）"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  name="use_trailing_stop"
+                  label={<Space size={4}>移动止损<Tooltip title="开启后：止损价随价格上涨自动上移，锁住浮动盈利，避免利润回吐。开启后固定止损失效"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
                   style={compactItem}
+                  valuePropName="checked"
                 >
-                  <InputNumber min={0.1} max={20} step={0.5} suffix="%" style={{ width: '100%' }} />
+                  <Switch checkedChildren="开启" unCheckedChildren="关闭" />
                 </Form.Item>
               </Col>
+              {useTrailingStop ? (
+                <Col span={8}>
+                  <Form.Item
+                    name="trailing_stop"
+                    label={<Space size={4}>回撤幅度(%)<Tooltip title="价格从最高点回撤此比例时触发止损。建议 1.5~3%，兼顾锁利与持续性"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                    style={compactItem}
+                  >
+                    <InputNumber min={0.5} max={10} step={0.5} suffix="%" style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              ) : (
+                <Col span={8}>
+                  <Form.Item
+                    name="stop_loss"
+                    label={<Space size={4}>固定止损(%)<Tooltip title="持仓亏损达到此比例时触发市价平仓（相对开仓价）"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                    style={compactItem}
+                  >
+                    <InputNumber min={0.1} max={20} step={0.5} suffix="%" style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              )}
               <Col span={8}>
                 <Form.Item
                   name="take_profit"
