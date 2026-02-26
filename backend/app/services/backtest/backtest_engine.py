@@ -367,9 +367,12 @@ class BacktestEngine:
         gross_pnl = price_pnl * amount
         net_pnl = gross_pnl - fee
         
-        # 计算收益率（相对于保证金）
-        margin_released = buy_cost / self.leverage
-        pnl_percent = (net_pnl / margin_released) * 100 if margin_released > 0 else 0.0
+        # 计算收益率（相对于开仓时的保证金）
+        open_margin = (self.position.avg_price * amount) / self.leverage
+        pnl_percent = (net_pnl / open_margin) * 100 if open_margin > 0 else 0.0
+        
+        # 释放的保证金（基于开仓价格）
+        margin_released = open_margin
 
         # 记录交易前状态
         position_before = self.position.amount

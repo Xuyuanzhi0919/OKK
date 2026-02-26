@@ -307,9 +307,13 @@ def run_backtest():
         final2 = engine2.capital
         if engine2.position.amount != 0:
             if engine2.position.amount > 0:
+                # 多头：资金 + 持仓价值
                 final2 += engine2.position.amount * last_price
             else:
-                final2 += abs(engine2.position.amount) * last_price
+                # 空头：资金 + 保证金 + 未实现盈亏
+                margin = abs(engine2.position.amount) * engine2.position.avg_price / leverage
+                unrealized_pnl = (engine2.position.avg_price - last_price) * abs(engine2.position.amount)
+                final2 = engine2.capital + margin + unrealized_pnl
         
         sell_trades2 = [t for t in engine2.trades if t.side == 'sell']
         wins2 = sum(1 for t in sell_trades2 if t.pnl > 0)

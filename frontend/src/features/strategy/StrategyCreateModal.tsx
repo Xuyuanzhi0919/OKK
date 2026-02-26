@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import {
-  Modal, Form, Input, Select, InputNumber, Divider,
-  Row, Col, Tag, Alert, Space, Button, Tooltip,
+  Modal, Form, Input, Select, Divider,
+  Row, Col, Space, Tooltip, Alert,
 } from 'antd'
-import { InfoCircleOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { InfoCircleOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { strategyApi } from '@/services/api'
 import { API_BASE_URL } from '@/config/api'
@@ -22,33 +22,10 @@ interface StrategyCreateModalProps {
   } | null
 }
 
-// 策略类型（与后端 StrategyType 保持一致）
-// 注意：所有策略类型目前都未实现，创建后无法启动
-const STRATEGY_TYPES = [
-  {
-    group: '网格策略',
-    items: [
-      { value: 'grid', label: '网格策略', desc: '在价格区间内自动低买高卖，适合震荡行情（开发中）', disabled: true },
-    ],
-  },
-  {
-    group: '波段策略',
-    items: [
-      { value: 'swing_long', label: '波段做多', desc: '基于技术指标的波段做多策略（开发中）', disabled: true },
-      { value: 'swing_short', label: '波段做空', desc: '基于技术指标的波段做空策略（开发中）', disabled: true },
-      { value: 'ai_swing_long', label: 'AI波段做多', desc: 'AI增强的波段做多策略（开发中）', disabled: true },
-    ],
-  },
-  {
-    group: '其他策略',
-    items: [
-      { value: 'martin', label: '马丁格尔', desc: '亏损后加倍仓位的策略（开发中）', disabled: true },
-      { value: 'trend', label: '趋势跟踪', desc: '追踪市场趋势进行交易（开发中）', disabled: true },
-      { value: 'arbitrage', label: '套利', desc: '利用价格差异进行套利（开发中）', disabled: true },
-      { value: 'custom', label: '自定义', desc: '用户自定义策略（开发中）', disabled: true },
-    ],
-  },
-]
+// 当前无可用的实盘策略类型，所有实盘策略均已移除或尚未实现。
+// 后续接入真实策略实现后，在此数组中添加对应条目：
+// { value: 'xxx', label: 'XXX策略', desc: '策略说明' }
+const STRATEGY_TYPES: { value: string; label: string; desc: string }[] = []
 
 // 交易对列表：合约（SWAP）优先，后接现货（SPOT）
 const DEFAULT_SYMBOLS = [
@@ -78,8 +55,6 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
 }) => {
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
-  const [strategyType, setStrategyType] = useState<string>(backtestData?.strategy_type || 'grid')
-  const [gridCalc, setGridCalc] = useState<{ spacing: number; funds: number } | null>(null)
 
   // 获取可用交易对：DB 中已有 K 线的排前面，再合并默认列表（去重）
   const { data: availableSymbols } = useQuery({
@@ -96,30 +71,6 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
     },
   })
 
-  // 自动生成策略名称
-  const generateStrategyName = () => {
-    const values = form.getFieldsValue()
-    const { type, symbol } = values
-
-    if (!symbol) return
-
-    const strategyNameMap: Record<string, string> = {
-      'grid': '网格策略',
-      'swing_long': '波段做多',
-      'swing_short': '波段做空',
-      'ai_swing_long': 'AI波段做多',
-      'martin': '马丁格尔',
-      'trend': '趋势跟踪',
-      'arbitrage': '套利',
-      'custom': '自定义',
-    }
-    const strategyName = strategyNameMap[type] || '策略'
-    const dateStr = new Date().toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
-
-    const name = `${symbol} ${strategyName} ${dateStr}`
-    form.setFieldsValue({ name })
-  }
-
   // 从回测预填数据
   useEffect(() => {
     if (backtestData && open) {
@@ -129,75 +80,22 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         name: backtestData.name || `${backtestData.symbol} ${backtestData.strategy_type}策略`,
         ...backtestData.parameters,
       })
-      setStrategyType(backtestData.strategy_type)
     }
   }, [backtestData, open, form])
-
-  // 计算网格预估
-  const calcGrid = () => {
-    const { grid_lower, grid_upper, grid_num, amount_per_grid } = form.getFieldsValue()
-    if (grid_lower && grid_upper && grid_num && grid_num > 0) {
-      setGridCalc({
-        spacing: (grid_upper - grid_lower) / grid_num,
-        funds: amount_per_grid ? amount_per_grid * grid_num : 0,
-      })
-    }
-  }
-
-  // 获取推荐参数
-  const fetchRecommended = async () => {
-    const symbol = form.getFieldValue('symbol')
-    if (!symbol) return
-    try {
-      const result = await strategyApi.recommendGridParams(symbol, form.getFieldValue('total_amount') || 1000)
-      if (result) {
-        form.setFieldsValue({
-          grid_lower: result.grid_lower, grid_upper: result.grid_upper,
-          grid_num: result.grid_num, amount_per_grid: result.amount_per_grid,
-        })
-        calcGrid()
-      }
-    } catch {}
-  }
 
   // 提交
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
       setLoading(true)
-      const parameters: Record<string, any> = {}
-      const t = strategyType
-
-      if (t === 'grid') {
-        Object.assign(parameters, {
-          grid_lower: values.grid_lower, grid_upper: values.grid_upper,
-          grid_num: values.grid_num, amount_per_grid: values.amount_per_grid,
-          total_amount: values.total_amount, fee_rate: values.fee_rate ?? 0.001,
-        })
-      } else if (t === 'swing_long' || t === 'swing_short' || t === 'ai_swing_long') {
-        Object.assign(parameters, {
-          leverage: values.leverage ?? 1,
-          stop_loss: values.stop_loss, take_profit: values.take_profit,
-        })
-      } else if (t === 'martin') {
-        Object.assign(parameters, {
-          initial_amount: values.initial_amount ?? 0.01,
-          multiplier: values.multiplier ?? 2,
-          max_levels: values.max_levels ?? 5,
-        })
-      } else if (t === 'trend') {
-        Object.assign(parameters, {
-          fast_period: values.fast_period ?? 5, slow_period: values.slow_period ?? 20,
-          amount_per_trade: values.amount_per_trade ?? 0.01,
-        })
-      } else if (t === 'custom') {
-        Object.assign(parameters, values.custom_params ?? {})
-      }
 
       await strategyApi.create({
-        name: values.name, type: strategyType as any,
-        symbol: values.symbol, timeframe: values.timeframe ?? '1H',
-        parameters, description: values.description,
+        name: values.name,
+        type: values.type as any,
+        symbol: values.symbol,
+        timeframe: values.timeframe ?? '1H',
+        parameters: {},
+        description: values.description,
       } as any)
 
       form.resetFields()
@@ -209,158 +107,12 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
     }
   }
 
-  const handleCancel = () => { form.resetFields(); setGridCalc(null); onCancel() }
+  const handleCancel = () => { form.resetFields(); onCancel() }
 
-  // ── 紧凑样式 ──────────────────────────────────────────────
   const compactDivider = { fontSize: 12, color: '#8c8c8c', margin: '12px 0 8px' }
   const compactItem = { marginBottom: 8 }
 
-  // ── 参数区块 ──────────────────────────────────────────────
-  const GridParams = () => (
-    <>
-      <Divider orientation="left" style={compactDivider}>网格参数</Divider>
-      <Row gutter={12}>
-        <Col span={12}>
-          <Form.Item name="grid_lower" label="价格下限" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="下限价格" min={0} precision={4} onChange={calcGrid} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="grid_upper" label="价格上限" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="上限价格" min={0} precision={4} onChange={calcGrid} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="grid_num" label="网格数量" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="2 ~ 100" min={2} max={100} onChange={calcGrid} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="amount_per_grid" label="每格投入 (USDT)" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="金额" min={1} precision={2} onChange={calcGrid} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="total_amount" label="总投入 (USDT)" style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="可选" min={10} precision={2} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="fee_rate" label="手续费率" initialValue={0.001} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} min={0} max={0.01} step={0.0001} precision={4} />
-          </Form.Item>
-        </Col>
-      </Row>
-      <Space style={{ marginBottom: 8 }}>
-        <Button size="small" icon={<ThunderboltOutlined />} onClick={fetchRecommended}>
-          智能推荐参数
-        </Button>
-      </Space>
-      {gridCalc && (
-        <Row gutter={16} style={{ marginBottom: 8 }}>
-          <Col span={12}>
-            <div style={{ background: '#1f1f1f', borderRadius: 6, padding: '8px 12px', fontSize: 13 }}>
-              <span style={{ color: '#8c8c8c' }}>网格间距：</span>
-              <span style={{ color: '#e5e5e5', fontFamily: 'monospace' }}>{gridCalc.spacing.toFixed(4)}</span>
-            </div>
-          </Col>
-          <Col span={12}>
-            <div style={{ background: '#1f1f1f', borderRadius: 6, padding: '8px 12px', fontSize: 13 }}>
-              <span style={{ color: '#8c8c8c' }}>预估资金：</span>
-              <span style={{ color: '#e5e5e5', fontFamily: 'monospace' }}>{gridCalc.funds.toFixed(2)} USDT</span>
-            </div>
-          </Col>
-        </Row>
-      )}
-    </>
-  )
-
-  // 波段策略参数
-  const SwingParams = () => (
-    <>
-      <Divider orientation="left" style={compactDivider}>波段参数</Divider>
-      <Row gutter={12}>
-        <Col span={12}>
-          <Form.Item name="leverage" label="杠杆倍数" initialValue={1} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} min={1} max={20} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="stop_loss" label="止损 (%)" style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="可选" min={0} max={50} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="take_profit" label="止盈 (%)" style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="可选" min={0} max={200} />
-          </Form.Item>
-        </Col>
-      </Row>
-    </>
-  )
-
-  // 马丁格尔策略参数
-  const MartinParams = () => (
-    <>
-      <Divider orientation="left" style={compactDivider}>马丁格尔参数</Divider>
-      <Row gutter={12}>
-        <Col span={12}>
-          <Form.Item name="initial_amount" label="初始仓位" initialValue={0.01} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="单位：币" min={0.001} precision={4} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="multiplier" label="倍数" initialValue={2} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} min={1.5} max={5} step={0.5} precision={1} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="max_levels" label="最大层数" initialValue={5} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} min={1} max={10} />
-          </Form.Item>
-        </Col>
-      </Row>
-    </>
-  )
-
-  // 趋势跟踪策略参数
-  const TrendParams = () => (
-    <>
-      <Divider orientation="left" style={compactDivider}>趋势跟踪参数</Divider>
-      <Row gutter={12}>
-        <Col span={12}>
-          <Form.Item name="fast_period" label="快速均线周期" initialValue={5} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} min={1} max={100} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="slow_period" label="慢速均线周期" initialValue={20} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} min={1} max={200} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="amount_per_trade" label="每次交易数量" initialValue={0.01} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="单位：币" min={0.001} precision={4} />
-          </Form.Item>
-        </Col>
-      </Row>
-    </>
-  )
-
-  const renderParams = () => {
-    switch (strategyType) {
-      case 'grid':          return <GridParams />
-      case 'swing_long':    return <SwingParams />
-      case 'swing_short':   return <SwingParams />
-      case 'ai_swing_long': return <SwingParams />
-      case 'martin':        return <MartinParams />
-      case 'trend':         return <TrendParams />
-      default:              return null
-    }
-  }
-
-  // 当前策略描述
-  const currentType = STRATEGY_TYPES.flatMap(g => g.items).find(i => i.value === strategyType)
+  const noTypes = STRATEGY_TYPES.length === 0
 
   return (
     <Modal
@@ -370,8 +122,9 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       onOk={handleSubmit}
       okText="创建"
       cancelText="取消"
-      width={680}
+      width={600}
       confirmLoading={loading}
+      okButtonProps={{ disabled: noTypes && !backtestData }}
       destroyOnHidden
       styles={{ body: { maxHeight: '65vh', overflowY: 'auto', paddingRight: 4 } }}
     >
@@ -384,14 +137,23 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         />
       )}
 
+      {noTypes && !backtestData && (
+        <Alert
+          message="暂无可用实盘策略类型"
+          description="所有实盘策略均在开发中，敬请期待。"
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+        />
+      )}
+
       <Form
         form={form}
         layout="vertical"
         initialValues={{
-          type: backtestData?.strategy_type || 'grid',
+          type: backtestData?.strategy_type,
           symbol: backtestData?.symbol || 'BTC-USDT-SWAP',
           timeframe: '1H',
-          fee_rate: 0.001,
         }}
       >
         {/* ── 基础信息 ── */}
@@ -403,21 +165,12 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item name="type" label="策略类型" rules={[{ required: true }]} style={compactItem}>
+            <Form.Item name="type" label="策略类型" rules={[{ required: true, message: '请选择策略类型' }]} style={compactItem}>
               <Select
-                onChange={(v) => { setStrategyType(v); setGridCalc(null); setTimeout(generateStrategyName, 0) }}
-                placeholder="选择策略类型"
-              >
-                {STRATEGY_TYPES.map(group => (
-                  <Select.OptGroup key={group.group} label={group.group}>
-                    {group.items.map(item => (
-                      <Select.Option key={item.value} value={item.value}>
-                        {item.label}
-                      </Select.Option>
-                    ))}
-                  </Select.OptGroup>
-                ))}
-              </Select>
+                placeholder={noTypes ? '暂无可用策略类型' : '选择策略类型'}
+                disabled={noTypes && !backtestData}
+                options={STRATEGY_TYPES.map(t => ({ value: t.value, label: t.label }))}
+              />
             </Form.Item>
           </Col>
           <Col span={12}>
@@ -450,7 +203,6 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                 filterOption={(input, option) =>
                   String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())
                 }
-                onChange={() => setTimeout(generateStrategyName, 0)}
               >
                 <Select.OptGroup label="合约（SWAP）">
                   {(availableSymbols ?? DEFAULT_SYMBOLS)
@@ -466,20 +218,6 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
             </Form.Item>
           </Col>
         </Row>
-
-        {/* 策略类型说明 */}
-        {currentType && (
-          <div style={{
-            background: '#1a1a2e', border: '1px solid #2a2a4a',
-            borderRadius: 6, padding: '6px 10px', marginBottom: 12, fontSize: 12,
-          }}>
-            <Tag color="blue" style={{ marginRight: 6 }}>{currentType.label}</Tag>
-            <span style={{ color: '#8c8c8c' }}>{currentType.desc}</span>
-          </div>
-        )}
-
-        {/* ── 策略参数 ── */}
-        {renderParams()}
 
         {/* ── 备注 ── */}
         <Divider orientation="left" style={compactDivider}>备注</Divider>
