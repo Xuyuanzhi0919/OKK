@@ -25,19 +25,23 @@ backend/app/
 │   ├── market.py       # 行情数据代理
 │   ├── backtest.py     # 回测任务管理
 │   ├── api_configs.py  # OKX API配置管理
+│   ├── ai_configs.py   # AI配置管理
+│   ├── ai_analysis.py  # AI市场分析接口
 │   ├── alerts.py       # 告警历史
 │   └── risk_control.py # 风控规则管理
 ├── core/
 │   ├── config.py       # 环境变量配置（pydantic-settings）
-│   └── database.py     # SQLAlchemy session工厂
-├── models/             # SQLAlchemy ORM模型
+│   ├── database.py     # SQLAlchemy session工厂
+│   └── process_lock.py # 进程锁机制（防止重复启动）
+├── models/             # SQLAlchemy ORM模型（含ai_config.py）
 ├── services/
-│   ├── exchange/       # 交易所抽象层
+│   ├── exchange/       # 交易所抽象层（base.py + okx.py）
 │   ├── strategy/       # 策略引擎（基类 + 具体策略）
 │   ├── backtest/       # 回测引擎和指标计算
 │   ├── risk/           # 风控管理器
 │   ├── ai/             # DeepSeek AI增强分析
 │   ├── notification/   # 多渠道推送通知
+│   │   └── channels/   # 渠道实现子目录
 │   └── account_monitor.py # 账户余额/持仓定期推送
 ├── websocket/
 │   ├── manager.py      # Socket.IO管理器（前端连接）
@@ -54,9 +58,10 @@ backend/app/
 2. **策略抽象层** (`services/strategy/`)
    - `StrategyBase` 基类定义生命周期：`start()` → `on_tick()` → `on_order_update()` → `stop()`
    - 已实现策略：
-     - `GridStrategy` - 网格策略
-     - `SwingLongStrategy` - 波段做多策略
-     - `AISwingLongStrategy` - AI增强波段策略
+     - `GridStrategy` - 网格策略 (`grid_strategy.py`)
+     - `SwingLongStrategy` - 波段做多策略 (`swing_long_strategy.py`)
+     - `SwingShortStrategy` - 波段做空策略 (`swing_short_strategy.py`)
+     - `AISwingLongStrategy` - AI增强波段策略 (`ai_swing_long_strategy.py`)
 
 3. **策略管理器** (`services/strategy/manager.py`)
    - 单例模式，管理所有运行中的策略实例
@@ -104,20 +109,22 @@ headers = {
 ├── /kline-manager       # K线数据管理
 ├── /alerts              # 告警历史
 ├── /risk-control        # 风控规则配置
+├── /market-analysis     # AI市场分析
 ├── /api-config          # OKX API配置管理
-└── /settings            # 系统设置
+└── /settings            # 系统设置（含AI配置管理）
 ```
 
 **状态管理:**
-- Zustand stores: `src/stores/useWebSocketStore.ts`
+- Zustand stores: `src/stores/useWebSocketStore.ts`（WebSocket状态）、`src/stores/useUserStore.ts`（用户状态）
 - TanStack Query: API数据缓存和同步
 
 **核心功能模块:**
 - `features/dashboard/` - 仪表盘
 - `features/strategy/` - 策略管理（列表、详情、性能模态框）
 - `features/trading/` - 交易相关（K线图、交易面板、订单簿）
-- `features/backtest/` - 回测系统
-- `features/settings/` - 设置和API配置
+- `features/backtest/` - 回测系统（含K线管理）
+- `features/ai/` - AI市场分析页面
+- `features/settings/` - 设置（OKX API配置 + AI配置管理）
 
 **API服务层:** `src/services/api.ts` - 封装所有后端API调用
 
@@ -163,21 +170,67 @@ npm run preview
 
 **Vite配置** (`vite.config.ts`):
 - API代理: `/api` → `http://localhost:8000`
-- 路径别名: `@` → `src/`
+- 路径别名: `@/` → `src/`
+- 开发服务器端口: 5173
 
 ### 数据库管理
 
 ```bash
-# 如果使用Docker启动PostgreSQL
+# 使用Docker启动TimescaleDB
 docker run -d \
+  --name okk_postgres \
   -p 5432:5432 \
   -e POSTGRES_USER=okk_user \
   -e POSTGRES_PASSWORD=okk_pass \
   -e POSTGRES_DB=okk_quant \
   timescale/timescaledb:latest-pg15
 
+# 初始化所有数据库表（使用完整初始化脚本）
+cd backend
+psql postgresql://okk_user:okk_pass@localhost:5432/okk_quant -f init_complete.sql
+# 或使用Python脚本
+python init_db.py
+
 # 连接数据库
 docker exec -it okk_postgres psql -U okk_user -d okk_quant
+
+# 运行Alembic迁移
+alembic upgrade head
+
+# 手动运行SQL迁移（按顺序）
+psql ... -f migrations/001_create_alerts_table.sql
+psql ... -f migrations/006_add_ioc_post_only_order_types.sql
+```
+
+### Docker生产部署
+
+```bash
+# 启动生产环境（所有服务）
+docker-compose -f docker-compose.prod.yml up -d
+
+# 中国区域（含代理配置）
+docker-compose -f docker-compose.china.yml up -d
+
+# 一键部署
+bash deploy.sh
+```
+
+### 维护脚本
+
+```bash
+cd backend
+
+# 同步订单状态（与交易所对账）
+python sync_order_status.py
+
+# 取消所有待处理订单
+python cancel_pending_orders.py
+
+# 紧急平仓（生产异常时使用）
+python emergency_stop_positions.py
+
+# 激活API配置
+python activate_api_config.py
 ```
 
 ## 核心业务流程
@@ -210,9 +263,7 @@ docker exec -it okk_postgres psql -U okk_user -d okk_quant
      - `GridBacktestEngine` - 网格策略
      - `GridMarketMakingBacktest` - 网格做市
    - 调用引擎的 `run(klines, progress_callback)` 方法
-   - 计算性能指标（`BacktestMetrics`）：
-     - 总收益率、年化收益率、最大回撤
-     - 夏普比率、胜率、盈亏比
+   - 计算性能指标（`BacktestMetrics`）：总收益率、年化收益率、最大回撤、夏普比率、胜率、盈亏比
    - 保存结果到 `backtests` 和 `backtest_trades` 表
 
 ### 3. 风控触发流程
@@ -224,15 +275,9 @@ docker exec -it okk_postgres psql -U okk_user -d okk_quant
 - `drawdown` - 回撤风控（最大回撤百分比）
 - `frequency` - 频率风控（时间窗口内交易次数）
 
-**触发动作:**
-- `warn` - 仅发送告警
-- `limit` - 限制新订单
-- `pause` - 暂停策略
-- `close` - 平仓并暂停
+**触发动作:** `warn`（告警）→ `limit`（限制下单）→ `pause`（暂停策略）→ `close`（平仓并暂停）
 
-**检查点:**
-1. 策略监控循环中定期检查
-2. 下单前检查（`check_before_order()`）
+**检查点:** 策略监控循环中定期检查 + 下单前检查（`check_before_order()`）
 
 ## WebSocket实时通信架构
 
@@ -249,18 +294,8 @@ docker exec -it okk_postgres psql -U okk_user -d okk_quant
 2. **OKX WebSocket** (`websocket/okx_websocket.py`)
    - 连接OKX私有频道（账户、订单、持仓）
    - 需要API认证（在应用启动时从数据库加载）
-   - 订阅频道:
-     - 账户频道: `account`
-     - 持仓频道: `positions:{instType}:{instId}`
-     - 订单频道: `orders:{instType}`
+   - 订阅频道: `account`、`positions:{instType}:{instId}`、`orders:{instType}`
    - 将OKX推送转换为Socket.IO事件广播给前端
-
-### 前端WebSocket服务
-
-`src/services/websocket.ts`:
-- 封装Socket.IO客户端连接
-- 提供类型安全的事件监听器
-- Zustand store管理连接状态
 
 ## AI增强功能
 
@@ -272,162 +307,63 @@ docker exec -it okk_postgres psql -U okk_user -d okk_quant
 - `llm_client.py` - DeepSeek API客户端
 - `ai_analyzer.py` - 市场分析器（新闻、情绪分析）
 - `llm_enhanced_analyzer.py` - LLM增强分析
+- `multi_factor_analyzer.py` - 多因子分析器
+- `news_fetcher.py` / `sentiment_analysis.py` / `technical_analysis.py` - 辅助分析模块
 
-**AI增强策略:** `AISwingLongStrategy`
-- 继承 `SwingLongStrategy`
-- 定期调用AI分析市场情绪
-- 根据AI建议调整止盈止损参数
-- 参数:
-  - `enable_ai`: 是否启用AI
-  - `ai_analysis_interval`: 分析间隔（秒）
+**AI增强策略:** `AISwingLongStrategy` 继承 `SwingLongStrategy`，定期调用AI分析市场情绪，根据建议调整止盈止损参数。
 
-**配置环境变量:**
-```env
-DEEPSEEK_API_KEY=your_deepseek_api_key
-```
+**AI配置管理:** AI的API密钥和模型参数通过 `ai_configs` 数据库表持久化（`api/endpoints/ai_configs.py`），支持通过Web界面配置，无需重启服务。
 
 ## 通知推送系统
 
 ### 多渠道支持
 
-**位置:** `services/notification/`
+**位置:** `services/notification/channels/`（渠道实现在子目录）
 
-**渠道实现:**
-- `serverchan.py` - Server酱推送
-- `pushplus.py` - PushPlus推送
-- `wecom.py` - 企业微信机器人
-- `telegram.py` - Telegram Bot
+**渠道实现:** `serverchan.py`、`pushplus.py`、`wecom.py`、`telegram.py`
 
-**配置文件:** `backend/notification_config.json`
+**配置文件:** `backend/notification_config.json`（参考 `notification_config.example.json`）
 ```json
 {
   "channels": {
-    "serverchan": {
-      "enabled": true,
-      "sendkey": "your_key"
-    },
-    "telegram": {
-      "enabled": true,
-      "bot_token": "your_token",
-      "chat_id": "your_chat_id"
-    }
+    "serverchan": { "enabled": true, "sendkey": "your_key" },
+    "telegram": { "enabled": true, "bot_token": "your_token", "chat_id": "your_chat_id" }
   }
 }
 ```
 
-**通知服务:** `notification_service.py`
-- 在应用启动时加载配置
-- 支持多渠道同时推送
-- WebSocket管理器集成（前端实时通知）
-
 ## 环境变量配置
 
-**关键环境变量** (`backend/.env`):
+**关键环境变量** (`backend/.env`，参考 `backend/.env.example`):
 
 ```env
-# 应用配置
-APP_NAME=OKK量化交易系统
-APP_VERSION=1.0.0
-DEBUG=true
-
-# 数据库
 DATABASE_URL=postgresql+psycopg://okk_user:okk_pass@localhost:5432/okk_quant
-
-# Redis
 REDIS_HOST=localhost
 REDIS_PORT=6379
-REDIS_DB=0
-
-# JWT认证
 SECRET_KEY=your-secret-key-change-in-production
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=1440
-
-# Celery（异步任务）
-CELERY_BROKER_URL=redis://localhost:6379/1
-CELERY_RESULT_BACKEND=redis://localhost:6379/1
-
-# CORS
 CORS_ORIGINS=["http://localhost:5173"]
-
-# DeepSeek AI（可选）
-DEEPSEEK_API_KEY=your_deepseek_api_key
-
-# OKX API（可选，建议通过Web界面配置）
-OKX_API_KEY=your_api_key
-OKX_SECRET_KEY=your_secret_key
-OKX_PASSPHRASE=your_passphrase
-OKX_SIMULATED=true
-OKX_PROXY=http://127.0.0.1:7897
+DEEPSEEK_API_KEY=your_deepseek_api_key  # 可选，也可通过Web界面配置
+OKX_PROXY=http://127.0.0.1:7897         # OKX API在某些地区需要代理
 ```
 
-## 网络配置
-
-**重要**: OKX API在某些地区需要代理访问。
-
-### 代理配置
-
-在 `backend/.env` 中设置:
-```env
-OKX_PROXY=http://127.0.0.1:7897
-```
-
-**常见代理端口:**
-- Clash: `http://127.0.0.1:7890`
-- V2Ray: `http://127.0.0.1:10809`
-- Shadowsocks: `http://127.0.0.1:1080`
-
-所有OKX API请求（REST + WebSocket）都支持代理。
+**常见代理端口:** Clash `7890`、V2Ray `10809`、Shadowsocks `1080`
 
 ## 数据库表结构
 
-### 核心表及字段
+**核心表:**
 
-**users** - 用户表
-- `id`, `username`, `hashed_password`, `is_active`
-
-**strategies** - 策略配置
-- `id`, `user_id`, `name`, `type` (grid/swing_long/ai_swing_long)
-- `symbol`, `parameters` (JSON), `status` (running/stopped)
-- `total_profit`, `total_trades`, `win_rate`
-- `created_at`, `updated_at`
-
-**orders** - 订单记录
-- `id`, `strategy_id`, `order_id` (交易所返回), `symbol`
-- `side` (buy/sell), `order_type`, `price`, `amount`
-- `status` (submitted/partial_filled/filled/canceled)
-- `filled_amount`, `avg_price`, `fee`, `realized_pnl`
-- `created_at`, `filled_at`, `canceled_at`
-
-**positions** - 持仓记录（可选，主要用于记录历史持仓快照）
-
-**backtests** - 回测记录
-- `id`, `user_id`, `name`, `strategy_type`, `symbol`
-- `start_time`, `end_time`, `initial_capital`, `final_capital`
-- `total_return`, `annualized_return`, `max_drawdown`, `sharpe_ratio`
-- `total_trades`, `win_rate`, `profit_factor`
-- `status` (pending/running/completed/failed), `progress`
-- `equity_curve` (JSON数组)
-
-**backtest_trades** - 回测交易记录
-- `id`, `backtest_id`, `timestamp`, `side`, `price`, `amount`
-- `fee`, `pnl`, `pnl_percent`
-
-**api_configs** - API配置
-- `id`, `user_id`, `name`, `api_key`, `secret_key`, `passphrase`
-- `is_simulated`, `is_active`
-
-**risk_controls** - 风控规则
-- `id`, `user_id`, `strategy_id`, `level` (global/strategy)
-- `risk_type`, `is_enabled`, `action_on_trigger`
-
-**alerts** - 告警记录
-- `id`, `user_id`, `strategy_id`, `alert_type`, `severity`
-- `title`, `message`, `data` (JSON), `is_read`
-
-**klines** - K线数据（TimescaleDB hypertable）
-- `timestamp`, `symbol`, `interval`
-- `open`, `high`, `low`, `close`, `volume`
+| 表名 | 说明 |
+|------|------|
+| `users` | 用户表（id, username, hashed_password） |
+| `strategies` | 策略配置（type: grid/swing_long/swing_short/ai_swing_long） |
+| `orders` | 订单记录（含filled_amount, avg_price, fee, realized_pnl） |
+| `backtests` | 回测记录（含equity_curve JSON数组） |
+| `backtest_trades` | 回测交易记录 |
+| `api_configs` | OKX API配置（is_simulated, is_active） |
+| `ai_configs` | AI模型配置（API密钥、模型参数） |
+| `risk_controls` | 风控规则（level: global/strategy） |
+| `alerts` | 告警记录（severity, is_read） |
+| `klines` | K线数据（TimescaleDB hypertable，按timestamp分区） |
 
 ## 策略开发指南
 
@@ -444,178 +380,78 @@ class MyStrategy(StrategyBase):
     async def start(self):
         """策略启动 - 初始化、初始下单"""
         self.is_running = True
-        # TODO: 初始化逻辑
 
     async def on_tick(self, ticker: Dict):
         """处理实时tick行情 - 每5秒调用一次"""
-        # TODO: 交易逻辑
         pass
 
     async def on_order_update(self, order: Dict):
-        """处理订单状态更新 - 订单成交/取消时调用"""
-        # TODO: 订单成交后的处理
+        """处理订单状态更新"""
         pass
 
     async def stop(self, cancel_orders: bool = True):
         """策略停止 - 清理资源、撤销订单"""
         self.is_running = False
-        # TODO: 清理逻辑
 ```
 
-**关键属性:**
-- `self.strategy_id` - 策略ID
-- `self.symbol` - 交易对
-- `self.exchange` - 交易所实例
-- `self.is_running` - 运行状态
+**关键属性:** `self.strategy_id`、`self.symbol`、`self.exchange`、`self.is_running`
 
-**交易所方法:**
-- `await self.exchange.get_ticker(symbol)` - 获取ticker
-- `await self.exchange.create_order(...)` - 创建订单
-- `await self.exchange.cancel_order(...)` - 取消订单
-- `await self.exchange.get_order(...)` - 查询订单
-- `await self.exchange.get_balance()` - 获取余额
-- `await self.exchange.get_positions()` - 获取持仓
+**交易所方法:** `get_ticker()`、`create_order()`、`cancel_order()`、`get_order()`、`get_balance()`、`get_positions()`
 
 ### 注册新策略类型
 
-在 `services/strategy/manager.py` 的 `create_strategy()` 方法中添加:
-
-```python
-elif strategy_type_enum == StrategyType.MY_STRATEGY:
-    strategy = MyStrategy(
-        strategy_id=strategy_id,
-        exchange=exchange,
-        symbol=symbol,
-        parameters=parameters,
-        user_id=user_id
-    )
-```
-
-并在 `models/strategy.py` 的 `StrategyType` 枚举中添加类型。
+在 `services/strategy/manager.py` 的 `create_strategy()` 方法中添加对应分支，并在 `models/strategy.py` 的 `StrategyType` 枚举中添加类型。
 
 ## API端点开发
 
-### 添加新的API端点
-
-1. 在 `backend/app/api/endpoints/` 创建新文件 `my_module.py`:
-
-```python
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from app.core.database import get_db
-
-router = APIRouter()
-
-@router.get("/list")
-async def list_items(db: Session = Depends(get_db)):
-    """获取列表"""
-    return {"data": []}
-
-@router.post("/create")
-async def create_item(item: ItemCreate, db: Session = Depends(get_db)):
-    """创建项目"""
-    return {"id": 1}
-```
-
-2. 在 `backend/app/api/__init__.py` 注册路由:
-
-```python
-from .endpoints import my_module
-
-api_router.include_router(my_module.router, prefix="/my-module", tags=["我的模块"])
-```
+1. 在 `backend/app/api/endpoints/` 创建新文件
+2. 在 `backend/app/api/__init__.py` 注册路由（prefix `/api/v1`）
 
 ## 前端开发指南
 
 ### 添加新页面
 
 1. 在 `frontend/src/features/` 创建功能模块目录
-2. 创建页面组件（使用TypeScript + Ant Design）
-3. 在 `App.tsx` 添加路由:
-
-```tsx
-<Route path="my-page" element={<MyPage />} />
-```
-
-4. 在 `src/services/api.ts` 添加API调用函数:
-
-```typescript
-export const myAPI = {
-  list: () => request.get('/api/v1/my-module/list'),
-  create: (data: ItemCreate) => request.post('/api/v1/my-module/create', data),
-}
-```
+2. 在 `App.tsx` 添加路由，在 `src/services/api.ts` 添加API调用函数
 
 ### 组件开发规范
 
-- 使用函数组件 + Hooks
-- 使用Ant Design组件库
-- 使用TailwindCSS处理样式
-- 使用 `useRequest` (ahooks) 或 `useQuery` 处理异步请求
-- 使用Zustand管理全局状态
-- 使用i18next处理国际化
-
-## 安全注意事项
-
-1. **永远不要提交** `.env` 文件或包含API密钥的文件
-2. **API密钥权限**: 只授予交易、查询权限，**不要授予提现权限**
-3. **生产环境** 必须修改 `SECRET_KEY`
-4. **优先使用模拟盘**测试策略 (`OKX_SIMULATED=true`)
-5. **风控规则**: 生产环境务必配置合理的风控规则
-6. **代理安全**: 确保代理服务器可信，避免API密钥泄露
+- 函数组件 + Hooks，Ant Design组件库，TailwindCSS处理样式
+- `useRequest` (ahooks) 或 `useQuery` 处理异步请求
+- Zustand管理全局状态，i18next处理国际化
 
 ## 项目状态
 
 - ✅ 核心架构和OKX API对接完成
-- ✅ 网格策略、波段策略、AI增强策略实现
+- ✅ 网格、波段做多、波段做空、AI增强四种策略实现
 - ✅ 回测系统完成
-- ✅ 风控系统完成
+- ✅ 风控系统完成（5种类型 + 4级触发动作）
 - ✅ WebSocket实时推送完成（Socket.IO + OKX WS）
 - ✅ 多渠道通知推送完成
+- ✅ AI市场分析功能完成（DeepSeek集成）
 - ✅ 前端深色金融主题UI完成
 - ⏳ Celery异步任务（代码中有引用但未完全集成）
 
 ## 调试技巧
 
-### 后端日志
-
-使用 `loguru` 库:
+**后端日志** (loguru):
 ```python
 from loguru import logger
-
 logger.debug("调试信息")
 logger.info("常规信息")
-logger.warning("警告信息")
 logger.error("错误信息")
 ```
 
-### 查看OKX请求详情
+OKX请求详情在 `services/exchange/okx.py` 中已启用完整日志。
 
-在 `services/exchange/okx.py` 中已启用详细日志:
-```
-请求 GET https://www.okx.com/api/v5/market/ticker - params: {...}
-响应: 200 - {"code": "0", ...}
-```
-
-### 前端调试
-
-- 浏览器DevTools Network面板查看API请求
-- Console查看日志
-- React DevTools查看组件状态
-- WebSocket连接状态查看: Zustand DevTools
+**前端:** 浏览器DevTools Network面板查看API请求，React DevTools查看组件状态。
 
 ## 文档参考
 
+- `backend/API接口文档.md` - API完整接口文档
+- `backend/代理连接故障排查.md` - 代理配置故障排查
+- `backend/docs/BACKTEST_QUICKSTART.md` - 回测快速开始
+- `backend/docs/RISK_CONTROL_QUICKSTART.md` - 风控快速开始
+- `backend/docs/WEBSOCKET_RISK_ALERTS.md` - WebSocket和风控告警
+- `1panel-deploy-guide.md` - 1Panel生产部署指南
 - **OKX API文档**: https://www.okx.com/docs-v5/zh/
-- **FastAPI文档**: https://fastapi.tiangolo.com/
-- **React文档**: https://react.dev/
-- **Ant Design 5**: https://ant.design/
-- **TradingView Lightweight Charts**: https://tradingview.github.io/lightweight-charts/
-- **TanStack Query**: https://tanstack.com/query/latest
-- **Zustand**: https://zustand-demo.pmnd.rs/
-
-## 相关文档
-
-- `README.md` - 项目完整说明
-- `网络连接问题解决方案.md` - 代理配置详细指南
-- `公共数据.md` / `行情数据.md` / `交易账户.md` / `撮合交易.md` - OKX API接口文档
