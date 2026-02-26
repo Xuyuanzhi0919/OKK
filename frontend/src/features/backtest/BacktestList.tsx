@@ -243,22 +243,30 @@ const BacktestList = () => {
         })
     : []
 
-  // 获取可用的交易对列表(从已有K线数据中获取)
+  // 默认交易对列表（API 请求失败或无 K 线数据时使用）
+  const DEFAULT_SYMBOLS = [
+    'BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT', 'XRP-USDT',
+    'DOGE-USDT', 'ADA-USDT', 'AVAX-USDT', 'LINK-USDT', 'DOT-USDT',
+    'LTC-USDT', 'ATOM-USDT', 'ETC-USDT', 'FIL-USDT', 'ARB-USDT',
+    'OP-USDT', 'APT-USDT', 'NEAR-USDT', 'SUI-USDT', 'TRX-USDT',
+    'KSM-USDT', 'INJ-USDT', 'SEI-USDT', 'TIA-USDT', 'ORDI-USDT',
+    'WLD-USDT', 'PEPE-USDT', 'SHIB-USDT',
+  ]
+
+  // 获取可用的交易对列表(从已有K线数据中获取，并与默认列表合并)
   const { data: availableSymbols } = useQuery({
     queryKey: ['available-symbols'],
     queryFn: async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/v1/backtest/symbols`)
-        if (!response.ok) {
-          throw new Error('获取交易对列表失败')
-        }
-        const symbols = await response.json()
-        // 如果没有数据，返回默认列表
-        return symbols.length > 0 ? symbols : ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT']
+        if (!response.ok) throw new Error('获取交易对列表失败')
+        const symbols: string[] = await response.json()
+        // 将 DB 中已有的 K 线交易对排在前面，再追加默认列表（去重）
+        const merged = [...new Set([...symbols, ...DEFAULT_SYMBOLS])]
+        return merged.length > 0 ? merged : DEFAULT_SYMBOLS
       } catch (error) {
         console.error('获取交易对列表失败:', error)
-        // 请求失败时返回默认列表
-        return ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT']
+        return DEFAULT_SYMBOLS
       }
     },
   })
@@ -1150,16 +1158,14 @@ const BacktestList = () => {
               >
                 <Select
                   showSearch
-                  placeholder="选择或输入交易对(如BTC-USDT)"
+                  allowClear
+                  placeholder="选择或输入交易对，如 BTC-USDT"
                   filterOption={(input, option) =>
                     String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
-                  options={(availableSymbols && availableSymbols.length > 0
-                    ? availableSymbols
-                    : ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT', 'XRP-USDT', 'DOGE-USDT', 'ADA-USDT', 'AVAX-USDT', 'LINK-USDT', 'DOT-USDT', 'MATIC-USDT', 'UNI-USDT', 'LTC-USDT', 'ATOM-USDT', 'ETC-USDT', 'FIL-USDT', 'ARB-USDT', 'OP-USDT', 'APT-USDT', 'NEAR-USDT']
-                  ).map(sym => ({
+                  options={(availableSymbols ?? DEFAULT_SYMBOLS).map(sym => ({
                     label: sym,
-                    value: sym
+                    value: sym,
                   }))}
                 />
               </Form.Item>
