@@ -37,17 +37,21 @@ const SYMBOL_OPTIONS = [
   'PEPE-USDT-SWAP', 'SHIB-USDT-SWAP', 'FLOKI-USDT-SWAP', 'BONK-USDT-SWAP',
 ].map(s => ({ label: s, value: s }))
 
-// 策略类型选项
-const STRATEGY_TYPE_OPTIONS = [
-  { label: '网格策略', value: 'grid' },
-  { label: '波段做多', value: 'swing_long' },
-  { label: '波段做空', value: 'swing_short' },
-  { label: 'AI波段做多', value: 'ai_swing_long' },
-  { label: '马丁格尔', value: 'martin' },
-  { label: '趋势跟踪', value: 'trend' },
-  { label: '套利', value: 'arbitrage' },
-  { label: '自定义', value: 'custom' },
-]
+// 策略类型中文标签（用于表格展示已有历史策略）
+const STRATEGY_TYPE_LABELS: Record<string, string> = {
+  grid: '网格策略',
+  swing_long: '波段做多',
+  swing_short: '波段做空',
+  ai_swing_long: 'AI波段做多',
+  martin: '马丁格尔',
+  trend: '趋势跟踪',
+  arbitrage: '套利',
+  custom: '自定义',
+}
+
+// 当前无可用实盘策略类型，过滤选项暂为空
+// 后续接入新策略时在此补充 { label, value }
+const STRATEGY_TYPE_OPTIONS: { label: string; value: string }[] = []
 
 // 状态选项
 const STATUS_OPTIONS = [
@@ -244,7 +248,7 @@ const StrategyList = () => {
       dataIndex: 'type',
       key: 'type',
       width: 100,
-      render: (type) => <Tag>{String(type).toUpperCase()}</Tag>,
+      render: (type) => <Tag>{STRATEGY_TYPE_LABELS[type] || String(type).toUpperCase()}</Tag>,
     },
     {
       title: '交易对',
@@ -423,8 +427,9 @@ const StrategyList = () => {
           <Col span={6}>
             <Select
               style={{ width: '100%' }}
-              placeholder="筛选类型"
+              placeholder="筛选类型（暂无可用选项）"
               allowClear
+              disabled={STRATEGY_TYPE_OPTIONS.length === 0}
               value={filterType}
               onChange={(v) => setFilterType(v)}
               options={STRATEGY_TYPE_OPTIONS}

@@ -10,17 +10,6 @@ export enum StrategyStatus {
   ERROR = 'error',
 }
 
-// 策略类型
-export enum StrategyType {
-  GRID = 'grid',
-  MARTIN = 'martin',
-  TREND = 'trend',
-  ARBITRAGE = 'arbitrage',
-  CUSTOM = 'custom',
-  SWING_LONG = 'swing_long',
-  AI_SWING_LONG = 'ai_swing_long',
-}
-
 // 订单方向
 export enum OrderSide {
   BUY = 'buy',
@@ -49,7 +38,7 @@ export enum OrderStatus {
 export interface Strategy {
   id: number
   name: string
-  type: StrategyType
+  type: string
   status: StrategyStatus
   symbol: string
   timeframe?: string

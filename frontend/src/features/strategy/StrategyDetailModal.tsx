@@ -136,50 +136,6 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
   const total_buy_amount = pnlData?.total_buy_amount ?? displayData.total_buy_volume ?? 0
   const total_sell_amount = pnlData?.total_sell_amount ?? displayData.total_sell_volume ?? 0
 
-  const gridOrderColumns: ColumnsType<any> = [
-    {
-      title: t('strategy.gridIndex'),
-      dataIndex: 'grid_index',
-      key: 'grid_index',
-      width: 100,
-    },
-    {
-      title: t('strategy.buyPrice'),
-      dataIndex: 'buy_price',
-      key: 'buy_price',
-      width: 120,
-      render: (price) => <span className="font-mono">${formatPrice(price)}</span>,
-    },
-    {
-      title: t('strategy.buyStatus'),
-      dataIndex: 'buy_status',
-      key: 'buy_status',
-      width: 100,
-      render: (status) => {
-        if (!status) return <Tag>-</Tag>
-        const color = status === 'filled' ? 'success' : status === 'open' ? 'processing' : 'default'
-        return <Tag color={color}>{status.toUpperCase()}</Tag>
-      },
-    },
-    {
-      title: t('strategy.sellPrice'),
-      dataIndex: 'sell_price',
-      key: 'sell_price',
-      width: 120,
-      render: (price) => price ? <span className="font-mono">${formatPrice(price)}</span> : '-',
-    },
-    {
-      title: t('strategy.sellStatus'),
-      dataIndex: 'sell_status',
-      key: 'sell_status',
-      width: 100,
-      render: (status) => {
-        if (!status) return <Tag>-</Tag>
-        const color = status === 'filled' ? 'success' : status === 'open' ? 'processing' : 'default'
-        return <Tag color={color}>{status.toUpperCase()}</Tag>
-      },
-    },
-  ]
 
   // Tab标签页配置
   const tabItems = [
@@ -365,19 +321,6 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
             </Row>
           </Card>
 
-          {/* 网格挂单 (仅网格策略显示) */}
-          {strategy.type === 'grid' && (
-            <Card title={t('strategy.gridOrders')} variant="borderless" size="small">
-              <Table
-                columns={gridOrderColumns}
-                dataSource={displayData.grid_orders_detail || []}
-                pagination={false}
-                size="small"
-                rowKey="grid_index"
-                locale={{ emptyText: displayData.is_running ? '暂无订单数据' : '策略未运行' }}
-              />
-            </Card>
-          )}
         </div>
       ),
     },
