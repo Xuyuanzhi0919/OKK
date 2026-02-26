@@ -73,11 +73,12 @@ class GridBacktestEngine(BacktestEngine):
         """
         处理K线数据，执行网格策略
 
-        网格策略逻辑:
-        - 价格下跌触及网格线时买入(低买)
-        - 价格上涨触及网格线时卖出(高卖)
-        - 使用K线的high/low判断是否触及网格价格
-        - 以网格价格成交
+        网格策略逻辑 (改进版 - 使用穿越触发):
+        - 价格从上方跌破网格线时买入(低买)
+        - 价格从下方突破网格线时卖出(高卖)
+        - 使用K线的open/high/low/close判断穿越
+        
+        这种方式避免了在价格已经在网格下方时立即买入的问题
 
         Args:
             kline: K线数据
@@ -90,23 +91,23 @@ class GridBacktestEngine(BacktestEngine):
 
         # 遍历网格价格，检查是否触发交易
         for i, grid_price in enumerate(self.grid_prices):
-            # 网格买入逻辑：价格下跌触及网格线 且 该网格未买入
-            # 条件: 1) 最低价触及网格价格  2) 收盘价低于网格价格(确认下跌)  3) 该网格未持仓
-            if low_price <= grid_price and close_price <= grid_price and not self.grid_states[i]:
+            # 网格买入逻辑：价格从上方穿越网格线向下
+            # 条件: 1) 开盘价高于网格价格(之前在上方)  2) 最低价低于网格价格(穿越发生)  3) 该网格未持仓
+            if open_price > grid_price and low_price <= grid_price and not self.grid_states[i]:
                 # 以网格价格买入
                 trade = self.buy(grid_price, self.amount_per_grid, timestamp)
                 if trade:
                     self.grid_states[i] = True
-                    logger.debug(f"网格{i}买入: 价格触及 {grid_price:.2f} (K线: {low_price:.2f}-{high_price:.2f}, 收盘: {close_price:.2f})")
+                    logger.debug(f"网格{i}买入: 价格穿越 {grid_price:.2f} 向下 (K线: {open_price:.2f} -> {low_price:.2f}-{high_price:.2f} -> {close_price:.2f})")
 
-            # 网格卖出逻辑：价格上涨触及网格线 且 该网格已买入
-            # 条件: 1) 最高价触及网格价格  2) 收盘价高于网格价格(确认上涨)  3) 该网格有持仓
-            elif high_price >= grid_price and close_price >= grid_price and self.grid_states[i]:
+            # 网格卖出逻辑：价格从下方穿越网格线向上
+            # 条件: 1) 开盘价低于网格价格(之前在下方)  2) 最高价高于网格价格(穿越发生)  3) 该网格有持仓
+            elif open_price < grid_price and high_price >= grid_price and self.grid_states[i]:
                 # 以网格价格卖出
                 trade = self.sell(grid_price, self.amount_per_grid, timestamp)
                 if trade:
                     self.grid_states[i] = False
-                    logger.debug(f"网格{i}卖出: 价格触及 {grid_price:.2f}, 盈亏: {trade.pnl:.2f} (K线: {low_price:.2f}-{high_price:.2f}, 收盘: {close_price:.2f})")
+                    logger.debug(f"网格{i}卖出: 价格穿越 {grid_price:.2f} 向上, 盈亏: {trade.pnl:.2f}")
 
 
 class GridMarketMakingBacktest(BacktestEngine):

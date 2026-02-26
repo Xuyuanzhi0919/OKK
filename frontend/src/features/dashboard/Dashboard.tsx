@@ -431,6 +431,26 @@ const Dashboard = () => {
     return score
   })()))
 
+  // 连续亏损 - 从运行中策略的实时统计中取最大值
+  const worstLossStreak = runningStrategies.reduce<{
+    count: number
+    name: string
+    history: number[]
+  }>(
+    (worst, s) => {
+      const count: number = s._realtime_stats?.consecutive_losses ?? 0
+      if (count > worst.count) {
+        return {
+          count,
+          name: s.name ?? '',
+          history: (s._realtime_stats?.trade_pnl_history ?? []) as number[],
+        }
+      }
+      return worst
+    },
+    { count: 0, name: '', history: [] }
+  )
+
   const getRiskHealthColor = (score: number) => {
     if (score >= 75) return '#22c55e'
     if (score >= 50) return '#f59e0b'
@@ -727,44 +747,64 @@ const Dashboard = () => {
 
       {/* ── 第二排：风险 & 杠杆指标 ── */}
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        {/* 保证金率 */}
+        {/* 连续亏损次数 */}
         <Col xs={24} sm={12} lg={6} xl={4} xxl={4}>
-          <Tooltip title="保证金率反映账户整体风险程度，数值越低风险越高。OKX强平线通常在 ≤ 0%">
+          <Tooltip title="运行中所有策略里，当前连续亏损次数最多的策略。连续亏损 ≥ 3 次需关注，≥ 5 次建议暂停检查">
             <Card variant="borderless" size="small" style={{ height: '100%' }}>
               <div style={{ marginBottom: 8 }}>
                 <div className="pro-card-header" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <ShieldAlert size={11} />
-                  保证金率
+                  <TrendingDown size={11} />
+                  连续亏损次数
                 </div>
               </div>
-              {marginRatio > 0 ? (
+              {runningStrategies.length > 0 ? (
                 <>
                   <div
                     style={{
                       fontSize: 28,
                       fontWeight: 700,
                       fontFamily: 'monospace',
-                      color: marginRatio > 500 ? '#22c55e' : marginRatio > 200 ? '#f59e0b' : '#ef4444',
+                      color:
+                        worstLossStreak.count === 0
+                          ? '#22c55e'
+                          : worstLossStreak.count < 3
+                          ? '#f59e0b'
+                          : '#ef4444',
                     }}
                   >
-                    {formatPercent(marginRatio)}%
+                    {worstLossStreak.count} 次
                   </div>
-                  <div style={{ marginTop: 8 }}>
-                    <Progress
-                      percent={Math.min(100, marginRatio / 10)}
-                      strokeColor={marginRatio > 500 ? '#22c55e' : marginRatio > 200 ? '#f59e0b' : '#ef4444'}
-                      showInfo={false}
-                      size="small"
-                    />
-                    <div style={{ fontSize: 11, color: '#737373', marginTop: 4 }}>
-                      {marginRatio > 500 ? '安全' : marginRatio > 200 ? '注意' : '危险'}
+                  {/* 最近5笔盈亏色块条 */}
+                  {worstLossStreak.history.length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, marginTop: 8, alignItems: 'center' }}>
+                      {worstLossStreak.history.map((pnl, i) => (
+                        <div
+                          key={i}
+                          title={`${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`}
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: '50%',
+                            backgroundColor: pnl >= 0 ? '#22c55e' : '#ef4444',
+                            flexShrink: 0,
+                          }}
+                        />
+                      ))}
+                      <span style={{ fontSize: 10, color: '#525252', marginLeft: 2 }}>近5笔</span>
                     </div>
+                  )}
+                  <div style={{ marginTop: 6, fontSize: 11, color: '#737373' }}>
+                    {worstLossStreak.count === 0
+                      ? '暂无连续亏损'
+                      : worstLossStreak.count < 3
+                      ? `${worstLossStreak.name} · 正常范围`
+                      : `⚠ ${worstLossStreak.name}`}
                   </div>
                 </>
               ) : (
                 <>
                   <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace', color: '#737373' }}>--</div>
-                  <div style={{ marginTop: 8, fontSize: 11, color: '#737373' }}>未开仓（OKX 无持仓时不返回此值）</div>
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#737373' }}>无运行中的策略</div>
                 </>
               )}
             </Card>

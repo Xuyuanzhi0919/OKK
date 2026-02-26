@@ -296,6 +296,9 @@ class StrategyManager:
             "is_running": strategy.is_running,
             "realized_pnl": strategy.realized_pnl if hasattr(strategy, 'realized_pnl') else 0,
             "total_trades": strategy.total_trades if hasattr(strategy, 'total_trades') else 0,
+            "consecutive_losses": strategy.consecutive_losses,
+            "max_consecutive_losses": strategy.max_consecutive_losses,
+            "trade_pnl_history": strategy.trade_pnl_history,
         }
 
     async def stop_all_strategies(self):

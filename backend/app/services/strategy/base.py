@@ -43,6 +43,35 @@ class StrategyBase(ABC):
         self.user_id = user_id
         self.is_running = False
 
+        # 连续亏损追踪
+        self.consecutive_losses: int = 0         # 当前连续亏损次数
+        self.max_consecutive_losses: int = 0     # 历史最大连续亏损次数
+        self.trade_pnl_history: list = []        # 最近5笔平仓交易盈亏（最新在末尾）
+
+    def record_trade_result(self, pnl: float) -> None:
+        """
+        记录一笔平仓交易的盈亏，更新连续亏损计数器。
+        子类在确认一笔完整买卖循环结束时调用（如 sell 成交后）。
+
+        Args:
+            pnl: 本次平仓的已实现盈亏（正盈负亏）
+        """
+        self.trade_pnl_history.append(round(pnl, 4))
+        if len(self.trade_pnl_history) > 5:
+            self.trade_pnl_history.pop(0)
+
+        if pnl < 0:
+            self.consecutive_losses += 1
+            if self.consecutive_losses > self.max_consecutive_losses:
+                self.max_consecutive_losses = self.consecutive_losses
+        else:
+            self.consecutive_losses = 0
+
+        logger.debug(
+            f"策略 {self.strategy_id} 交易结果记录: pnl={pnl:.4f}, "
+            f"consecutive_losses={self.consecutive_losses}, max={self.max_consecutive_losses}"
+        )
+
     @abstractmethod
     async def on_tick(self, ticker: Dict):
         """
