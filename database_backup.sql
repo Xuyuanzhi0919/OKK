@@ -1,0 +1,2327 @@
+--
+-- PostgreSQL database dump
+--
+
+\restrict NVCDSgZLn7PxUGKLquJZwp8IqQUing24Z7WQZA62peCuppGbGUVUZ4MEd2bxIdn
+
+-- Dumped from database version 18.1
+-- Dumped by pg_dump version 18.1
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: order_side; Type: TYPE; Schema: public; Owner: postgres
+--
+
+CREATE TYPE public.order_side AS ENUM (
+    'buy',
+    'sell'
+);
+
+
+ALTER TYPE public.order_side OWNER TO postgres;
+
+--
+-- Name: order_status; Type: TYPE; Schema: public; Owner: postgres
+--
+
+CREATE TYPE public.order_status AS ENUM (
+    'pending',
+    'submitted',
+    'partial_filled',
+    'filled',
+    'canceled',
+    'failed'
+);
+
+
+ALTER TYPE public.order_status OWNER TO postgres;
+
+--
+-- Name: order_type; Type: TYPE; Schema: public; Owner: postgres
+--
+
+CREATE TYPE public.order_type AS ENUM (
+    'limit',
+    'market',
+    'stop_limit',
+    'stop_market',
+    'ioc',
+    'post_only'
+);
+
+
+ALTER TYPE public.order_type OWNER TO postgres;
+
+--
+-- Name: strategy_status; Type: TYPE; Schema: public; Owner: postgres
+--
+
+CREATE TYPE public.strategy_status AS ENUM (
+    'stopped',
+    'running',
+    'paused',
+    'error'
+);
+
+
+ALTER TYPE public.strategy_status OWNER TO postgres;
+
+--
+-- Name: strategy_type; Type: TYPE; Schema: public; Owner: postgres
+--
+
+CREATE TYPE public.strategy_type AS ENUM (
+    'grid',
+    'martin',
+    'trend',
+    'arbitrage',
+    'custom',
+    'swing_long',
+    'ai_swing_long',
+    'swing_short'
+);
+
+
+ALTER TYPE public.strategy_type OWNER TO postgres;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: ai_configs; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.ai_configs (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    name character varying(100) NOT NULL,
+    provider character varying(50) DEFAULT 'deepseek'::character varying,
+    api_key character varying(255) NOT NULL,
+    model character varying(100) DEFAULT 'deepseek-chat'::character varying,
+    is_active boolean DEFAULT false,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone
+);
+
+
+ALTER TABLE public.ai_configs OWNER TO postgres;
+
+--
+-- Name: ai_configs_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.ai_configs_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.ai_configs_id_seq OWNER TO postgres;
+
+--
+-- Name: ai_configs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.ai_configs_id_seq OWNED BY public.ai_configs.id;
+
+
+--
+-- Name: alerts; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.alerts (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    strategy_id integer,
+    alert_type character varying(50) NOT NULL,
+    severity character varying(20) DEFAULT 'info'::character varying NOT NULL,
+    title character varying(200) NOT NULL,
+    message text NOT NULL,
+    data text,
+    is_read boolean DEFAULT false,
+    is_handled boolean DEFAULT false,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    handled_at timestamp with time zone
+);
+
+
+ALTER TABLE public.alerts OWNER TO postgres;
+
+--
+-- Name: alerts_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.alerts_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.alerts_id_seq OWNER TO postgres;
+
+--
+-- Name: alerts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.alerts_id_seq OWNED BY public.alerts.id;
+
+
+--
+-- Name: api_configs; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.api_configs (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    name character varying(100) NOT NULL,
+    exchange character varying(50) DEFAULT 'OKX'::character varying NOT NULL,
+    api_key character varying(255) NOT NULL,
+    secret_key text NOT NULL,
+    passphrase character varying(255) NOT NULL,
+    is_simulated boolean DEFAULT false,
+    is_active boolean DEFAULT false,
+    proxy character varying(255),
+    is_valid boolean DEFAULT true,
+    last_verified_at timestamp with time zone,
+    error_message text,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.api_configs OWNER TO postgres;
+
+--
+-- Name: api_configs_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.api_configs_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.api_configs_id_seq OWNER TO postgres;
+
+--
+-- Name: api_configs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.api_configs_id_seq OWNED BY public.api_configs.id;
+
+
+--
+-- Name: backtest_trades; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.backtest_trades (
+    id integer NOT NULL,
+    backtest_id integer NOT NULL,
+    "timestamp" bigint NOT NULL,
+    side character varying(10) NOT NULL,
+    price numeric(20,8) NOT NULL,
+    amount numeric(20,8) NOT NULL,
+    fee numeric(20,8) NOT NULL,
+    position_before numeric(20,8),
+    position_after numeric(20,8),
+    capital_before numeric(20,2),
+    capital_after numeric(20,2),
+    pnl numeric(20,8),
+    pnl_percent numeric(10,4)
+);
+
+
+ALTER TABLE public.backtest_trades OWNER TO postgres;
+
+--
+-- Name: backtest_trades_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.backtest_trades_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.backtest_trades_id_seq OWNER TO postgres;
+
+--
+-- Name: backtest_trades_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.backtest_trades_id_seq OWNED BY public.backtest_trades.id;
+
+
+--
+-- Name: backtests; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.backtests (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    name character varying(100) NOT NULL,
+    description text,
+    strategy_type character varying(50) NOT NULL,
+    symbol character varying(20) NOT NULL,
+    "interval" character varying(10) NOT NULL,
+    start_time bigint NOT NULL,
+    end_time bigint NOT NULL,
+    initial_capital numeric(20,2) DEFAULT 10000 NOT NULL,
+    parameters jsonb,
+    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    progress integer DEFAULT 0,
+    error_message text,
+    final_capital numeric(20,2),
+    total_return numeric(10,4),
+    annualized_return numeric(10,4),
+    max_drawdown numeric(10,4),
+    sharpe_ratio numeric(10,4),
+    total_trades integer DEFAULT 0,
+    winning_trades integer DEFAULT 0,
+    losing_trades integer DEFAULT 0,
+    win_rate numeric(10,4),
+    profit_factor numeric(10,4),
+    total_fee numeric(20,8),
+    equity_curve jsonb,
+    trade_history jsonb,
+    position_history jsonb,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    completed_at timestamp without time zone
+);
+
+
+ALTER TABLE public.backtests OWNER TO postgres;
+
+--
+-- Name: backtests_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.backtests_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.backtests_id_seq OWNER TO postgres;
+
+--
+-- Name: backtests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.backtests_id_seq OWNED BY public.backtests.id;
+
+
+--
+-- Name: klines; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.klines (
+    id integer NOT NULL,
+    symbol character varying(20) NOT NULL,
+    "interval" character varying(10) NOT NULL,
+    "timestamp" bigint NOT NULL,
+    open numeric(20,8) NOT NULL,
+    high numeric(20,8) NOT NULL,
+    low numeric(20,8) NOT NULL,
+    close numeric(20,8) NOT NULL,
+    volume numeric(30,8) NOT NULL,
+    volume_currency numeric(30,8) NOT NULL,
+    confirm integer DEFAULT 1
+);
+
+
+ALTER TABLE public.klines OWNER TO postgres;
+
+--
+-- Name: klines_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.klines_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.klines_id_seq OWNER TO postgres;
+
+--
+-- Name: klines_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.klines_id_seq OWNED BY public.klines.id;
+
+
+--
+-- Name: orders; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.orders (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    strategy_id integer,
+    order_id character varying(100),
+    symbol character varying(50) NOT NULL,
+    side public.order_side NOT NULL,
+    order_type public.order_type NOT NULL,
+    status public.order_status DEFAULT 'pending'::public.order_status,
+    price numeric,
+    amount numeric NOT NULL,
+    filled_amount numeric DEFAULT 0.0,
+    avg_price numeric,
+    fee numeric DEFAULT 0.0,
+    fee_currency character varying(10),
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    submitted_at timestamp with time zone,
+    filled_at timestamp with time zone,
+    canceled_at timestamp with time zone,
+    note character varying(255)
+);
+
+
+ALTER TABLE public.orders OWNER TO postgres;
+
+--
+-- Name: orders_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.orders_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.orders_id_seq OWNER TO postgres;
+
+--
+-- Name: orders_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.orders_id_seq OWNED BY public.orders.id;
+
+
+--
+-- Name: positions; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.positions (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    strategy_id integer,
+    symbol character varying(50) NOT NULL,
+    amount numeric NOT NULL,
+    available_amount numeric NOT NULL,
+    frozen_amount numeric DEFAULT 0.0,
+    avg_price numeric NOT NULL,
+    total_cost numeric NOT NULL,
+    unrealized_pnl numeric DEFAULT 0.0,
+    realized_pnl numeric DEFAULT 0.0,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone
+);
+
+
+ALTER TABLE public.positions OWNER TO postgres;
+
+--
+-- Name: positions_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.positions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.positions_id_seq OWNER TO postgres;
+
+--
+-- Name: positions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.positions_id_seq OWNED BY public.positions.id;
+
+
+--
+-- Name: risk_actions; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.risk_actions (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    strategy_id integer,
+    risk_control_id integer,
+    action_type character varying(20) NOT NULL,
+    trigger_reason text NOT NULL,
+    risk_metrics text,
+    execution_status character varying(20) DEFAULT 'success'::character varying NOT NULL,
+    execution_details text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.risk_actions OWNER TO postgres;
+
+--
+-- Name: risk_actions_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.risk_actions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.risk_actions_id_seq OWNER TO postgres;
+
+--
+-- Name: risk_actions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.risk_actions_id_seq OWNED BY public.risk_actions.id;
+
+
+--
+-- Name: risk_controls; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.risk_controls (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    strategy_id integer,
+    level character varying(20) DEFAULT 'strategy'::character varying NOT NULL,
+    risk_type character varying(50) NOT NULL,
+    name character varying(200) NOT NULL,
+    description text,
+    is_enabled boolean DEFAULT true,
+    min_available_balance double precision,
+    max_position_value double precision,
+    max_order_amount double precision,
+    max_drawdown_percent double precision,
+    daily_loss_limit double precision,
+    total_loss_limit double precision,
+    max_consecutive_losses integer,
+    max_position_per_symbol double precision,
+    max_concentration_ratio double precision,
+    max_trades_per_period integer,
+    period_seconds integer,
+    action_on_trigger character varying(20) DEFAULT 'warn'::character varying NOT NULL,
+    warning_threshold double precision DEFAULT 0.8,
+    auto_resume boolean DEFAULT false,
+    is_triggered boolean DEFAULT false,
+    trigger_count integer DEFAULT 0,
+    last_trigger_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.risk_controls OWNER TO postgres;
+
+--
+-- Name: risk_controls_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.risk_controls_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.risk_controls_id_seq OWNER TO postgres;
+
+--
+-- Name: risk_controls_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.risk_controls_id_seq OWNED BY public.risk_controls.id;
+
+
+--
+-- Name: strategies; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.strategies (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    name character varying(100) NOT NULL,
+    type public.strategy_type NOT NULL,
+    status public.strategy_status DEFAULT 'stopped'::public.strategy_status,
+    symbol character varying(50) NOT NULL,
+    timeframe character varying(10),
+    parameters jsonb,
+    max_position numeric,
+    stop_loss numeric,
+    take_profit numeric,
+    total_profit numeric DEFAULT 0.0,
+    total_trades integer DEFAULT 0,
+    win_rate numeric DEFAULT 0.0,
+    description text,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone,
+    started_at timestamp with time zone,
+    stopped_at timestamp with time zone
+);
+
+
+ALTER TABLE public.strategies OWNER TO postgres;
+
+--
+-- Name: strategies_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.strategies_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.strategies_id_seq OWNER TO postgres;
+
+--
+-- Name: strategies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.strategies_id_seq OWNED BY public.strategies.id;
+
+
+--
+-- Name: users; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.users (
+    id integer NOT NULL,
+    username character varying(50) NOT NULL,
+    email character varying(100),
+    hashed_password character varying(255) NOT NULL,
+    is_active boolean DEFAULT true,
+    is_superuser boolean DEFAULT false,
+    okx_api_key character varying(255),
+    okx_secret_key character varying(255),
+    okx_passphrase character varying(255),
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone
+);
+
+
+ALTER TABLE public.users OWNER TO postgres;
+
+--
+-- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.users_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.users_id_seq OWNER TO postgres;
+
+--
+-- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
+
+
+--
+-- Name: ai_configs id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.ai_configs ALTER COLUMN id SET DEFAULT nextval('public.ai_configs_id_seq'::regclass);
+
+
+--
+-- Name: alerts id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.alerts ALTER COLUMN id SET DEFAULT nextval('public.alerts_id_seq'::regclass);
+
+
+--
+-- Name: api_configs id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.api_configs ALTER COLUMN id SET DEFAULT nextval('public.api_configs_id_seq'::regclass);
+
+
+--
+-- Name: backtest_trades id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.backtest_trades ALTER COLUMN id SET DEFAULT nextval('public.backtest_trades_id_seq'::regclass);
+
+
+--
+-- Name: backtests id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.backtests ALTER COLUMN id SET DEFAULT nextval('public.backtests_id_seq'::regclass);
+
+
+--
+-- Name: klines id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.klines ALTER COLUMN id SET DEFAULT nextval('public.klines_id_seq'::regclass);
+
+
+--
+-- Name: orders id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.orders ALTER COLUMN id SET DEFAULT nextval('public.orders_id_seq'::regclass);
+
+
+--
+-- Name: positions id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.positions ALTER COLUMN id SET DEFAULT nextval('public.positions_id_seq'::regclass);
+
+
+--
+-- Name: risk_actions id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.risk_actions ALTER COLUMN id SET DEFAULT nextval('public.risk_actions_id_seq'::regclass);
+
+
+--
+-- Name: risk_controls id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.risk_controls ALTER COLUMN id SET DEFAULT nextval('public.risk_controls_id_seq'::regclass);
+
+
+--
+-- Name: strategies id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.strategies ALTER COLUMN id SET DEFAULT nextval('public.strategies_id_seq'::regclass);
+
+
+--
+-- Name: users id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
+
+
+--
+-- Data for Name: ai_configs; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.ai_configs (id, user_id, name, provider, api_key, model, is_active, created_at, updated_at) FROM stdin;
+1	1	Dp	deepseek	sk-9ce47c27f6894a9eb68b8411ae9d627d	deepseek-chat	t	2026-02-04 21:35:41.78303+08	2026-02-04 21:35:43.018642+08
+\.
+
+
+--
+-- Data for Name: alerts; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.alerts (id, user_id, strategy_id, alert_type, severity, title, message, data, is_read, is_handled, created_at, handled_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: api_configs; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.api_configs (id, user_id, name, exchange, api_key, secret_key, passphrase, is_simulated, is_active, proxy, is_valid, last_verified_at, error_message, created_at, updated_at) FROM stdin;
+1	1	欧易虚拟	OKX	6e6807b9-3f94-4a20-91bc-9c26fa851a40	FC92640BFE439C7594F2B7C71D528943	155062862Xyz.	t	t	http://127.0.0.1:7897	t	2026-02-04 12:31:01.385544+08	\N	2026-02-04 20:30:57.857728+08	2026-02-04 20:36:19.38068+08
+\.
+
+
+--
+-- Data for Name: backtest_trades; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.backtest_trades (id, backtest_id, "timestamp", side, price, amount, fee, position_before, position_after, capital_before, capital_after, pnl, pnl_percent) FROM stdin;
+\.
+
+
+--
+-- Data for Name: backtests; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.backtests (id, user_id, name, description, strategy_type, symbol, "interval", start_time, end_time, initial_capital, parameters, status, progress, error_message, final_capital, total_return, annualized_return, max_drawdown, sharpe_ratio, total_trades, winning_trades, losing_trades, win_rate, profit_factor, total_fee, equity_curve, trade_history, position_history, created_at, updated_at, completed_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: klines; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.klines (id, symbol, "interval", "timestamp", open, high, low, close, volume, volume_currency, confirm) FROM stdin;
+1	BTC-USDT	1H	1767495600000	91135.00000000	91357.10000000	91086.70000000	91235.90000000	152.02812438	13870922.04020960	1
+2	BTC-USDT	1H	1767492000000	91237.10000000	91298.40000000	91084.00000000	91134.90000000	103.50578431	9438164.58020785	1
+3	BTC-USDT	1H	1767488400000	91347.60000000	91479.90000000	91005.00000000	91237.00000000	135.31749374	12340793.83902870	1
+4	BTC-USDT	1H	1767484800000	90632.90000000	91612.70000000	90632.90000000	91347.70000000	600.93999358	54847530.99190300	1
+5	BTC-USDT	1H	1767481200000	90592.00000000	90699.30000000	90470.00000000	90633.00000000	69.63596570	6310648.41805828	1
+6	BTC-USDT	1H	1767477600000	90561.60000000	90730.00000000	90494.90000000	90591.90000000	65.60765990	5943154.84196769	1
+7	BTC-USDT	1H	1767474000000	90370.00000000	90736.10000000	90322.20000000	90561.50000000	185.50677724	16804067.00307490	1
+8	BTC-USDT	1H	1767470400000	90128.50000000	90370.00000000	90026.10000000	90369.90000000	42.64092001	3848129.46698845	1
+9	BTC-USDT	1H	1767466800000	90146.00000000	90151.80000000	90062.40000000	90128.40000000	23.45938305	2114137.59926269	1
+10	BTC-USDT	1H	1767463200000	90097.20000000	90197.70000000	90036.60000000	90145.90000000	26.71892018	2408137.51385942	1
+11	BTC-USDT	1H	1767459600000	90104.10000000	90130.00000000	90033.40000000	90097.20000000	33.65885651	3031984.01110691	1
+12	BTC-USDT	1H	1767456000000	89972.90000000	90215.20000000	89921.70000000	90104.10000000	76.44004227	6886154.93305692	1
+13	BTC-USDT	1H	1767452400000	90127.00000000	90127.00000000	89967.90000000	89971.40000000	55.78574794	5022388.61676949	1
+14	BTC-USDT	1H	1767448800000	90006.10000000	90233.00000000	89958.10000000	90126.90000000	85.59264284	7714121.35869409	1
+15	BTC-USDT	1H	1767445200000	90039.40000000	90060.00000000	89920.60000000	90006.10000000	64.05521561	5764762.07242319	1
+16	BTC-USDT	1H	1767441600000	89754.00000000	90039.90000000	89667.30000000	90039.40000000	90.70118863	8152019.47115109	1
+17	BTC-USDT	1H	1767438000000	89754.10000000	89781.00000000	89675.80000000	89754.10000000	36.47427656	3273004.94139779	1
+18	BTC-USDT	1H	1767434400000	89790.70000000	89874.90000000	89715.00000000	89754.00000000	55.54181641	4986914.94542207	1
+19	BTC-USDT	1H	1767430800000	89673.40000000	89989.00000000	89642.90000000	89790.70000000	100.86946203	9062723.18544095	1
+20	BTC-USDT	1H	1767427200000	89583.00000000	89833.30000000	89434.60000000	89673.30000000	168.22727322	15076961.70679480	1
+21	BTC-USDT	1H	1767423600000	89874.40000000	89952.80000000	89321.20000000	89583.00000000	319.00717481	28575503.32415840	1
+22	BTC-USDT	1H	1767420000000	90036.10000000	90142.80000000	89856.20000000	89874.40000000	55.10312988	4958335.17347836	1
+23	BTC-USDT	1H	1767416400000	90167.70000000	90205.40000000	89927.20000000	90036.00000000	98.73119582	8887875.13975146	1
+24	BTC-USDT	1H	1767412800000	90325.40000000	90478.60000000	90051.50000000	90164.20000000	131.69115474	11880025.48617500	1
+25	BTC-USDT	1H	1767409200000	90336.40000000	90377.50000000	90200.00000000	90325.50000000	72.89131880	6580839.45142218	1
+26	BTC-USDT	1H	1767405600000	90285.10000000	90407.70000000	90142.70000000	90336.30000000	110.58299840	9979529.07132204	1
+27	BTC-USDT	1H	1767402000000	90156.90000000	90308.40000000	90078.70000000	90285.00000000	74.10272701	6684388.79094696	1
+28	BTC-USDT	1H	1767398400000	89987.00000000	90190.40000000	89950.10000000	90156.90000000	103.25915441	9300896.41200629	1
+29	BTC-USDT	1H	1767394800000	90187.90000000	90193.80000000	89886.90000000	89986.90000000	129.23232477	11632874.86742760	1
+30	BTC-USDT	1H	1767391200000	90059.70000000	90391.30000000	90021.00000000	90188.00000000	173.17778852	15619295.10151340	1
+31	BTC-USDT	1H	1767387600000	89738.00000000	90165.30000000	89727.10000000	90059.80000000	89.62756739	8062071.19056409	1
+32	BTC-USDT	1H	1767384000000	89900.00000000	90074.70000000	89620.80000000	89732.40000000	194.32371221	17461643.49901270	1
+33	BTC-USDT	1H	1767380400000	89774.10000000	90155.50000000	89650.90000000	89894.80000000	189.59690189	17049859.56767150	1
+34	BTC-USDT	1H	1767376800000	90368.90000000	90559.20000000	89551.60000000	89774.10000000	361.63042715	32586947.02594630	1
+35	BTC-USDT	1H	1767373200000	90374.60000000	90960.00000000	90182.50000000	90368.80000000	409.54192809	37111102.89282450	1
+36	BTC-USDT	1H	1767369600000	89410.90000000	90818.00000000	89200.30000000	90374.60000000	847.53053091	76426275.24669910	1
+37	BTC-USDT	1H	1767366000000	89581.00000000	89881.80000000	88798.50000000	89411.00000000	699.72041125	62514480.07567940	1
+38	BTC-USDT	1H	1767362400000	89347.90000000	90170.30000000	88459.70000000	89580.10000000	904.85498278	80786196.93556340	1
+39	BTC-USDT	1H	1767358800000	89412.10000000	89687.90000000	89304.30000000	89347.90000000	189.01774635	16909993.95503020	1
+40	BTC-USDT	1H	1767355200000	89502.00000000	89590.60000000	89385.80000000	89412.00000000	110.85585884	9920360.36303782	1
+41	BTC-USDT	1H	1767351600000	89655.00000000	89674.80000000	89358.00000000	89501.90000000	268.54816583	24038582.49502750	1
+42	BTC-USDT	1H	1767348000000	89471.90000000	89941.30000000	89457.10000000	89654.90000000	589.84016290	52903506.46886620	1
+43	BTC-USDT	1H	1767344400000	89182.90000000	89493.00000000	89107.40000000	89471.90000000	308.08429703	27508187.64570190	1
+44	BTC-USDT	1H	1767340800000	88854.90000000	89192.00000000	88811.00000000	89182.90000000	138.06026374	12290781.16631300	1
+45	BTC-USDT	1H	1767337200000	88939.50000000	89054.70000000	88829.90000000	88854.80000000	206.27936093	18346779.69702760	1
+46	BTC-USDT	1H	1767333600000	88763.00000000	89086.90000000	88734.10000000	88939.50000000	144.10861862	12821745.42498180	1
+47	BTC-USDT	1H	1767330000000	88640.60000000	88787.90000000	88577.00000000	88762.90000000	90.65548927	8039509.18463606	1
+48	BTC-USDT	1H	1767326400000	88946.40000000	88990.00000000	88633.50000000	88640.60000000	98.46600870	8743036.27473608	1
+49	BTC-USDT	1H	1767322800000	88638.10000000	89118.90000000	88567.70000000	88946.30000000	384.72626527	34190574.51719080	1
+50	BTC-USDT	1H	1767319200000	88640.30000000	88666.70000000	88382.00000000	88638.00000000	151.12986379	13376230.70625680	1
+51	BTC-USDT	1H	1767315600000	88833.00000000	88874.70000000	88504.10000000	88640.20000000	115.81464879	10270227.43572900	1
+52	BTC-USDT	1H	1767312000000	88847.00000000	88893.60000000	88588.00000000	88832.90000000	169.63044608	15055988.56228870	1
+53	BTC-USDT	1H	1767308400000	88646.30000000	88920.50000000	88476.80000000	88847.10000000	177.30132445	15730841.96797060	1
+54	BTC-USDT	1H	1767304800000	88389.00000000	88694.90000000	88388.90000000	88646.30000000	104.90032778	9291524.35589530	1
+55	BTC-USDT	1H	1767301200000	88250.90000000	88446.30000000	88250.80000000	88388.90000000	24.95038366	2205005.92692001	1
+56	BTC-USDT	1H	1767297600000	88385.90000000	88389.00000000	88244.00000000	88250.80000000	43.15029431	3810621.65469676	1
+57	BTC-USDT	1H	1767294000000	88197.00000000	88434.70000000	88082.00000000	88385.90000000	54.14387394	4779612.99494266	1
+58	BTC-USDT	1H	1767290400000	88324.00000000	88363.90000000	88109.00000000	88197.00000000	64.49182602	5689199.94970907	1
+59	BTC-USDT	1H	1767286800000	87994.70000000	88507.90000000	87975.70000000	88323.90000000	180.80855535	15967080.68955820	1
+60	BTC-USDT	1H	1767283200000	88034.10000000	88048.00000000	87878.40000000	87994.70000000	81.48603136	7167890.82504258	1
+61	BTC-USDT	1H	1767279600000	87963.30000000	88109.00000000	87919.20000000	88034.00000000	59.55404706	5241317.57441577	1
+62	BTC-USDT	1H	1767276000000	87916.10000000	87972.30000000	87806.00000000	87963.30000000	137.45026673	12080728.71413310	1
+63	BTC-USDT	1H	1767272400000	87941.10000000	88020.00000000	87863.40000000	87916.00000000	65.88283202	5794529.24643059	1
+64	BTC-USDT	1H	1767268800000	88022.00000000	88038.00000000	87914.20000000	87941.10000000	51.71367232	4549978.06874932	1
+65	BTC-USDT	1H	1767265200000	87863.10000000	88022.50000000	87841.50000000	88022.10000000	62.03210179	5455187.63924688	1
+66	BTC-USDT	1H	1767261600000	87877.10000000	87884.00000000	87795.30000000	87863.10000000	25.57856120	2246894.15555457	1
+67	BTC-USDT	1H	1767258000000	87771.90000000	87957.50000000	87755.00000000	87877.10000000	69.96112756	6146245.68923767	1
+68	BTC-USDT	1H	1767254400000	87637.00000000	87806.00000000	87626.00000000	87771.90000000	121.25203187	10638157.99701340	1
+69	BTC-USDT	1H	1767250800000	87649.50000000	87679.50000000	87594.70000000	87637.00000000	126.27879963	11067854.82284150	1
+70	BTC-USDT	1H	1767247200000	87702.50000000	87702.50000000	87636.20000000	87649.40000000	32.61122020	2858780.67695057	1
+71	BTC-USDT	1H	1767243600000	87587.30000000	87747.40000000	87587.20000000	87702.40000000	119.28806764	10460784.75660870	1
+72	BTC-USDT	1H	1767240000000	87849.00000000	87855.00000000	87551.90000000	87587.30000000	134.16873886	11760414.01295880	1
+73	BTC-USDT	1H	1767236400000	87912.90000000	88026.40000000	87833.10000000	87845.40000000	57.52510255	5058051.62726181	1
+74	BTC-USDT	1H	1767232800000	87957.10000000	88085.20000000	87892.00000000	87914.00000000	72.03332002	6336756.74890393	1
+75	BTC-USDT	1H	1767229200000	87806.10000000	88039.90000000	87806.10000000	87957.00000000	100.96789867	8878509.35688221	1
+76	BTC-USDT	1H	1767225600000	87638.80000000	87844.90000000	87620.90000000	87806.00000000	49.47873346	4342390.19275832	1
+77	BTC-USDT	1H	1767222000000	87725.70000000	87726.90000000	87621.70000000	87638.90000000	55.93272928	4903585.06621144	1
+78	BTC-USDT	1H	1767218400000	87792.00000000	87880.00000000	87661.80000000	87725.60000000	62.59889068	5495069.91005049	1
+79	BTC-USDT	1H	1767214800000	87663.90000000	87875.00000000	87663.90000000	87792.70000000	54.79468754	4809391.51347000	1
+80	BTC-USDT	1H	1767211200000	87542.00000000	87706.00000000	87240.00000000	87660.00000000	181.62186071	15885788.91790270	1
+81	BTC-USDT	1H	1767207600000	87684.00000000	87866.90000000	87524.40000000	87542.10000000	131.48584630	11525773.78898310	1
+82	BTC-USDT	1H	1767204000000	87620.90000000	87980.00000000	87573.00000000	87683.90000000	118.34301546	10393115.84996990	1
+83	BTC-USDT	1H	1767200400000	87657.00000000	87742.30000000	87490.00000000	87614.00000000	149.74010085	13117845.92959660	1
+84	BTC-USDT	1H	1767196800000	87945.00000000	88048.50000000	87399.20000000	87656.90000000	382.38728640	33528628.44241300	1
+85	BTC-USDT	1H	1767193200000	88487.00000000	88487.00000000	87777.30000000	87945.00000000	496.23885386	43714177.83044980	1
+86	BTC-USDT	1H	1767189600000	88987.20000000	89217.50000000	88278.70000000	88487.00000000	331.10111530	29385374.63141770	1
+87	BTC-USDT	1H	1767186000000	88778.10000000	89053.00000000	88750.00000000	88987.20000000	107.60180340	9562390.17295317	1
+88	BTC-USDT	1H	1767182400000	89017.00000000	89044.00000000	88750.00000000	88778.20000000	164.93132525	14663881.79798980	1
+89	BTC-USDT	1H	1767178800000	88848.10000000	89052.10000000	88810.00000000	89017.10000000	187.43939699	16667989.26524630	1
+90	BTC-USDT	1H	1767175200000	88671.10000000	88888.00000000	88666.80000000	88848.00000000	243.67690045	21628541.60378000	1
+91	BTC-USDT	1H	1767171600000	88437.90000000	88714.80000000	88437.90000000	88671.10000000	125.11212993	11085316.72195330	1
+92	BTC-USDT	1H	1767168000000	88614.30000000	88731.60000000	88379.80000000	88438.00000000	116.63458564	10331566.59120490	1
+93	BTC-USDT	1H	1767164400000	88512.90000000	88639.90000000	88432.50000000	88614.20000000	91.35321828	8089609.76577920	1
+94	BTC-USDT	1H	1767160800000	88462.90000000	88563.60000000	88462.90000000	88513.00000000	54.46958357	4821668.18450330	1
+95	BTC-USDT	1H	1767157200000	88332.10000000	88527.70000000	88332.10000000	88465.90000000	93.34493093	8254506.43776906	1
+96	BTC-USDT	1H	1767153600000	88456.80000000	88553.10000000	88332.00000000	88332.00000000	100.38030144	8876734.47388551	1
+97	BTC-USDT	1H	1767150000000	88676.10000000	88822.70000000	88376.20000000	88456.80000000	123.37108370	10928049.92201160	1
+98	BTC-USDT	1H	1767146400000	88655.00000000	88750.00000000	88532.00000000	88676.10000000	209.02330148	18528354.62273390	1
+99	BTC-USDT	1H	1767142800000	88264.00000000	88789.00000000	88177.60000000	88655.10000000	130.76692716	11582061.56775040	1
+100	BTC-USDT	1H	1767139200000	88496.50000000	88496.60000000	88253.40000000	88264.00000000	69.72619596	6160431.61757377	1
+101	BTC-USDT	1H	1767135600000	88427.50000000	88576.30000000	88371.00000000	88496.60000000	82.25732973	7280607.02873368	1
+102	BTC-USDT	1H	1767132000000	88278.70000000	88475.00000000	88278.70000000	88427.50000000	90.87814985	8034422.44227368	1
+103	BTC-USDT	1H	1767128400000	87936.10000000	88328.20000000	87875.40000000	88278.60000000	64.28787068	5663620.69198122	1
+104	BTC-USDT	1H	1767124800000	88223.10000000	88223.10000000	87875.00000000	87936.00000000	180.55668615	15898065.80876410	1
+105	BTC-USDT	1H	1767121200000	88307.10000000	88423.00000000	87967.50000000	88223.10000000	102.26878650	9016290.45105141	1
+106	BTC-USDT	1H	1767117600000	88374.30000000	88506.90000000	88137.60000000	88307.10000000	112.28804287	9919933.42740946	1
+107	BTC-USDT	1H	1767114000000	88750.50000000	88896.00000000	88141.10000000	88374.30000000	247.03215783	21857896.41323940	1
+108	BTC-USDT	1H	1767110400000	89000.60000000	89400.00000000	88583.40000000	88750.60000000	428.08294015	38107253.67399450	1
+109	BTC-USDT	1H	1767106800000	88876.00000000	89152.50000000	88199.90000000	89005.00000000	499.46704559	44294665.00261630	1
+110	BTC-USDT	1H	1767103200000	88110.10000000	89000.00000000	87837.00000000	88876.90000000	475.27601636	42001522.43200380	1
+111	BTC-USDT	1H	1767099600000	88022.80000000	88137.50000000	87908.00000000	88110.00000000	156.42252183	13768007.73138810	1
+112	BTC-USDT	1H	1767096000000	87899.30000000	88085.90000000	87899.30000000	88022.70000000	86.15702569	7582298.80500414	1
+113	BTC-USDT	1H	1767092400000	87953.10000000	88029.50000000	87760.50000000	87899.20000000	92.88283887	8165973.94118550	1
+114	BTC-USDT	1H	1767088800000	87986.00000000	88178.70000000	87909.00000000	87953.00000000	110.49862624	9728942.01701932	1
+115	BTC-USDT	1H	1767085200000	87866.40000000	88030.20000000	87659.00000000	87986.00000000	162.57972201	14278309.72724420	1
+116	BTC-USDT	1H	1767081600000	87496.10000000	88228.70000000	87496.10000000	87866.40000000	342.19094485	30089785.89359270	1
+117	BTC-USDT	1H	1767078000000	87442.00000000	87625.70000000	87380.00000000	87496.00000000	202.97208483	17756916.86094600	1
+118	BTC-USDT	1H	1767074400000	87252.00000000	87520.90000000	87236.90000000	87441.90000000	50.87973233	4447486.59177954	1
+119	BTC-USDT	1H	1767070800000	87302.70000000	87383.00000000	87147.10000000	87251.90000000	57.21136275	4993061.81242067	1
+120	BTC-USDT	1H	1767067200000	87366.00000000	87488.00000000	87291.70000000	87302.60000000	73.93227511	6462358.87714517	1
+121	BTC-USDT	1H	1767063600000	87104.50000000	87419.00000000	86825.60000000	87366.00000000	189.71483644	16529093.18029340	1
+122	BTC-USDT	1H	1767060000000	87306.00000000	87333.60000000	86983.80000000	87104.40000000	212.26143144	18485456.95023020	1
+123	BTC-USDT	1H	1767056400000	87245.80000000	87351.50000000	87112.40000000	87306.00000000	104.92240091	9151974.21079818	1
+124	BTC-USDT	1H	1767052800000	87232.10000000	87368.80000000	87106.00000000	87245.80000000	104.16685360	9085845.03953539	1
+125	BTC-USDT	1H	1767049200000	87343.80000000	87395.40000000	87180.20000000	87232.10000000	59.13188271	5161227.73666919	1
+126	BTC-USDT	1H	1767045600000	87335.80000000	87400.00000000	87074.00000000	87343.70000000	101.37234178	8842051.56791377	1
+127	BTC-USDT	1H	1767042000000	87207.40000000	87363.20000000	87175.10000000	87335.70000000	69.54929234	6071729.60120773	1
+128	BTC-USDT	1H	1767038400000	87352.00000000	87593.70000000	87075.70000000	87207.50000000	196.92928587	17188791.62317890	1
+129	BTC-USDT	1H	1767034800000	87449.00000000	87668.00000000	87308.90000000	87352.00000000	95.19705186	8326860.69609082	1
+130	BTC-USDT	1H	1767031200000	87840.10000000	87996.10000000	87359.00000000	87448.90000000	158.71757979	13919084.07475470	1
+131	BTC-USDT	1H	1767027600000	87624.10000000	87840.20000000	87350.00000000	87840.10000000	140.63038953	12321624.07595160	1
+132	BTC-USDT	1H	1767024000000	87686.60000000	87832.00000000	87442.10000000	87624.00000000	171.09123002	14998402.38557030	1
+133	BTC-USDT	1H	1767020400000	87430.90000000	87912.50000000	87208.10000000	87686.70000000	297.59853001	26079382.19236720	1
+134	BTC-USDT	1H	1767016800000	87379.70000000	88194.30000000	87247.60000000	87430.90000000	411.18990316	36065169.72787390	1
+135	BTC-USDT	1H	1767013200000	87378.00000000	87533.20000000	87166.00000000	87379.60000000	285.09705999	24898593.66821190	1
+136	BTC-USDT	1H	1767009600000	87571.20000000	87626.20000000	86804.20000000	87377.90000000	618.48955501	53931243.27649030	1
+137	BTC-USDT	1H	1767006000000	87785.00000000	87797.50000000	87571.10000000	87571.20000000	258.16311593	22636134.92596600	1
+138	BTC-USDT	1H	1767002400000	88109.00000000	88277.50000000	87661.30000000	87785.00000000	294.78020888	25933229.77534200	1
+139	BTC-USDT	1H	1766998800000	89548.00000000	89609.70000000	87772.70000000	88108.90000000	602.17710101	53357510.16483230	1
+140	BTC-USDT	1H	1766995200000	89612.30000000	89846.00000000	89458.20000000	89548.00000000	213.53520207	19146729.42981680	1
+141	BTC-USDT	1H	1766991600000	89763.00000000	89846.40000000	89506.00000000	89612.30000000	385.74527874	34571516.26114630	1
+142	BTC-USDT	1H	1766988000000	89976.10000000	90115.60000000	89745.10000000	89762.90000000	274.23519796	24663178.64244000	1
+143	BTC-USDT	1H	1766984400000	90135.00000000	90290.10000000	89920.00000000	89976.00000000	232.94715897	20991391.75069820	1
+144	BTC-USDT	1H	1766980800000	90117.10000000	90389.40000000	89950.80000000	90135.00000000	338.53804201	30523606.93000260	1
+145	BTC-USDT	1H	1766977200000	89161.20000000	90168.20000000	89087.90000000	90117.00000000	692.34422090	62151808.08969470	1
+146	BTC-USDT	1H	1766973600000	88444.00000000	89377.30000000	88444.00000000	89161.10000000	768.71814036	68435370.11747110	1
+147	BTC-USDT	1H	1766970000000	88303.00000000	88484.20000000	87868.80000000	88443.90000000	201.73048254	17800954.12488570	1
+148	BTC-USDT	1H	1766966400000	87951.00000000	88445.00000000	87814.00000000	88303.00000000	244.96235243	21597073.52790000	1
+149	BTC-USDT	1H	1766962800000	87901.90000000	88049.30000000	87645.00000000	87951.00000000	114.04919336	10017827.07187410	1
+150	BTC-USDT	1H	1766959200000	87586.20000000	87991.00000000	87484.00000000	87901.90000000	83.41920545	7315944.35870987	1
+151	BTC-USDT	1H	1766955600000	87516.10000000	87599.60000000	87442.10000000	87586.20000000	38.52342218	3371955.91130893	1
+152	BTC-USDT	1H	1766952000000	87520.90000000	87654.00000000	87446.80000000	87516.10000000	45.20166819	3957136.33909630	1
+153	BTC-USDT	1H	1766948400000	87600.10000000	87691.40000000	87505.70000000	87521.00000000	79.24729164	6941261.98663149	1
+154	BTC-USDT	1H	1766944800000	87761.10000000	87770.90000000	87501.10000000	87600.10000000	97.61359572	8554520.40145346	1
+155	BTC-USDT	1H	1766941200000	87814.80000000	87930.00000000	87736.10000000	87761.10000000	29.45673286	2587320.73911268	1
+156	BTC-USDT	1H	1766937600000	87839.20000000	87900.00000000	87740.00000000	87814.70000000	42.48765416	3731436.81781574	1
+157	BTC-USDT	1H	1766934000000	87914.00000000	88000.00000000	87827.20000000	87839.20000000	67.69379127	5952783.76754153	1
+158	BTC-USDT	1H	1766930400000	87898.50000000	88088.00000000	87898.50000000	87913.90000000	88.97749243	7828605.32927654	1
+159	BTC-USDT	1H	1766926800000	87856.10000000	87958.00000000	87799.90000000	87897.00000000	326.74521234	28708129.54259630	1
+160	BTC-USDT	1H	1766923200000	87886.30000000	87902.50000000	87782.90000000	87856.00000000	101.19252913	8889683.56313882	1
+161	BTC-USDT	1H	1766919600000	87868.00000000	87929.00000000	87824.40000000	87886.20000000	38.98986826	3426256.03928183	1
+162	BTC-USDT	1H	1766916000000	87796.00000000	88031.10000000	87795.90000000	87867.90000000	1091.97552131	96011582.94791180	1
+163	BTC-USDT	1H	1766912400000	87803.00000000	87900.10000000	87722.00000000	87795.90000000	100.80710021	8851902.81701399	1
+164	BTC-USDT	1H	1766908800000	87732.90000000	87978.30000000	87732.90000000	87802.90000000	238.57069259	20952516.16941070	1
+165	BTC-USDT	1H	1766905200000	87732.10000000	87740.10000000	87672.90000000	87732.90000000	52.92467397	4642053.84496372	1
+166	BTC-USDT	1H	1766901600000	87649.00000000	87789.20000000	87639.10000000	87732.10000000	62.08779232	5447418.70278560	1
+167	BTC-USDT	1H	1766898000000	87721.50000000	87721.50000000	87610.30000000	87649.00000000	31.12979489	2729091.42759714	1
+168	BTC-USDT	1H	1766894400000	87739.10000000	87830.00000000	87696.60000000	87721.50000000	58.16606359	5103753.54454155	1
+169	BTC-USDT	1H	1766890800000	87808.10000000	87840.10000000	87735.40000000	87739.10000000	33.70499278	2958429.15094927	1
+170	BTC-USDT	1H	1766887200000	87785.00000000	87869.70000000	87750.00000000	87808.00000000	41.68529236	3660487.15485677	1
+171	BTC-USDT	1H	1766883600000	87837.00000000	87937.90000000	87736.50000000	87784.90000000	35.76600048	3141623.13119595	1
+172	BTC-USDT	1H	1766880000000	87872.10000000	87948.60000000	87709.00000000	87836.90000000	105.78787576	9292487.23736647	1
+173	BTC-USDT	1H	1766876400000	87567.10000000	87981.40000000	87567.10000000	87872.10000000	72.77839419	6388519.45145530	1
+174	BTC-USDT	1H	1766872800000	87671.00000000	87953.60000000	87503.10000000	87567.00000000	103.10298237	9046288.41886705	1
+175	BTC-USDT	1H	1766869200000	87563.80000000	87678.00000000	87563.70000000	87670.90000000	20.90542494	1831970.37883788	1
+176	BTC-USDT	1H	1766865600000	87574.10000000	87630.10000000	87529.10000000	87563.70000000	29.55957038	2588723.13647329	1
+177	BTC-USDT	1H	1766862000000	87494.90000000	87588.30000000	87494.80000000	87574.00000000	24.67191928	2160040.29535651	1
+178	BTC-USDT	1H	1766858400000	87562.40000000	87574.70000000	87466.20000000	87494.80000000	25.76044250	2254576.36329910	1
+179	BTC-USDT	1H	1766854800000	87502.00000000	87562.40000000	87470.70000000	87562.30000000	32.83169802	2873535.69507234	1
+180	BTC-USDT	1H	1766851200000	87559.50000000	87585.40000000	87446.80000000	87502.00000000	75.28448354	6589213.29967746	1
+181	BTC-USDT	1H	1766847600000	87541.10000000	87591.10000000	87479.90000000	87559.50000000	45.05892530	3944669.48105683	1
+182	BTC-USDT	1H	1766844000000	87454.60000000	87555.50000000	87398.10000000	87541.00000000	96.05252218	8401149.21644271	1
+183	BTC-USDT	1H	1766840400000	87473.90000000	87474.20000000	87319.30000000	87454.50000000	40.80896915	3567794.77617016	1
+184	BTC-USDT	1H	1766836800000	87467.30000000	87515.40000000	87425.30000000	87473.80000000	33.58346662	2937779.87786773	1
+185	BTC-USDT	1H	1766833200000	87503.30000000	87543.20000000	87434.10000000	87467.40000000	38.43762842	3362605.69757373	1
+186	BTC-USDT	1H	1766829600000	87616.20000000	87626.00000000	87370.00000000	87503.20000000	54.59344364	4777710.10120298	1
+187	BTC-USDT	1H	1766826000000	87590.20000000	87670.10000000	87537.80000000	87616.10000000	32.30811532	2830331.62223268	1
+188	BTC-USDT	1H	1766822400000	87539.90000000	87690.60000000	87539.80000000	87590.20000000	356.01586355	31193208.77727000	1
+189	BTC-USDT	1H	1766818800000	87471.20000000	87719.10000000	87471.20000000	87539.90000000	383.65210295	33608721.82472270	1
+190	BTC-USDT	1H	1766815200000	87506.00000000	87583.30000000	87417.80000000	87471.30000000	336.74907191	29463506.67799910	1
+191	BTC-USDT	1H	1766811600000	87470.00000000	87539.00000000	87446.70000000	87505.90000000	74.20581898	6493616.50879145	1
+192	BTC-USDT	1H	1766808000000	87510.00000000	87522.10000000	87436.20000000	87469.90000000	49.31791089	4314287.59364733	1
+193	BTC-USDT	1H	1766804400000	87444.00000000	87532.90000000	87383.00000000	87510.00000000	40.79114392	3566816.01149188	1
+194	BTC-USDT	1H	1766800800000	87471.30000000	87489.00000000	87388.90000000	87443.90000000	47.21501987	4129243.80912559	1
+195	BTC-USDT	1H	1766797200000	87398.10000000	87481.70000000	87326.90000000	87471.30000000	51.30361833	4484015.67401382	1
+196	BTC-USDT	1H	1766793600000	87362.00000000	87409.00000000	87245.10000000	87398.00000000	33.43229572	2920234.25541446	1
+197	BTC-USDT	1H	1766790000000	87541.00000000	87544.60000000	87333.10000000	87362.00000000	75.59660767	6608214.31135359	1
+198	BTC-USDT	1H	1766786400000	87464.00000000	87583.10000000	87300.00000000	87541.00000000	177.42813859	15507163.08902280	1
+199	BTC-USDT	1H	1766782800000	87584.00000000	87697.20000000	87456.00000000	87463.90000000	92.50039282	8097985.72345766	1
+200	BTC-USDT	1H	1766779200000	87497.00000000	87791.70000000	87392.20000000	87583.80000000	103.30835987	9052550.34843198	1
+301	BTC-USDT	1H	1766415600000	90133.50000000	90460.50000000	89195.00000000	89733.90000000	609.42645911	54616727.49385900	1
+302	BTC-USDT	1H	1766412000000	89913.10000000	90300.00000000	89437.40000000	90133.50000000	525.75465329	47267977.84535030	1
+303	BTC-USDT	1H	1766408400000	90215.10000000	90339.40000000	89739.50000000	89913.10000000	202.17675679	18195049.64878900	1
+304	BTC-USDT	1H	1766404800000	89940.60000000	90598.00000000	89863.90000000	90215.00000000	328.92164230	29681810.15967020	1
+305	BTC-USDT	1H	1766401200000	89779.10000000	90125.00000000	89639.40000000	89940.90000000	209.85307759	18867804.83192790	1
+306	BTC-USDT	1H	1766397600000	89827.60000000	89863.00000000	89608.80000000	89779.00000000	164.55768990	14768791.94901490	1
+307	BTC-USDT	1H	1766394000000	89334.00000000	89833.80000000	89296.40000000	89827.60000000	157.06294784	14065034.32531280	1
+308	BTC-USDT	1H	1766390400000	89164.70000000	89905.00000000	89090.00000000	89333.90000000	430.79857919	38596422.45106320	1
+309	BTC-USDT	1H	1766386800000	88909.20000000	89213.60000000	88892.00000000	89164.40000000	332.67829554	29649634.00455530	1
+310	BTC-USDT	1H	1766383200000	88834.00000000	89008.10000000	88733.80000000	88909.10000000	101.63911886	9030834.00157402	1
+311	BTC-USDT	1H	1766379600000	88912.10000000	89000.00000000	88771.20000000	88834.00000000	84.44326415	7506445.55462227	1
+312	BTC-USDT	1H	1766376000000	88779.70000000	89034.10000000	88726.30000000	88912.10000000	120.16295983	10684555.08772250	1
+313	BTC-USDT	1H	1766372400000	88461.10000000	88853.10000000	88288.00000000	88779.70000000	179.87947482	15937735.24434070	1
+314	BTC-USDT	1H	1766368800000	88631.30000000	88659.50000000	87886.90000000	88461.10000000	317.09797037	27989582.86524540	1
+201	BTC-USDT	1H	1766775600000	87269.90000000	87581.30000000	87239.20000000	87497.10000000	52.30242948	4572097.16911962	1
+202	BTC-USDT	1H	1766772000000	87320.00000000	87376.70000000	87139.40000000	87269.90000000	91.36510275	7972762.74595578	1
+203	BTC-USDT	1H	1766768400000	86850.00000000	87458.50000000	86816.70000000	87319.90000000	222.45736361	19392865.94657020	1
+204	BTC-USDT	1H	1766764800000	87139.00000000	87384.00000000	86837.10000000	86850.00000000	374.07245659	32611466.77738120	1
+205	BTC-USDT	1H	1766761200000	87386.40000000	87386.40000000	86666.00000000	87139.00000000	697.62452607	60688614.82051270	1
+206	BTC-USDT	1H	1766757600000	89000.10000000	89050.00000000	87350.70000000	87386.40000000	603.16672319	53197060.00719600	1
+207	BTC-USDT	1H	1766754000000	88684.10000000	89052.00000000	88625.10000000	89000.00000000	107.09255157	9521214.71487843	1
+208	BTC-USDT	1H	1766750400000	88532.00000000	88755.30000000	88531.90000000	88684.00000000	109.57762661	9716015.92071944	1
+209	BTC-USDT	1H	1766746800000	88752.30000000	88757.00000000	88529.00000000	88532.00000000	56.37518366	4996503.77269293	1
+210	BTC-USDT	1H	1766743200000	88813.70000000	88881.30000000	88685.60000000	88751.90000000	80.09826927	7110848.84224403	1
+211	BTC-USDT	1H	1766739600000	88741.00000000	88914.00000000	88652.10000000	88813.60000000	91.34720901	8111085.62291408	1
+212	BTC-USDT	1H	1766736000000	88480.00000000	88883.00000000	88420.70000000	88741.00000000	391.65316318	34709463.00200780	1
+213	BTC-USDT	1H	1766732400000	89124.40000000	89569.30000000	88354.50000000	88479.90000000	729.53298639	64811959.99611560	1
+214	BTC-USDT	1H	1766728800000	88992.10000000	89248.20000000	88992.10000000	89122.10000000	146.54686460	13058566.72754310	1
+215	BTC-USDT	1H	1766725200000	88967.00000000	89051.00000000	88822.60000000	88992.00000000	85.39876991	7594723.38146296	1
+216	BTC-USDT	1H	1766721600000	88832.00000000	89148.00000000	88515.80000000	88967.00000000	155.11289009	13778417.46378590	1
+217	BTC-USDT	1H	1766718000000	89185.20000000	89270.00000000	88689.30000000	88832.00000000	332.63602913	29572620.81189560	1
+218	BTC-USDT	1H	1766714400000	87436.70000000	89432.50000000	87423.40000000	89185.10000000	789.20846299	70030586.82244310	1
+219	BTC-USDT	1H	1766710800000	87130.00000000	87500.90000000	87129.90000000	87436.70000000	135.00175599	11792038.96647140	1
+220	BTC-USDT	1H	1766707200000	87232.10000000	87326.00000000	86893.80000000	87130.00000000	218.80436298	19058537.19064220	1
+221	BTC-USDT	1H	1766703600000	87655.00000000	87778.70000000	86947.40000000	87232.00000000	209.65824182	18296333.74411770	1
+222	BTC-USDT	1H	1766700000000	87900.10000000	87915.00000000	87317.20000000	87654.90000000	126.54005339	11090398.08621850	1
+223	BTC-USDT	1H	1766696400000	87882.30000000	87988.30000000	87817.00000000	87900.00000000	56.75083682	4989297.90306451	1
+224	BTC-USDT	1H	1766692800000	88150.00000000	88170.60000000	87645.80000000	87882.20000000	94.98959758	8351470.84270123	1
+225	BTC-USDT	1H	1766689200000	88236.10000000	88245.10000000	88066.30000000	88150.00000000	36.89967349	3252072.03469747	1
+226	BTC-USDT	1H	1766685600000	88137.70000000	88308.80000000	88133.90000000	88236.00000000	43.99301756	3881976.88028026	1
+227	BTC-USDT	1H	1766682000000	88082.70000000	88204.00000000	88000.30000000	88137.60000000	60.42422815	5322861.38736780	1
+228	BTC-USDT	1H	1766678400000	88367.20000000	88472.00000000	88003.90000000	88082.60000000	106.28285746	9382252.03741526	1
+229	BTC-USDT	1H	1766674800000	87721.70000000	88603.50000000	87709.50000000	88367.10000000	351.06990576	30968819.49139240	1
+230	BTC-USDT	1H	1766671200000	87634.10000000	87758.90000000	87553.30000000	87721.70000000	71.37489971	6258954.59322583	1
+231	BTC-USDT	1H	1766667600000	87566.30000000	87687.00000000	87403.00000000	87634.10000000	49.94049118	4372797.26699276	1
+232	BTC-USDT	1H	1766664000000	87514.90000000	87584.50000000	87475.20000000	87566.30000000	44.64329945	3907976.51158056	1
+233	BTC-USDT	1H	1766660400000	87419.00000000	87584.00000000	87413.40000000	87515.00000000	36.19171739	3167467.53047342	1
+234	BTC-USDT	1H	1766656800000	87520.00000000	87526.40000000	87262.00000000	87418.90000000	52.62117056	4597902.92031332	1
+235	BTC-USDT	1H	1766653200000	87585.00000000	87600.00000000	87450.80000000	87519.90000000	46.52648246	4071043.53623591	1
+236	BTC-USDT	1H	1766649600000	87829.90000000	87884.30000000	87351.20000000	87585.00000000	169.85107326	14869450.44552710	1
+237	BTC-USDT	1H	1766646000000	87822.70000000	87860.00000000	87746.90000000	87829.90000000	71.24121189	6254247.25822914	1
+238	BTC-USDT	1H	1766642400000	87749.10000000	87837.60000000	87682.50000000	87822.80000000	73.22196801	6425520.64696298	1
+239	BTC-USDT	1H	1766638800000	87785.80000000	87785.80000000	87659.70000000	87749.00000000	56.23466634	4932785.47794189	1
+240	BTC-USDT	1H	1766635200000	87841.30000000	87842.40000000	87742.60000000	87785.90000000	45.16965182	3965367.63929407	1
+241	BTC-USDT	1H	1766631600000	87886.00000000	87918.80000000	87771.80000000	87841.40000000	38.34139305	3367976.97726766	1
+242	BTC-USDT	1H	1766628000000	87700.40000000	87957.60000000	87573.50000000	87886.00000000	66.53487298	5842988.57190744	1
+243	BTC-USDT	1H	1766624400000	87569.10000000	87747.00000000	87566.00000000	87700.30000000	39.60966887	3472674.88819224	1
+244	BTC-USDT	1H	1766620800000	87670.00000000	87741.50000000	87517.70000000	87569.10000000	52.84888422	4630927.12632382	1
+245	BTC-USDT	1H	1766617200000	88003.10000000	88031.20000000	87594.00000000	87669.90000000	99.52390748	8732165.26194884	1
+246	BTC-USDT	1H	1766613600000	87698.50000000	88054.80000000	87694.00000000	88003.00000000	80.38605970	7065999.28732151	1
+247	BTC-USDT	1H	1766610000000	87554.20000000	87790.50000000	87554.10000000	87698.50000000	77.03357371	6753841.80131094	1
+248	BTC-USDT	1H	1766606400000	87559.10000000	87682.00000000	87521.50000000	87554.10000000	46.87450970	4106847.38297835	1
+249	BTC-USDT	1H	1766602800000	87468.00000000	87574.00000000	87337.90000000	87559.00000000	77.83461915	6806116.76517400	1
+250	BTC-USDT	1H	1766599200000	87317.80000000	87502.70000000	87233.20000000	87468.00000000	97.05602753	8482962.79982172	1
+251	BTC-USDT	1H	1766595600000	87279.60000000	87576.40000000	87249.90000000	87317.90000000	104.05876723	9092935.46574280	1
+252	BTC-USDT	1H	1766592000000	87043.10000000	87685.40000000	86919.00000000	87279.60000000	308.69763920	26957489.71147990	1
+253	BTC-USDT	1H	1766588400000	86987.60000000	87217.40000000	86584.60000000	87043.10000000	225.42165962	19601666.43292540	1
+254	BTC-USDT	1H	1766584800000	87282.80000000	87436.20000000	86400.00000000	86988.00000000	454.55893200	39523306.02107480	1
+255	BTC-USDT	1H	1766581200000	87430.90000000	87436.50000000	87043.70000000	87282.70000000	132.61398189	11568202.78004020	1
+256	BTC-USDT	1H	1766577600000	87207.00000000	87488.00000000	87143.00000000	87430.90000000	131.54793899	11486071.57486060	1
+257	BTC-USDT	1H	1766574000000	87085.10000000	87350.00000000	87082.20000000	87207.10000000	76.65756235	6688027.46474755	1
+258	BTC-USDT	1H	1766570400000	86804.50000000	87196.90000000	86800.00000000	87085.10000000	81.08629432	7059170.29050955	1
+259	BTC-USDT	1H	1766566800000	86791.10000000	86896.00000000	86720.90000000	86805.70000000	74.66521662	6482530.50451681	1
+260	BTC-USDT	1H	1766563200000	86917.00000000	87076.00000000	86764.80000000	86791.00000000	82.84778850	7200679.31131747	1
+261	BTC-USDT	1H	1766559600000	87023.40000000	87176.20000000	86917.00000000	86917.10000000	108.24461252	9424047.11648953	1
+262	BTC-USDT	1H	1766556000000	86955.40000000	87066.50000000	86803.10000000	87023.30000000	87.18156655	7582332.88186441	1
+263	BTC-USDT	1H	1766552400000	87142.90000000	87252.20000000	86792.80000000	86955.30000000	147.75609827	12855520.48930410	1
+264	BTC-USDT	1H	1766548800000	87345.90000000	87465.80000000	87094.30000000	87142.90000000	59.44444002	5189734.87198876	1
+265	BTC-USDT	1H	1766545200000	87141.90000000	87394.10000000	86870.60000000	87345.90000000	135.24384152	11781788.33375680	1
+266	BTC-USDT	1H	1766541600000	87634.00000000	87658.30000000	86940.80000000	87141.80000000	218.33959511	19051241.90024030	1
+267	BTC-USDT	1H	1766538000000	87657.00000000	87871.40000000	87502.00000000	87633.90000000	116.48705166	10215780.29155810	1
+268	BTC-USDT	1H	1766534400000	87487.50000000	87671.60000000	87265.10000000	87656.90000000	96.81665536	8470330.59187517	1
+269	BTC-USDT	1H	1766530800000	87398.50000000	87515.60000000	87177.90000000	87487.40000000	176.12530613	15384833.30478650	1
+270	BTC-USDT	1H	1766527200000	87709.30000000	87770.00000000	87215.70000000	87398.40000000	122.37539964	10703017.75525420	1
+271	BTC-USDT	1H	1766523600000	87681.50000000	87850.00000000	87533.00000000	87709.30000000	80.03798346	7019436.03997825	1
+272	BTC-USDT	1H	1766520000000	87751.90000000	88364.90000000	87524.00000000	87677.00000000	177.66542433	15617460.04768830	1
+273	BTC-USDT	1H	1766516400000	87969.60000000	88038.90000000	87644.10000000	87751.90000000	148.67413607	13059229.03199010	1
+274	BTC-USDT	1H	1766512800000	87176.10000000	88173.30000000	87165.90000000	87969.50000000	256.90615032	22551675.52403310	1
+275	BTC-USDT	1H	1766509200000	87998.90000000	88273.00000000	87167.00000000	87176.00000000	249.21751144	21878473.64623530	1
+276	BTC-USDT	1H	1766505600000	87444.90000000	88185.00000000	87333.00000000	87999.00000000	373.69986132	32836358.40123300	1
+277	BTC-USDT	1H	1766502000000	86867.50000000	87544.00000000	86716.50000000	87444.90000000	347.75867871	30326468.90269740	1
+278	BTC-USDT	1H	1766498400000	87612.40000000	87823.40000000	86578.90000000	86867.50000000	582.52274908	50831131.82397290	1
+279	BTC-USDT	1H	1766494800000	87787.20000000	87900.00000000	87413.00000000	87612.40000000	229.12147212	20078036.12043300	1
+280	BTC-USDT	1H	1766491200000	87852.00000000	87950.00000000	87583.00000000	87787.30000000	158.33604416	13900447.72313220	1
+281	BTC-USDT	1H	1766487600000	87612.90000000	87884.60000000	87570.90000000	87852.10000000	134.00684800	11759597.10000400	1
+282	BTC-USDT	1H	1766484000000	87537.60000000	87657.90000000	87512.20000000	87613.00000000	66.57811447	5831542.96552459	1
+283	BTC-USDT	1H	1766480400000	87477.90000000	87622.00000000	87301.10000000	87537.60000000	128.18136943	11215480.59135460	1
+284	BTC-USDT	1H	1766476800000	87579.20000000	87710.00000000	87433.60000000	87477.90000000	495.46622395	43404236.42254620	1
+285	BTC-USDT	1H	1766473200000	87407.10000000	87701.90000000	87380.00000000	87579.20000000	262.32321742	22962715.39800990	1
+286	BTC-USDT	1H	1766469600000	87763.30000000	87783.00000000	87047.80000000	87407.00000000	373.02047273	32588433.26939910	1
+287	BTC-USDT	1H	1766466000000	87925.90000000	88023.60000000	87616.10000000	87763.20000000	185.88684436	16319058.47946710	1
+288	BTC-USDT	1H	1766462400000	88169.50000000	88372.00000000	87925.40000000	87925.90000000	79.66170456	7021779.61312929	1
+289	BTC-USDT	1H	1766458800000	88206.40000000	88352.10000000	87796.40000000	88169.50000000	332.54826563	29300101.89213290	1
+290	BTC-USDT	1H	1766455200000	88518.00000000	88754.30000000	88123.50000000	88205.00000000	213.67956261	18892207.44374910	1
+291	BTC-USDT	1H	1766451600000	88774.30000000	88889.60000000	88430.90000000	88518.00000000	94.17095207	8346185.22669203	1
+292	BTC-USDT	1H	1766448000000	88621.30000000	88938.20000000	88507.90000000	88774.20000000	124.82760329	11070185.99429410	1
+293	BTC-USDT	1H	1766444400000	88667.20000000	88700.00000000	88433.50000000	88621.20000000	75.26016899	6665557.77701571	1
+294	BTC-USDT	1H	1766440800000	88283.50000000	88828.60000000	88159.50000000	88667.20000000	114.31297865	10108168.96824820	1
+295	BTC-USDT	1H	1766437200000	88357.00000000	88618.90000000	88228.00000000	88286.00000000	73.85845389	6530155.95376704	1
+296	BTC-USDT	1H	1766433600000	88059.00000000	88487.90000000	87923.50000000	88357.00000000	202.73747903	17875766.66610710	1
+297	BTC-USDT	1H	1766430000000	89148.00000000	89150.10000000	87964.00000000	88059.10000000	291.79039684	25837701.82228000	1
+298	BTC-USDT	1H	1766426400000	89312.00000000	89526.00000000	89143.10000000	89148.10000000	129.44463232	11568229.28981800	1
+299	BTC-USDT	1H	1766422800000	89554.90000000	89575.20000000	89083.30000000	89314.10000000	228.82856551	20434314.06025390	1
+300	BTC-USDT	1H	1766419200000	89733.90000000	90118.00000000	89524.00000000	89554.90000000	346.29631025	31111954.06169740	1
+401	BTC-USDT	1H	1766055600000	87351.50000000	87356.90000000	87058.80000000	87276.70000000	103.33808759	9009697.28171960	1
+402	BTC-USDT	1H	1766052000000	87282.00000000	87453.10000000	87216.00000000	87351.50000000	118.57388236	10354852.75197580	1
+403	BTC-USDT	1H	1766048400000	86973.00000000	87392.00000000	86801.30000000	87282.00000000	204.92750182	17856981.75292790	1
+404	BTC-USDT	1H	1766044800000	86834.00000000	87138.00000000	86684.60000000	86973.00000000	211.94845423	18429514.30350300	1
+405	BTC-USDT	1H	1766041200000	86647.90000000	86870.30000000	86590.20000000	86834.10000000	120.38939889	10447273.95698940	1
+406	BTC-USDT	1H	1766037600000	86440.10000000	86660.00000000	86410.00000000	86647.80000000	95.03984564	8220051.12802505	1
+407	BTC-USDT	1H	1766034000000	86763.80000000	86791.20000000	86388.00000000	86440.10000000	116.34097429	10075098.71086720	1
+408	BTC-USDT	1H	1766030400000	86621.90000000	86895.30000000	86602.00000000	86763.70000000	131.03023947	11373128.47609670	1
+409	BTC-USDT	1H	1766026800000	86693.60000000	86699.90000000	86262.20000000	86622.00000000	180.66122433	15616138.12865030	1
+410	BTC-USDT	1H	1766023200000	86130.10000000	86872.90000000	86011.20000000	86693.50000000	185.79210279	16080930.74393210	1
+411	BTC-USDT	1H	1766019600000	86236.90000000	86253.10000000	85865.80000000	86130.00000000	94.32599025	8115376.21371449	1
+412	BTC-USDT	1H	1766016000000	86248.10000000	86318.80000000	86050.00000000	86236.80000000	74.36581584	6410195.51256534	1
+413	BTC-USDT	1H	1766012400000	86349.90000000	86352.90000000	85955.60000000	86248.10000000	82.20065326	7076702.89627330	1
+414	BTC-USDT	1H	1766008800000	85996.00000000	86465.70000000	85884.00000000	86344.20000000	119.49816876	10297255.34673200	1
+415	BTC-USDT	1H	1766005200000	85900.50000000	86060.00000000	85700.50000000	85994.20000000	86.02355593	7389701.64730817	1
+416	BTC-USDT	1H	1766001600000	86017.40000000	86251.50000000	85660.10000000	85896.50000000	200.63437416	17251589.63268270	1
+417	BTC-USDT	1H	1765998000000	85830.80000000	86199.80000000	85328.40000000	86017.20000000	283.07520361	24260239.42728230	1
+418	BTC-USDT	1H	1765994400000	86428.00000000	86845.60000000	85650.00000000	85830.00000000	256.83046516	22135765.62902040	1
+419	BTC-USDT	1H	1765990800000	86994.40000000	87106.00000000	86266.60000000	86423.30000000	193.21961264	16743621.75570840	1
+420	BTC-USDT	1H	1765987200000	87231.70000000	87776.30000000	86172.50000000	86994.50000000	723.78276718	62849274.07548720	1
+421	BTC-USDT	1H	1765983600000	89682.60000000	90375.00000000	87136.30000000	87231.90000000	1499.69092790	133596995.00720300	1
+422	BTC-USDT	1H	1765980000000	87622.10000000	89693.90000000	87167.50000000	89682.60000000	952.79783092	84313043.65398310	1
+423	BTC-USDT	1H	1765976400000	87018.60000000	87849.60000000	86811.30000000	87622.20000000	226.79099094	19801853.01794690	1
+424	BTC-USDT	1H	1765972800000	86977.20000000	87210.50000000	86818.10000000	87018.60000000	172.72933588	15032830.24731160	1
+425	BTC-USDT	1H	1765969200000	86626.20000000	87130.00000000	86558.60000000	86970.70000000	106.57096343	9265919.37247693	1
+426	BTC-USDT	1H	1765965600000	86420.10000000	86829.00000000	86242.20000000	86626.10000000	184.79785908	15996826.32627220	1
+427	BTC-USDT	1H	1765962000000	86398.00000000	86609.90000000	86262.80000000	86420.10000000	120.42066569	10406901.35594250	1
+428	BTC-USDT	1H	1765958400000	87043.00000000	87043.10000000	86323.90000000	86397.90000000	142.50965748	12339649.48160410	1
+429	BTC-USDT	1H	1765954800000	86776.10000000	87165.90000000	86597.00000000	87043.10000000	210.09295290	18246971.20277510	1
+430	BTC-USDT	1H	1765951200000	86636.10000000	86998.90000000	86597.00000000	86776.00000000	197.46780484	17144650.93689470	1
+431	BTC-USDT	1H	1765947600000	86758.00000000	86761.90000000	86211.50000000	86636.70000000	224.28780860	19387422.46493480	1
+432	BTC-USDT	1H	1765944000000	87216.10000000	87390.90000000	86732.00000000	86758.00000000	144.59319946	12579527.46570710	1
+433	BTC-USDT	1H	1765940400000	87485.10000000	87617.10000000	87155.10000000	87216.00000000	125.64386901	10978883.48481000	1
+434	BTC-USDT	1H	1765936800000	87556.00000000	87594.00000000	87196.70000000	87485.00000000	190.03729685	16604644.53359160	1
+435	BTC-USDT	1H	1765933200000	87532.90000000	87948.80000000	87486.00000000	87556.00000000	136.46718275	11968175.52374370	1
+436	BTC-USDT	1H	1765929600000	87863.00000000	87865.00000000	87429.00000000	87532.80000000	106.63115505	9336475.62255513	1
+437	BTC-USDT	1H	1765926000000	87790.00000000	87868.90000000	87600.00000000	87863.00000000	80.74808088	7085079.34588538	1
+438	BTC-USDT	1H	1765922400000	87762.80000000	87930.10000000	87636.20000000	87789.90000000	50.51942412	4434720.05603898	1
+439	BTC-USDT	1H	1765918800000	87573.50000000	87905.50000000	87500.00000000	87762.90000000	52.29040971	4588973.84082385	1
+440	BTC-USDT	1H	1765915200000	87592.10000000	87835.90000000	87345.00000000	87573.60000000	77.63720347	6803966.71857936	1
+441	BTC-USDT	1H	1765911600000	87784.80000000	87791.60000000	87288.10000000	87592.30000000	109.53294244	9584983.41086496	1
+442	BTC-USDT	1H	1765908000000	87127.10000000	88015.90000000	87062.50000000	87784.90000000	222.20652391	19467795.34176490	1
+443	BTC-USDT	1H	1765904400000	87581.90000000	87843.00000000	87095.30000000	87127.10000000	152.40196993	13325566.60125040	1
+444	BTC-USDT	1H	1765900800000	87968.90000000	88050.00000000	87386.30000000	87581.90000000	286.02277671	25092517.94299120	1
+315	BTC-USDT	1H	1766365200000	88627.90000000	89288.00000000	88524.50000000	88631.20000000	254.35467161	22595287.18141710	1
+316	BTC-USDT	1H	1766361600000	88656.20000000	89673.30000000	88611.50000000	88627.90000000	555.82737517	49555072.54445820	1
+317	BTC-USDT	1H	1766358000000	88482.90000000	88829.60000000	88349.90000000	88656.10000000	215.75971855	19107442.96230050	1
+318	BTC-USDT	1H	1766354400000	88166.00000000	88496.20000000	88128.00000000	88482.80000000	50.99513349	4506278.50203001	1
+319	BTC-USDT	1H	1766350800000	88241.00000000	88386.20000000	88100.00000000	88165.90000000	32.01161606	2825282.18565580	1
+320	BTC-USDT	1H	1766347200000	88496.00000000	88511.70000000	88239.40000000	88241.00000000	35.30087723	3119026.37344655	1
+321	BTC-USDT	1H	1766343600000	88450.10000000	88613.50000000	88210.10000000	88496.00000000	105.07740028	9291561.44171167	1
+322	BTC-USDT	1H	1766340000000	88325.00000000	88459.90000000	87958.60000000	88450.10000000	146.73550432	12937502.56242840	1
+323	BTC-USDT	1H	1766336400000	88368.10000000	88500.00000000	88287.00000000	88325.10000000	163.87301549	14484938.49523230	1
+324	BTC-USDT	1H	1766332800000	88071.00000000	88368.50000000	87985.00000000	88368.00000000	303.28562392	26761588.15602750	1
+325	BTC-USDT	1H	1766329200000	88067.10000000	88269.80000000	87815.20000000	88071.10000000	132.82370269	11693329.35028130	1
+326	BTC-USDT	1H	1766325600000	87678.10000000	88150.10000000	87619.70000000	88067.10000000	248.79387370	21879581.19529780	1
+327	BTC-USDT	1H	1766322000000	88636.00000000	88700.30000000	87607.60000000	87679.20000000	482.02475945	42441276.79658040	1
+328	BTC-USDT	1H	1766318400000	88610.00000000	88934.20000000	88463.00000000	88636.00000000	175.84014315	15609323.92163710	1
+329	BTC-USDT	1H	1766314800000	88672.90000000	88759.90000000	88584.80000000	88610.00000000	90.52939286	8024897.98756550	1
+330	BTC-USDT	1H	1766311200000	88900.30000000	88976.90000000	88585.10000000	88672.80000000	123.61334215	10970424.52978880	1
+331	BTC-USDT	1H	1766307600000	88540.50000000	89081.60000000	88500.10000000	88900.30000000	393.25549418	34892798.62084540	1
+332	BTC-USDT	1H	1766304000000	88183.80000000	88753.30000000	88150.00000000	88540.40000000	229.17586616	20274487.12693680	1
+333	BTC-USDT	1H	1766300400000	88096.90000000	88198.30000000	88065.30000000	88183.80000000	45.66732670	4025465.36686103	1
+334	BTC-USDT	1H	1766296800000	88146.10000000	88210.20000000	88078.50000000	88096.90000000	34.84395826	3071884.88222531	1
+335	BTC-USDT	1H	1766293200000	88082.00000000	88162.60000000	88060.00000000	88146.00000000	33.32653984	2936795.12758113	1
+336	BTC-USDT	1H	1766289600000	88089.90000000	88165.50000000	88052.00000000	88082.00000000	43.63462896	3843929.50169123	1
+337	BTC-USDT	1H	1766286000000	87953.50000000	88163.00000000	87941.00000000	88089.80000000	35.99155335	3169862.90934084	1
+338	BTC-USDT	1H	1766282400000	88025.10000000	88150.10000000	87877.70000000	87953.40000000	107.10774253	9423186.70725938	1
+339	BTC-USDT	1H	1766278800000	88395.00000000	88395.00000000	88025.00000000	88025.00000000	90.65481904	7993949.51444780	1
+340	BTC-USDT	1H	1766275200000	88366.00000000	88437.00000000	88312.00000000	88395.00000000	44.45047590	3927831.27693743	1
+341	BTC-USDT	1H	1766271600000	88282.10000000	88430.90000000	88258.40000000	88366.10000000	44.04470511	3890587.15758135	1
+342	BTC-USDT	1H	1766268000000	88217.70000000	88346.70000000	88148.00000000	88282.10000000	33.46944774	2952847.98621927	1
+343	BTC-USDT	1H	1766264400000	88284.00000000	88451.50000000	88192.30000000	88217.60000000	44.25500445	3908446.10665050	1
+344	BTC-USDT	1H	1766260800000	88234.00000000	88320.90000000	88215.10000000	88284.00000000	10.95143410	966549.27983864	1
+345	BTC-USDT	1H	1766257200000	88316.30000000	88331.90000000	88208.00000000	88233.90000000	21.95278640	1937640.05794623	1
+346	BTC-USDT	1H	1766253600000	88185.50000000	88420.00000000	88158.50000000	88316.20000000	63.41436131	5598665.31893300	1
+347	BTC-USDT	1H	1766250000000	88153.00000000	88257.30000000	88107.00000000	88185.40000000	35.43449185	3125082.82008405	1
+348	BTC-USDT	1H	1766246400000	88175.10000000	88236.50000000	88130.70000000	88152.90000000	63.18208432	5571620.82552496	1
+349	BTC-USDT	1H	1766242800000	88253.10000000	88262.00000000	88005.00000000	88175.00000000	102.96822758	9073277.59067276	1
+350	BTC-USDT	1H	1766239200000	88269.60000000	88280.40000000	88015.00000000	88253.10000000	124.64413783	10987897.57114350	1
+351	BTC-USDT	1H	1766235600000	88250.80000000	88344.30000000	87800.00000000	88269.50000000	187.47889554	16516789.91500390	1
+352	BTC-USDT	1H	1766232000000	88276.30000000	88336.00000000	88178.60000000	88250.70000000	46.50304635	4103542.05320452	1
+353	BTC-USDT	1H	1766228400000	88166.00000000	88309.00000000	88111.00000000	88276.30000000	44.64849070	3939589.03824828	1
+354	BTC-USDT	1H	1766224800000	88227.10000000	88278.90000000	88122.90000000	88166.00000000	64.91063978	5723549.85869892	1
+355	BTC-USDT	1H	1766221200000	88253.90000000	88341.00000000	88221.90000000	88227.10000000	36.79457422	3248278.13730333	1
+356	BTC-USDT	1H	1766217600000	88277.00000000	88429.00000000	88253.80000000	88253.80000000	57.68026804	5096239.58132109	1
+357	BTC-USDT	1H	1766214000000	88308.70000000	88334.00000000	88190.00000000	88276.90000000	58.81443732	5189533.66968425	1
+358	BTC-USDT	1H	1766210400000	88300.40000000	88450.00000000	88287.00000000	88308.60000000	33.61957419	2970150.77188762	1
+359	BTC-USDT	1H	1766206800000	88295.40000000	88574.90000000	88275.60000000	88300.40000000	101.66703340	8989163.50571443	1
+360	BTC-USDT	1H	1766203200000	88219.50000000	88336.90000000	88120.00000000	88295.50000000	82.07993380	7244219.68238727	1
+361	BTC-USDT	1H	1766199600000	88210.30000000	88342.90000000	88190.20000000	88219.50000000	75.98746166	6707275.57800171	1
+362	BTC-USDT	1H	1766196000000	88082.30000000	88316.70000000	88000.00000000	88210.40000000	75.22586476	6631737.91212267	1
+363	BTC-USDT	1H	1766192400000	88009.00000000	88174.40000000	88008.90000000	88082.20000000	26.40764809	2326382.87519382	1
+364	BTC-USDT	1H	1766188800000	88143.00000000	88196.90000000	87965.90000000	88008.90000000	75.76261180	6674245.64493191	1
+365	BTC-USDT	1H	1766185200000	88350.50000000	88362.40000000	88122.80000000	88143.10000000	70.32310301	6204768.21688223	1
+366	BTC-USDT	1H	1766181600000	87841.10000000	88427.90000000	87837.70000000	88350.50000000	293.90128132	25941717.70367400	1
+367	BTC-USDT	1H	1766178000000	88086.20000000	88088.20000000	87796.70000000	87840.90000000	132.89681626	11688488.86249660	1
+368	BTC-USDT	1H	1766174400000	87836.10000000	88412.50000000	87603.60000000	88086.20000000	250.99376228	22096666.49631930	1
+369	BTC-USDT	1H	1766170800000	87159.30000000	88120.90000000	87134.70000000	87833.20000000	182.87551298	16028531.13511150	1
+370	BTC-USDT	1H	1766167200000	86947.00000000	87473.80000000	86846.80000000	87159.30000000	171.04750112	14905079.58764110	1
+371	BTC-USDT	1H	1766163600000	87984.10000000	88342.90000000	86880.00000000	86947.00000000	486.55734347	42543405.40977620	1
+372	BTC-USDT	1H	1766160000000	87958.00000000	88882.30000000	87872.40000000	87984.10000000	307.43398821	27176895.49979020	1
+373	BTC-USDT	1H	1766156400000	88175.90000000	89426.30000000	87705.90000000	87957.90000000	961.30436128	85149303.14227340	1
+374	BTC-USDT	1H	1766152800000	87994.10000000	88564.70000000	87515.40000000	88176.10000000	484.27373462	42646412.49742520	1
+375	BTC-USDT	1H	1766149200000	87854.60000000	88210.20000000	87825.20000000	87994.10000000	196.95555786	17329480.09920590	1
+376	BTC-USDT	1H	1766145600000	88193.30000000	88268.70000000	87830.00000000	87854.60000000	153.51499052	13512436.72932740	1
+377	BTC-USDT	1H	1766142000000	88267.80000000	88370.00000000	88141.70000000	88193.30000000	77.60496980	6849781.03708854	1
+378	BTC-USDT	1H	1766138400000	88108.10000000	88333.30000000	87915.60000000	88267.80000000	188.35652772	16595177.87924460	1
+379	BTC-USDT	1H	1766134800000	88101.00000000	88171.20000000	87901.90000000	88109.40000000	83.01463745	7307939.09619023	1
+380	BTC-USDT	1H	1766131200000	87954.60000000	88214.30000000	87741.00000000	88101.10000000	165.13524494	14534050.33274990	1
+381	BTC-USDT	1H	1766127600000	87487.90000000	88400.00000000	87483.70000000	87954.60000000	416.90670192	36679940.98358400	1
+382	BTC-USDT	1H	1766124000000	87143.50000000	87488.00000000	86909.10000000	87487.90000000	168.52576490	14700424.59967360	1
+383	BTC-USDT	1H	1766120400000	87100.70000000	87236.40000000	86687.40000000	87145.00000000	228.29420001	19849206.14559200	1
+384	BTC-USDT	1H	1766116800000	86890.00000000	87375.00000000	86850.40000000	87099.80000000	292.55090911	25479772.58841390	1
+385	BTC-USDT	1H	1766113200000	85650.30000000	87568.00000000	85608.30000000	86899.00000000	704.54270204	61118024.31112910	1
+386	BTC-USDT	1H	1766109600000	85323.00000000	85929.20000000	85130.10000000	85650.40000000	233.78312895	19992892.85538100	1
+387	BTC-USDT	1H	1766106000000	85607.00000000	85607.00000000	85120.00000000	85323.10000000	140.52269318	11992643.80626670	1
+388	BTC-USDT	1H	1766102400000	85506.10000000	85606.00000000	85300.00000000	85606.00000000	98.00734492	8374442.34634138	1
+389	BTC-USDT	1H	1766098800000	85587.00000000	85623.90000000	85318.00000000	85506.10000000	125.87686772	10758701.31987150	1
+390	BTC-USDT	1H	1766095200000	85630.70000000	85754.80000000	85285.70000000	85587.00000000	159.32149775	13636312.82347530	1
+391	BTC-USDT	1H	1766091600000	84578.20000000	85838.60000000	84564.70000000	85623.00000000	257.65925341	21990147.70920120	1
+392	BTC-USDT	1H	1766088000000	84483.50000000	85276.80000000	84456.20000000	84578.20000000	301.48033575	25606829.18104570	1
+393	BTC-USDT	1H	1766084400000	85988.70000000	86033.90000000	84480.00000000	84481.10000000	863.13911395	73483908.31194890	1
+394	BTC-USDT	1H	1766080800000	86490.50000000	86891.30000000	85724.30000000	85994.60000000	349.37756758	30159687.32953320	1
+395	BTC-USDT	1H	1766077200000	88014.80000000	88030.90000000	85477.30000000	86490.50000000	1078.79794447	93177368.90883590	1
+396	BTC-USDT	1H	1766073600000	88513.70000000	88531.00000000	87854.40000000	88014.70000000	390.01678102	34401686.84401760	1
+397	BTC-USDT	1H	1766070000000	88351.80000000	89360.00000000	87977.90000000	88513.70000000	784.04186683	69512074.15938650	1
+398	BTC-USDT	1H	1766066400000	88850.00000000	89480.00000000	87725.30000000	88351.90000000	901.31404245	79741608.99176900	1
+399	BTC-USDT	1H	1766062800000	87258.80000000	89195.90000000	87258.80000000	88850.10000000	1184.17604324	104624304.48186900	1
+400	BTC-USDT	1H	1766059200000	87276.70000000	87434.80000000	87118.90000000	87258.70000000	96.28235872	8401773.65945904	1
+501	BTC-USDT	1H	1765695600000	90151.10000000	90291.10000000	90085.20000000	90256.10000000	114.17679632	10301894.80358780	1
+502	BTC-USDT	1H	1765692000000	90208.70000000	90249.70000000	90100.00000000	90151.10000000	29.74349959	2681907.60651070	1
+503	BTC-USDT	1H	1765688400000	90205.00000000	90234.00000000	90051.00000000	90208.70000000	72.44141003	6530321.36987621	1
+504	BTC-USDT	1H	1765684800000	90266.60000000	90346.30000000	90131.30000000	90205.00000000	54.69097451	4934947.28739002	1
+505	BTC-USDT	1H	1765681200000	90293.10000000	90310.00000000	90247.20000000	90266.50000000	46.33930480	4183271.29243304	1
+506	BTC-USDT	1H	1765677600000	90300.50000000	90394.00000000	90247.20000000	90293.00000000	36.08459461	3259247.24911520	1
+507	BTC-USDT	1H	1765674000000	90339.10000000	90458.20000000	90212.50000000	90300.40000000	57.87306423	5228086.69341426	1
+508	BTC-USDT	1H	1765670400000	90241.10000000	90475.00000000	90125.00000000	90339.10000000	107.15131775	9678115.61604623	1
+509	BTC-USDT	1H	1765666800000	90137.00000000	90279.00000000	90067.00000000	90241.10000000	25.03486913	2258498.80829985	1
+510	BTC-USDT	1H	1765663200000	90171.50000000	90252.40000000	90002.50000000	90137.00000000	37.07301635	3341869.94009847	1
+511	BTC-USDT	1H	1765659600000	90092.60000000	90192.00000000	89764.80000000	90171.50000000	67.18613368	6043540.50613684	1
+512	BTC-USDT	1H	1765656000000	90182.40000000	90215.90000000	90044.00000000	90092.60000000	64.72020751	5836225.62007755	1
+513	BTC-USDT	1H	1765652400000	90124.00000000	90225.50000000	90108.70000000	90182.50000000	16.58305732	1495351.35662924	1
+514	BTC-USDT	1H	1765648800000	90054.10000000	90190.60000000	90044.10000000	90123.90000000	21.37263691	1926583.75852249	1
+515	BTC-USDT	1H	1765645200000	90097.60000000	90105.80000000	89990.00000000	90054.00000000	36.70012025	3304003.12274153	1
+516	BTC-USDT	1H	1765641600000	90100.60000000	90275.00000000	90032.50000000	90097.60000000	47.03441241	4239349.31303525	1
+517	BTC-USDT	1H	1765638000000	90085.90000000	90293.10000000	90038.70000000	90100.70000000	74.60630179	6725709.60837384	1
+518	BTC-USDT	1H	1765634400000	90262.00000000	90348.10000000	89930.10000000	90086.00000000	152.71142529	13765120.28758300	1
+519	BTC-USDT	1H	1765630800000	90355.10000000	90468.80000000	90200.00000000	90262.00000000	297.84272778	26904469.79822120	1
+520	BTC-USDT	1H	1765627200000	90341.70000000	90486.00000000	90294.50000000	90355.10000000	54.66533858	4940466.23254756	1
+521	BTC-USDT	1H	1765623600000	90592.90000000	90611.80000000	90300.00000000	90341.70000000	106.74044916	9656012.03131907	1
+522	BTC-USDT	1H	1765620000000	90415.10000000	90638.20000000	90415.10000000	90592.90000000	183.38279702	16595402.92946140	1
+523	BTC-USDT	1H	1765616400000	90450.90000000	90513.50000000	90361.90000000	90415.00000000	142.43273878	12877980.37625310	1
+524	BTC-USDT	1H	1765612800000	90330.10000000	90576.70000000	90314.60000000	90450.90000000	239.47088858	21661720.31018560	1
+525	BTC-USDT	1H	1765609200000	90348.20000000	90416.90000000	90311.90000000	90330.00000000	559.66099937	50572556.42565930	1
+526	BTC-USDT	1H	1765605600000	90340.50000000	90370.70000000	90251.60000000	90348.10000000	116.02051912	10478012.26595880	1
+527	BTC-USDT	1H	1765602000000	90375.90000000	90394.00000000	90246.50000000	90340.40000000	162.18434809	14647563.43959000	1
+528	BTC-USDT	1H	1765598400000	90341.90000000	90421.00000000	90271.50000000	90375.90000000	66.51295067	6009310.84394898	1
+529	BTC-USDT	1H	1765594800000	90227.10000000	90469.90000000	90196.00000000	90341.90000000	135.46026992	12236562.81741830	1
+530	BTC-USDT	1H	1765591200000	90225.00000000	90318.00000000	90206.20000000	90227.10000000	85.24323240	7693250.62468554	1
+531	BTC-USDT	1H	1765587600000	90317.60000000	90360.00000000	90112.40000000	90224.90000000	53.88380277	4863702.02562117	1
+532	BTC-USDT	1H	1765584000000	90268.10000000	90436.50000000	90206.90000000	90317.60000000	72.87979636	6583395.67486858	1
+533	BTC-USDT	1H	1765580400000	90339.90000000	90387.00000000	90225.10000000	90268.10000000	43.02290384	3886376.25471572	1
+534	BTC-USDT	1H	1765576800000	90186.00000000	90392.30000000	90184.70000000	90339.70000000	67.57906932	6102963.80887853	1
+535	BTC-USDT	1H	1765573200000	90211.20000000	90347.60000000	90100.00000000	90192.00000000	100.17990399	9039494.04333405	1
+536	BTC-USDT	1H	1765569600000	90197.10000000	90329.80000000	89888.80000000	90211.30000000	143.77395516	12959956.55502040	1
+537	BTC-USDT	1H	1765566000000	90366.10000000	90398.90000000	90003.90000000	90197.10000000	179.75798504	16211958.55139610	1
+538	BTC-USDT	1H	1765562400000	90075.70000000	90659.90000000	90039.00000000	90366.00000000	350.93473832	31740116.29464680	1
+539	BTC-USDT	1H	1765558800000	90040.20000000	90622.70000000	89822.60000000	90075.60000000	335.39684545	30256725.64032450	1
+540	BTC-USDT	1H	1765555200000	89933.70000000	90439.50000000	89466.60000000	90040.10000000	539.75715832	48513696.95316250	1
+541	BTC-USDT	1H	1765551600000	92445.50000000	92445.50000000	89777.70000000	89941.40000000	1021.78373382	93036374.08534490	1
+542	BTC-USDT	1H	1765548000000	92311.90000000	92666.50000000	91902.50000000	92445.50000000	329.62106883	30444218.06909250	1
+543	BTC-USDT	1H	1765544400000	92425.10000000	92515.60000000	92250.30000000	92311.90000000	129.70306513	11981370.90331420	1
+544	BTC-USDT	1H	1765540800000	92411.80000000	92425.10000000	92085.90000000	92425.10000000	165.86361655	15300734.52056450	1
+545	BTC-USDT	1H	1765537200000	92493.10000000	92493.10000000	92276.30000000	92411.90000000	62.00548005	5727795.32990386	1
+546	BTC-USDT	1H	1765533600000	92522.60000000	92635.60000000	92413.30000000	92493.00000000	183.00963292	16931789.12153150	1
+547	BTC-USDT	1H	1765530000000	92346.90000000	92559.30000000	92088.50000000	92522.50000000	103.49380457	9554816.04793184	1
+548	BTC-USDT	1H	1765526400000	92427.20000000	92479.10000000	92103.10000000	92347.40000000	159.40891768	14712170.01533650	1
+549	BTC-USDT	1H	1765522800000	92506.70000000	92562.60000000	92250.30000000	92427.10000000	198.62147521	18363238.51164660	1
+550	BTC-USDT	1H	1765519200000	92443.20000000	92719.30000000	92403.10000000	92506.60000000	134.63047044	12466374.30403320	1
+551	BTC-USDT	1H	1765515600000	92397.60000000	92502.30000000	92078.60000000	92443.20000000	134.01676677	12368300.36990080	1
+552	BTC-USDT	1H	1765512000000	92274.90000000	92468.10000000	92123.00000000	92397.50000000	168.48839422	15545834.08835370	1
+553	BTC-USDT	1H	1765508400000	92584.50000000	92752.50000000	92175.00000000	92275.10000000	142.86960433	13196568.63684370	1
+554	BTC-USDT	1H	1765504800000	92171.90000000	92747.20000000	91929.10000000	92584.40000000	249.48219932	23067183.07010320	1
+555	BTC-USDT	1H	1765501200000	91577.70000000	92317.00000000	91545.90000000	92171.80000000	210.07472527	19322611.47707800	1
+556	BTC-USDT	1H	1765497600000	92522.20000000	92658.50000000	91280.40000000	91577.70000000	358.32928510	33005770.88654120	1
+445	BTC-USDT	1H	1765897200000	87298.70000000	88180.00000000	86844.30000000	87968.90000000	631.09012549	55194966.11033740	1
+446	BTC-USDT	1H	1765893600000	86448.20000000	87763.10000000	86109.00000000	87297.30000000	526.38891622	45767369.55819820	1
+447	BTC-USDT	1H	1765890000000	87211.50000000	87790.10000000	86416.70000000	86448.10000000	650.33184437	56710517.00573770	1
+448	BTC-USDT	1H	1765886400000	87255.90000000	87481.50000000	87076.50000000	87211.50000000	203.89861069	17786380.93539640	1
+449	BTC-USDT	1H	1765882800000	86974.10000000	87327.50000000	86815.20000000	87256.00000000	144.24194807	12566236.60140760	1
+450	BTC-USDT	1H	1765879200000	86352.30000000	87336.70000000	86269.10000000	86974.10000000	318.96624900	27709965.25124320	1
+451	BTC-USDT	1H	1765875600000	86282.00000000	86425.30000000	86200.00000000	86352.30000000	66.20553357	5714610.71069977	1
+452	BTC-USDT	1H	1765872000000	86009.40000000	86379.10000000	85930.00000000	86282.00000000	105.72972310	9111453.41091633	1
+453	BTC-USDT	1H	1765868400000	86494.00000000	86603.50000000	85857.10000000	86009.30000000	314.68315198	27136721.71665110	1
+454	BTC-USDT	1H	1765864800000	86020.10000000	86600.00000000	86020.10000000	86494.00000000	247.63276190	21386949.80087290	1
+455	BTC-USDT	1H	1765861200000	85830.10000000	86194.80000000	85803.00000000	86020.00000000	208.31311492	17908522.75327880	1
+456	BTC-USDT	1H	1765857600000	85865.70000000	85921.40000000	85265.20000000	85832.10000000	271.37222687	23241713.49022700	1
+457	BTC-USDT	1H	1765854000000	85938.00000000	86011.80000000	85378.50000000	85865.70000000	224.89679159	19273761.95747760	1
+458	BTC-USDT	1H	1765850400000	85894.20000000	86228.80000000	85800.00000000	85938.20000000	148.23730903	12750469.79406700	1
+459	BTC-USDT	1H	1765846800000	85862.10000000	86171.90000000	85671.30000000	85894.10000000	140.84826345	12098467.52462590	1
+460	BTC-USDT	1H	1765843200000	86433.00000000	86524.60000000	85841.90000000	85862.00000000	139.76070427	12043143.15381710	1
+461	BTC-USDT	1H	1765839600000	86259.90000000	86470.00000000	86120.00000000	86432.90000000	167.31817145	14445313.77207820	1
+462	BTC-USDT	1H	1765836000000	86237.40000000	86261.50000000	85821.10000000	86260.00000000	83.35660442	7173362.81623369	1
+463	BTC-USDT	1H	1765832400000	85786.90000000	86300.00000000	85529.40000000	86237.30000000	151.68076295	13031068.26326090	1
+464	BTC-USDT	1H	1765828800000	86149.00000000	86194.90000000	85614.00000000	85782.20000000	185.75964589	15952131.88070640	1
+465	BTC-USDT	1H	1765825200000	86191.80000000	86565.90000000	85875.10000000	86149.10000000	268.11199158	23120164.56604090	1
+466	BTC-USDT	1H	1765821600000	85766.00000000	86280.00000000	85147.70000000	86192.00000000	336.58794563	28838397.88775590	1
+467	BTC-USDT	1H	1765818000000	86400.10000000	86499.80000000	85600.10000000	85766.00000000	342.50320966	29446099.05118670	1
+468	BTC-USDT	1H	1765814400000	87044.60000000	87222.00000000	86057.00000000	86400.90000000	428.84837720	37127184.40578370	1
+469	BTC-USDT	1H	1765810800000	88055.20000000	88197.10000000	86626.60000000	87042.90000000	1023.37410354	89281712.03664650	1
+470	BTC-USDT	1H	1765807200000	89434.10000000	89879.90000000	87839.90000000	88055.30000000	532.78097755	47371555.66550210	1
+471	BTC-USDT	1H	1765803600000	89700.10000000	89736.70000000	89288.00000000	89434.10000000	185.61715721	16605554.91399840	1
+472	BTC-USDT	1H	1765800000000	89645.30000000	89762.50000000	89434.00000000	89700.00000000	86.49122959	7750167.70392472	1
+473	BTC-USDT	1H	1765796400000	89858.90000000	89899.90000000	89588.00000000	89645.20000000	71.52782918	6419718.60669638	1
+474	BTC-USDT	1H	1765792800000	89873.90000000	89976.00000000	89709.80000000	89858.90000000	156.27589988	14041644.61307010	1
+475	BTC-USDT	1H	1765789200000	89770.00000000	89984.30000000	89768.00000000	89873.90000000	127.88025015	11494131.33854210	1
+476	BTC-USDT	1H	1765785600000	89747.00000000	89900.00000000	89650.00000000	89770.10000000	103.64637054	9306377.25383755	1
+477	BTC-USDT	1H	1765782000000	89743.40000000	89829.70000000	89523.80000000	89747.00000000	145.93321186	13083749.14479750	1
+478	BTC-USDT	1H	1765778400000	89619.00000000	89922.90000000	89474.00000000	89743.40000000	101.70250397	9120227.44652274	1
+479	BTC-USDT	1H	1765774800000	89669.90000000	89760.00000000	89500.00000000	89616.10000000	223.79511125	20053979.35117960	1
+480	BTC-USDT	1H	1765771200000	89286.00000000	89790.90000000	89279.00000000	89669.90000000	183.76306218	16465873.08390850	1
+481	BTC-USDT	1H	1765767600000	89315.00000000	89540.00000000	89226.50000000	89285.90000000	166.99620109	14919165.02050660	1
+482	BTC-USDT	1H	1765764000000	89248.10000000	90021.90000000	89235.10000000	89315.00000000	215.70823540	19325674.82931620	1
+483	BTC-USDT	1H	1765760400000	88456.00000000	89336.90000000	88421.00000000	89248.10000000	258.90828396	23027334.22469170	1
+484	BTC-USDT	1H	1765756800000	88163.00000000	88688.00000000	88072.30000000	88456.00000000	187.50243092	16580640.69392180	1
+485	BTC-USDT	1H	1765753200000	88411.00000000	88610.00000000	87564.50000000	88162.90000000	321.36472736	28279038.87773590	1
+486	BTC-USDT	1H	1765749600000	88444.10000000	88604.90000000	88018.00000000	88411.00000000	162.34966857	14332668.44099080	1
+487	BTC-USDT	1H	1765746000000	88557.00000000	88711.60000000	88342.40000000	88444.00000000	66.05346172	5847611.74848271	1
+488	BTC-USDT	1H	1765742400000	88644.10000000	88833.00000000	88350.00000000	88556.90000000	147.30552390	13051626.84006620	1
+489	BTC-USDT	1H	1765738800000	89004.70000000	89004.70000000	88465.90000000	88644.00000000	104.86620250	9297334.10474413	1
+490	BTC-USDT	1H	1765735200000	88805.00000000	89082.40000000	88720.20000000	89004.70000000	85.78959057	7626048.98602450	1
+491	BTC-USDT	1H	1765731600000	88833.00000000	89029.20000000	88600.00000000	88804.90000000	135.47267914	12032329.84643580	1
+492	BTC-USDT	1H	1765728000000	89027.70000000	89397.90000000	88505.40000000	88832.90000000	191.92025300	17061467.71558960	1
+493	BTC-USDT	1H	1765724400000	89112.10000000	89180.00000000	88880.00000000	89027.70000000	76.91047471	6846523.10817678	1
+494	BTC-USDT	1H	1765720800000	89484.10000000	89559.40000000	88884.00000000	89112.10000000	169.43066117	15107379.79843560	1
+495	BTC-USDT	1H	1765717200000	89417.10000000	89498.00000000	89083.90000000	89484.10000000	93.66485585	8360013.41180048	1
+496	BTC-USDT	1H	1765713600000	89355.10000000	89662.60000000	89100.00000000	89418.50000000	142.95710451	12781971.11729150	1
+497	BTC-USDT	1H	1765710000000	89857.10000000	89857.10000000	88632.90000000	89355.00000000	716.52021275	63954194.40710640	1
+498	BTC-USDT	1H	1765706400000	90026.00000000	90133.30000000	89786.40000000	89857.00000000	356.79876067	32105372.50962350	1
+499	BTC-USDT	1H	1765702800000	90115.00000000	90158.00000000	90007.00000000	90025.90000000	57.74668524	5201026.42291904	1
+500	BTC-USDT	1H	1765699200000	90256.00000000	90307.60000000	90104.90000000	90114.90000000	205.22209862	18514264.55392880	1
+701	BTC-USDT	1H	1764975600000	89239.90000000	89379.50000000	88937.10000000	89330.80000000	92.36261302	8236748.27966514	1
+702	BTC-USDT	1H	1764972000000	89181.00000000	89364.90000000	88907.00000000	89240.00000000	93.45371856	8330474.52329487	1
+703	BTC-USDT	1H	1764968400000	89305.30000000	89492.10000000	89076.00000000	89180.90000000	101.14576427	9031834.98558146	1
+704	BTC-USDT	1H	1764964800000	89639.00000000	89742.40000000	89196.30000000	89306.90000000	128.11737218	11459606.72581080	1
+705	BTC-USDT	1H	1764961200000	88939.00000000	89803.30000000	88814.00000000	89639.10000000	184.12484045	16434258.43223400	1
+706	BTC-USDT	1H	1764957600000	89338.90000000	89797.60000000	88909.40000000	88939.00000000	245.11195789	21905827.55808150	1
+707	BTC-USDT	1H	1764954000000	88811.00000000	89544.30000000	88612.10000000	89338.90000000	321.90352027	28640314.89566400	1
+708	BTC-USDT	1H	1764950400000	90456.10000000	90499.90000000	88040.40000000	88811.10000000	1179.67317992	104961943.86946300	1
+709	BTC-USDT	1H	1764946800000	90293.20000000	91497.80000000	90263.50000000	90456.00000000	645.76648361	58728991.77512920	1
+710	BTC-USDT	1H	1764943200000	90473.00000000	90740.50000000	89900.00000000	90293.20000000	474.26847473	42842303.35053310	1
+711	BTC-USDT	1H	1764939600000	91240.00000000	91354.00000000	90229.00000000	90472.90000000	378.83218815	34354544.85096480	1
+712	BTC-USDT	1H	1764936000000	91342.80000000	91426.00000000	91079.20000000	91240.00000000	102.27392295	9330766.96541695	1
+713	BTC-USDT	1H	1764932400000	91275.00000000	91560.00000000	91127.10000000	91342.90000000	97.37343276	8893127.52854227	1
+714	BTC-USDT	1H	1764928800000	91122.70000000	91487.10000000	91088.00000000	91274.90000000	121.61165252	11101632.51852950	1
+715	BTC-USDT	1H	1764925200000	92111.10000000	92113.80000000	90972.10000000	91122.90000000	487.24573830	44535214.19515950	1
+716	BTC-USDT	1H	1764921600000	92249.80000000	92254.30000000	91892.00000000	92111.00000000	191.08837397	17596144.64750280	1
+557	BTC-USDT	1H	1765494000000	92373.30000000	92804.50000000	92337.10000000	92522.30000000	399.27092309	36961470.86925370	1
+558	BTC-USDT	1H	1765490400000	92867.70000000	93198.20000000	92097.60000000	92371.50000000	376.20738183	34826129.69422460	1
+559	BTC-USDT	1H	1765486800000	91789.20000000	93564.40000000	91703.30000000	92867.60000000	620.82572248	57645800.03016450	1
+560	BTC-USDT	1H	1765483200000	90835.60000000	91829.20000000	90802.50000000	91781.40000000	186.21123828	17014826.35921170	1
+561	BTC-USDT	1H	1765479600000	90705.70000000	91541.20000000	90583.10000000	90835.60000000	281.02742739	25605873.43421620	1
+562	BTC-USDT	1H	1765476000000	89971.60000000	91183.40000000	89891.10000000	90705.90000000	335.91158054	30446395.02219640	1
+563	BTC-USDT	1H	1765472400000	89737.10000000	90255.10000000	89630.00000000	89979.40000000	161.71465129	14553734.66139000	1
+564	BTC-USDT	1H	1765468800000	89875.00000000	90180.20000000	89333.30000000	89736.90000000	204.82634057	18369819.97293530	1
+565	BTC-USDT	1H	1765465200000	89548.10000000	90642.70000000	89408.00000000	89875.10000000	485.22472520	43702912.66167260	1
+566	BTC-USDT	1H	1765461600000	90101.00000000	90484.20000000	89255.90000000	89548.10000000	500.55896930	45038872.43255660	1
+567	BTC-USDT	1H	1765458000000	90029.10000000	90170.00000000	89876.10000000	90101.00000000	150.53066277	13555048.64929750	1
+568	BTC-USDT	1H	1765454400000	90234.80000000	90381.30000000	90008.00000000	90029.00000000	148.40281970	13390022.61995660	1
+569	BTC-USDT	1H	1765450800000	90317.40000000	90414.00000000	90204.10000000	90234.80000000	551.81074857	49834622.13027780	1
+570	BTC-USDT	1H	1765447200000	90233.30000000	90347.10000000	90170.00000000	90317.30000000	155.55746100	14037011.88642990	1
+571	BTC-USDT	1H	1765443600000	90186.50000000	90523.30000000	90111.90000000	90233.00000000	800.59782540	72292353.87875480	1
+572	BTC-USDT	1H	1765440000000	90270.90000000	90271.00000000	89964.90000000	90186.40000000	126.31077616	11381625.64752780	1
+573	BTC-USDT	1H	1765436400000	90292.30000000	90329.20000000	90057.20000000	90271.00000000	271.86738121	24519779.76928160	1
+574	BTC-USDT	1H	1765432800000	90303.80000000	90445.90000000	89954.90000000	90292.20000000	187.19643679	16889051.66133730	1
+575	BTC-USDT	1H	1765429200000	90437.00000000	90437.00000000	90066.10000000	90303.80000000	199.17020937	17972015.20701600	1
+576	BTC-USDT	1H	1765425600000	89881.00000000	90483.30000000	89688.00000000	90437.00000000	290.53147763	26164546.26650560	1
+577	BTC-USDT	1H	1765422000000	90070.50000000	90083.50000000	89389.80000000	89881.10000000	397.63658670	35697833.04822440	1
+578	BTC-USDT	1H	1765418400000	90673.80000000	90673.80000000	89872.50000000	90070.30000000	512.38051515	46206933.82301690	1
+579	BTC-USDT	1H	1765414800000	91385.30000000	91408.00000000	90653.40000000	90673.80000000	279.18332070	25392865.86030510	1
+580	BTC-USDT	1H	1765411200000	92013.60000000	92082.80000000	91048.10000000	91385.20000000	335.30472018	30694976.09612460	1
+581	BTC-USDT	1H	1765407600000	92514.90000000	92592.90000000	91938.10000000	92013.70000000	173.18754256	15964940.66082370	1
+582	BTC-USDT	1H	1765404000000	92351.50000000	92695.40000000	91953.70000000	92514.90000000	167.87256569	15508749.72281850	1
+583	BTC-USDT	1H	1765400400000	92453.20000000	92772.60000000	91873.80000000	92351.40000000	241.87182423	22321154.56578810	1
+584	BTC-USDT	1H	1765396800000	92959.70000000	94495.20000000	92260.00000000	92453.30000000	804.77893571	75194775.67225970	1
+585	BTC-USDT	1H	1765393200000	92499.60000000	93283.20000000	91685.50000000	92959.60000000	972.23919566	90090268.07322760	1
+586	BTC-USDT	1H	1765389600000	92384.40000000	93058.60000000	91980.00000000	92499.70000000	298.38256632	27616070.94410410	1
+587	BTC-USDT	1H	1765386000000	92174.00000000	92512.90000000	92102.10000000	92384.30000000	207.68625127	19170970.65235770	1
+588	BTC-USDT	1H	1765382400000	92070.00000000	92597.00000000	91896.00000000	92174.90000000	409.94351588	37842079.90724180	1
+589	BTC-USDT	1H	1765378800000	91834.10000000	92148.40000000	91567.60000000	92069.90000000	278.09419569	25564519.83470420	1
+590	BTC-USDT	1H	1765375200000	92096.90000000	92122.00000000	91609.50000000	91836.80000000	251.36503054	23099817.79979710	1
+591	BTC-USDT	1H	1765371600000	91996.00000000	92229.90000000	91945.60000000	92097.00000000	157.79751166	14530757.67759800	1
+592	BTC-USDT	1H	1765368000000	92131.10000000	92231.00000000	91828.70000000	91996.10000000	209.25369786	19252637.35981320	1
+593	BTC-USDT	1H	1765364400000	92282.10000000	92472.80000000	91780.10000000	92131.00000000	799.40012705	73750158.68828650	1
+594	BTC-USDT	1H	1765360800000	92919.90000000	93257.10000000	92150.00000000	92282.00000000	854.86299210	79141896.69360430	1
+595	BTC-USDT	1H	1765357200000	92611.40000000	92947.30000000	92443.70000000	92919.90000000	235.86662898	21875361.68203510	1
+596	BTC-USDT	1H	1765353600000	92785.00000000	92797.00000000	92542.00000000	92611.40000000	442.44293976	40984261.29385370	1
+597	BTC-USDT	1H	1765350000000	92700.60000000	92784.90000000	92498.50000000	92784.90000000	496.79430535	46035413.92805850	1
+598	BTC-USDT	1H	1765346400000	92559.00000000	92761.00000000	92396.70000000	92701.70000000	105.94456506	9809914.56446298	1
+599	BTC-USDT	1H	1765342800000	92549.30000000	92726.00000000	92517.00000000	92558.90000000	86.92563074	8051079.42954479	1
+600	BTC-USDT	1H	1765339200000	92410.20000000	92660.00000000	92388.00000000	92549.20000000	101.18736001	9364433.48372078	1
+601	BTC-USDT	1H	1765335600000	92499.90000000	92555.00000000	92350.00000000	92410.20000000	119.59126158	11053134.81917710	1
+602	BTC-USDT	1H	1765332000000	92312.20000000	92569.00000000	92020.00000000	92498.90000000	175.00499377	16153911.83056510	1
+603	BTC-USDT	1H	1765328400000	92129.90000000	92392.60000000	91964.30000000	92312.20000000	143.77065529	13255546.78423900	1
+604	BTC-USDT	1H	1765324800000	92682.40000000	92782.60000000	92067.10000000	92130.10000000	310.68006310	28711623.10274160	1
+605	BTC-USDT	1H	1765321200000	92876.30000000	92980.90000000	92551.30000000	92682.50000000	167.77556067	15564242.94189330	1
+606	BTC-USDT	1H	1765317600000	92645.20000000	93035.00000000	92510.00000000	92876.30000000	299.06134510	27748164.91200320	1
+607	BTC-USDT	1H	1765314000000	93117.30000000	93236.10000000	92255.10000000	92645.20000000	291.61378972	27042056.48020220	1
+608	BTC-USDT	1H	1765310400000	93805.10000000	93851.50000000	92773.60000000	93117.10000000	328.33556210	30606496.14025640	1
+609	BTC-USDT	1H	1765306800000	93924.00000000	94227.10000000	93662.00000000	93805.00000000	195.72091212	18382909.64783940	1
+610	BTC-USDT	1H	1765303200000	93916.90000000	94176.00000000	93664.10000000	93924.00000000	293.33262292	27554834.58839120	1
+611	BTC-USDT	1H	1765299600000	94183.00000000	94600.00000000	93546.30000000	93916.90000000	539.54634934	50742476.83508110	1
+612	BTC-USDT	1H	1765296000000	92706.60000000	94488.00000000	92697.30000000	94183.00000000	1259.15664336	117965205.69293700	1
+613	BTC-USDT	1H	1765292400000	90357.40000000	92888.00000000	90293.30000000	92706.60000000	885.62540087	81232150.18662150	1
+614	BTC-USDT	1H	1765288800000	90423.90000000	90624.30000000	89999.10000000	90357.50000000	395.46802552	35710844.63536400	1
+615	BTC-USDT	1H	1765285200000	90574.10000000	90837.90000000	90170.00000000	90424.00000000	334.32312087	30257187.79676300	1
+616	BTC-USDT	1H	1765281600000	90382.00000000	90700.10000000	90323.00000000	90574.00000000	243.19123080	22012620.72627460	1
+617	BTC-USDT	1H	1765278000000	90298.80000000	90395.80000000	90134.90000000	90382.00000000	269.30774391	24313445.46593570	1
+618	BTC-USDT	1H	1765274400000	90136.10000000	90345.50000000	89908.40000000	90298.80000000	243.71492793	21970743.13210620	1
+619	BTC-USDT	1H	1765270800000	90498.10000000	90498.10000000	90135.30000000	90136.00000000	433.65332784	39186422.65133660	1
+620	BTC-USDT	1H	1765267200000	90503.20000000	90612.70000000	90370.80000000	90498.10000000	219.59165798	19876724.09138610	1
+621	BTC-USDT	1H	1765263600000	90165.10000000	90530.90000000	90089.30000000	90499.00000000	905.26325987	81835081.86866320	1
+622	BTC-USDT	1H	1765260000000	89893.90000000	90235.00000000	89782.60000000	90165.00000000	201.79061023	18158726.48006630	1
+623	BTC-USDT	1H	1765256400000	89921.00000000	90200.00000000	89500.00000000	89893.90000000	330.33932120	29693392.27118880	1
+624	BTC-USDT	1H	1765252800000	90409.00000000	90526.00000000	89725.50000000	89921.00000000	259.80255573	23412303.33929130	1
+625	BTC-USDT	1H	1765249200000	90075.60000000	90448.50000000	89812.50000000	90409.00000000	254.52311079	22939106.15982730	1
+626	BTC-USDT	1H	1765245600000	90060.50000000	90369.80000000	89980.70000000	90072.80000000	119.01861810	10735879.90010120	1
+627	BTC-USDT	1H	1765242000000	90393.60000000	90569.00000000	89968.90000000	90057.00000000	206.43954520	18633800.43914150	1
+628	BTC-USDT	1H	1765238400000	90642.00000000	90847.80000000	90360.00000000	90393.60000000	100.38081768	9094824.95972258	1
+629	BTC-USDT	1H	1765234800000	90822.40000000	91006.60000000	90481.80000000	90639.90000000	127.20334331	11535460.64807760	1
+630	BTC-USDT	1H	1765231200000	91304.10000000	91385.80000000	90714.20000000	90822.40000000	120.06994356	10929566.42628060	1
+631	BTC-USDT	1H	1765227600000	90790.40000000	91369.60000000	90670.10000000	91304.10000000	150.46530035	13703970.20886500	1
+632	BTC-USDT	1H	1765224000000	90117.60000000	90920.00000000	90117.60000000	90790.50000000	136.48212692	12353903.96948730	1
+633	BTC-USDT	1H	1765220400000	89907.20000000	90361.30000000	89864.00000000	90117.50000000	93.42378826	8419445.72649434	1
+634	BTC-USDT	1H	1765216800000	90257.00000000	90511.30000000	89729.80000000	89907.20000000	147.86695889	13342268.21855690	1
+635	BTC-USDT	1H	1765213200000	89978.00000000	90340.00000000	89698.00000000	90257.10000000	260.90576941	23479143.34429800	1
+636	BTC-USDT	1H	1765209600000	89962.00000000	90482.20000000	89678.20000000	89977.90000000	376.15111168	33890239.72918410	1
+637	BTC-USDT	1H	1765206000000	90847.10000000	90991.20000000	89612.70000000	89962.00000000	935.52012752	84392931.94651480	1
+638	BTC-USDT	1H	1765202400000	91463.00000000	91776.40000000	90782.90000000	90847.10000000	466.54909474	42570938.75435880	1
+639	BTC-USDT	1H	1765198800000	91763.60000000	92113.20000000	91307.60000000	91462.90000000	283.99299000	26030214.75135950	1
+640	BTC-USDT	1H	1765195200000	91957.90000000	91984.70000000	91652.20000000	91763.60000000	214.65183895	19706857.21856400	1
+641	BTC-USDT	1H	1765191600000	92126.80000000	92182.10000000	91850.10000000	91958.00000000	140.09569621	12885886.30723660	1
+642	BTC-USDT	1H	1765188000000	91911.20000000	92217.00000000	91817.60000000	92126.70000000	118.52744745	10910149.02021160	1
+643	BTC-USDT	1H	1765184400000	91832.70000000	92288.00000000	91790.00000000	91911.10000000	295.56294595	27212253.68315750	1
+644	BTC-USDT	1H	1765180800000	91560.20000000	91936.50000000	91481.90000000	91832.70000000	196.87357375	18042527.80481620	1
+645	BTC-USDT	1H	1765177200000	91460.00000000	91875.30000000	91356.70000000	91560.10000000	297.51867268	27248854.75750170	1
+646	BTC-USDT	1H	1765173600000	91334.00000000	91650.00000000	91245.00000000	91460.00000000	178.32380109	16311775.19792350	1
+647	BTC-USDT	1H	1765170000000	91283.10000000	91442.60000000	91041.00000000	91333.90000000	144.48994526	13188819.53150770	1
+648	BTC-USDT	1H	1765166400000	91074.40000000	91472.40000000	91025.90000000	91283.10000000	156.52264735	14280917.97473630	1
+649	BTC-USDT	1H	1765162800000	91356.90000000	91418.90000000	90982.80000000	91074.40000000	154.45991975	14083026.32774590	1
+650	BTC-USDT	1H	1765159200000	90911.70000000	91435.00000000	90807.40000000	91356.90000000	147.48035064	13438916.34478550	1
+651	BTC-USDT	1H	1765155600000	90349.00000000	91688.00000000	90306.90000000	90908.00000000	326.43424124	29735212.15330600	1
+652	BTC-USDT	1H	1765152000000	90394.10000000	90612.10000000	89868.40000000	90349.00000000	130.64540722	11795374.15690190	1
+653	BTC-USDT	1H	1765148400000	89604.60000000	90470.60000000	89523.00000000	90394.10000000	151.63623511	13637013.60708290	1
+654	BTC-USDT	1H	1765144800000	90234.20000000	90242.20000000	88985.00000000	89604.70000000	442.97659126	39673628.22404800	1
+655	BTC-USDT	1H	1765141200000	91440.10000000	91440.10000000	89874.70000000	90234.10000000	220.53643969	19958735.08808440	1
+656	BTC-USDT	1H	1765137600000	91423.10000000	91514.70000000	91314.10000000	91440.10000000	64.44657471	5890261.90474139	1
+657	BTC-USDT	1H	1765134000000	91371.70000000	91549.30000000	91226.90000000	91423.00000000	67.22029699	6143272.46205909	1
+658	BTC-USDT	1H	1765130400000	90960.40000000	91759.50000000	90960.30000000	91371.60000000	216.95985060	19837320.84308860	1
+659	BTC-USDT	1H	1765126800000	89892.10000000	91294.70000000	89616.10000000	90960.50000000	516.49845304	46800640.00683780	1
+660	BTC-USDT	1H	1765123200000	89554.70000000	89910.10000000	89112.00000000	89892.10000000	220.85645389	19752257.52318640	1
+661	BTC-USDT	1H	1765119600000	88225.70000000	89714.50000000	88178.00000000	89554.80000000	478.24353530	42560204.08234660	1
+662	BTC-USDT	1H	1765116000000	89051.90000000	89105.50000000	87731.70000000	88225.90000000	589.78871374	52027826.60051840	1
+663	BTC-USDT	1H	1765112400000	89477.70000000	89514.00000000	88650.00000000	89052.00000000	199.34331435	17742113.95360070	1
+664	BTC-USDT	1H	1765108800000	89158.60000000	89588.60000000	89122.80000000	89477.60000000	57.50155407	5139311.24569748	1
+665	BTC-USDT	1H	1765105200000	89247.00000000	89280.00000000	89147.10000000	89158.60000000	42.13858299	3759409.98526660	1
+666	BTC-USDT	1H	1765101600000	89112.10000000	89392.10000000	89090.90000000	89246.90000000	425.27224419	37943322.69523610	1
+667	BTC-USDT	1H	1765098000000	89318.10000000	89402.00000000	89062.50000000	89112.10000000	85.79990841	7652064.25973817	1
+668	BTC-USDT	1H	1765094400000	89382.00000000	89540.00000000	89202.10000000	89318.10000000	55.48941358	4958288.65058478	1
+669	BTC-USDT	1H	1765090800000	89712.10000000	89736.70000000	89200.70000000	89382.00000000	349.08233390	31197590.77987320	1
+670	BTC-USDT	1H	1765087200000	89513.80000000	89716.00000000	89491.70000000	89712.00000000	214.85282449	19250534.73984230	1
+671	BTC-USDT	1H	1765083600000	89538.00000000	89563.00000000	89428.00000000	89513.80000000	34.14892592	3056476.17911174	1
+672	BTC-USDT	1H	1765080000000	89720.90000000	89789.30000000	89470.90000000	89538.00000000	63.91026413	5727711.86809677	1
+673	BTC-USDT	1H	1765076400000	89628.50000000	89745.90000000	89547.50000000	89720.90000000	82.41325061	7389303.57417797	1
+674	BTC-USDT	1H	1765072800000	89300.10000000	89692.70000000	89300.00000000	89628.70000000	61.83541034	5533315.06071388	1
+675	BTC-USDT	1H	1765069200000	89400.10000000	89591.20000000	89300.00000000	89300.10000000	57.70109405	5161118.05800064	1
+676	BTC-USDT	1H	1765065600000	89234.00000000	89554.50000000	89183.60000000	89400.00000000	52.72033335	4713072.11822531	1
+677	BTC-USDT	1H	1765062000000	89287.90000000	89334.40000000	88914.10000000	89233.90000000	134.04444488	11941208.64069700	1
+678	BTC-USDT	1H	1765058400000	89425.10000000	89531.00000000	89258.00000000	89288.00000000	89.05899897	7962943.37003771	1
+679	BTC-USDT	1H	1765054800000	89558.20000000	89622.00000000	89403.30000000	89425.00000000	35.16316273	3146694.83907689	1
+680	BTC-USDT	1H	1765051200000	89409.20000000	89560.30000000	89320.30000000	89558.30000000	40.91719957	3661793.95530185	1
+681	BTC-USDT	1H	1765047600000	89650.30000000	89749.10000000	89258.20000000	89409.20000000	180.73224833	16166463.22877290	1
+682	BTC-USDT	1H	1765044000000	89708.30000000	89786.30000000	89530.10000000	89650.30000000	38.53711891	3455984.96698046	1
+683	BTC-USDT	1H	1765040400000	89708.10000000	89839.90000000	89615.00000000	89708.30000000	46.37044149	4159199.02059315	1
+684	BTC-USDT	1H	1765036800000	89756.50000000	89981.00000000	89686.60000000	89708.00000000	56.80352341	5104410.90778158	1
+685	BTC-USDT	1H	1765033200000	90008.00000000	90044.00000000	89467.90000000	89756.40000000	189.77354111	17032433.83247580	1
+686	BTC-USDT	1H	1765029600000	89672.80000000	90279.80000000	89658.00000000	90008.00000000	292.62138204	26337681.75444640	1
+687	BTC-USDT	1H	1765026000000	89578.10000000	89790.00000000	89578.10000000	89672.80000000	81.86290799	7342602.50160320	1
+688	BTC-USDT	1H	1765022400000	89629.50000000	89647.80000000	89560.00000000	89578.00000000	67.25596881	6026060.78075840	1
+689	BTC-USDT	1H	1765018800000	89506.20000000	89740.70000000	89473.90000000	89629.50000000	170.88895499	15310616.71509620	1
+690	BTC-USDT	1H	1765015200000	89563.20000000	89693.10000000	89459.60000000	89506.10000000	226.84062907	20327911.74768190	1
+691	BTC-USDT	1H	1765011600000	89275.90000000	89666.60000000	89258.00000000	89563.10000000	139.39908081	12481717.62762540	1
+692	BTC-USDT	1H	1765008000000	89583.90000000	89646.20000000	89203.10000000	89275.80000000	482.95284688	43153904.20805050	1
+693	BTC-USDT	1H	1765004400000	89683.30000000	89713.80000000	89465.20000000	89583.00000000	508.00597325	45532119.27489290	1
+694	BTC-USDT	1H	1765000800000	89600.20000000	89766.10000000	89510.30000000	89683.10000000	81.08867527	7270856.16333247	1
+695	BTC-USDT	1H	1764997200000	89663.40000000	89732.30000000	89527.00000000	89600.10000000	43.46258721	3894425.10203284	1
+696	BTC-USDT	1H	1764993600000	89677.20000000	89708.80000000	89514.50000000	89663.30000000	73.54303591	6590725.15993503	1
+697	BTC-USDT	1H	1764990000000	89388.10000000	89800.00000000	89385.00000000	89677.20000000	153.32221157	13744878.81283090	1
+698	BTC-USDT	1H	1764986400000	89324.00000000	89402.10000000	89169.00000000	89388.10000000	58.74616283	5244152.94670213	1
+699	BTC-USDT	1H	1764982800000	89420.60000000	89497.90000000	89200.20000000	89323.90000000	54.25239518	4847603.84357047	1
+700	BTC-USDT	1H	1764979200000	89330.90000000	89461.00000000	89040.30000000	89420.50000000	182.25774232	16268866.89931250	1
+717	BTC-USDT	1H	1764918000000	92272.90000000	92482.60000000	92199.00000000	92249.80000000	171.76138444	15862439.64892370	1
+718	BTC-USDT	1H	1764914400000	91938.60000000	92282.80000000	91898.10000000	92273.00000000	114.60242374	10553642.85819600	1
+719	BTC-USDT	1H	1764910800000	92028.00000000	92228.30000000	91880.00000000	91938.50000000	93.18906351	8574459.08374274	1
+720	BTC-USDT	1H	1764907200000	92158.10000000	92385.00000000	91806.90000000	92026.30000000	229.53583643	21129604.91283810	1
+721	ETH-USDT	1H	1767495600000	3140.85000000	3150.65000000	3140.14000000	3147.38000000	1870.93835800	5885896.65095410	1
+722	ETH-USDT	1H	1767492000000	3150.13000000	3151.20000000	3137.61000000	3140.84000000	2241.91374100	7047849.45835803	1
+723	ETH-USDT	1H	1767488400000	3157.80000000	3162.30000000	3141.58000000	3150.13000000	2546.08524300	8025223.91963413	1
+724	ETH-USDT	1H	1767484800000	3126.90000000	3170.52000000	3125.93000000	3157.80000000	10844.28725600	34159262.58951580	1
+725	ETH-USDT	1H	1767481200000	3122.70000000	3131.00000000	3121.00000000	3126.89000000	2611.28534700	8165008.58671522	1
+726	ETH-USDT	1H	1767477600000	3120.99000000	3125.99000000	3113.45000000	3122.70000000	1212.31879400	3780699.81491827	1
+727	ETH-USDT	1H	1767474000000	3115.54000000	3129.30000000	3113.08000000	3120.91000000	1705.56273300	5322802.95619491	1
+728	ETH-USDT	1H	1767470400000	3113.26000000	3116.98000000	3107.42000000	3115.53000000	573.81751800	1785846.62462983	1
+729	ETH-USDT	1H	1767466800000	3116.46000000	3116.46000000	3110.34000000	3113.26000000	492.58754700	1533234.38004625	1
+730	ETH-USDT	1H	1767463200000	3108.90000000	3118.63000000	3105.14000000	3116.45000000	1046.75187200	3258972.49914859	1
+731	ETH-USDT	1H	1767459600000	3107.09000000	3110.50000000	3105.82000000	3108.89000000	594.99945100	1849257.35318866	1
+732	ETH-USDT	1H	1767456000000	3101.22000000	3112.30000000	3098.36000000	3107.09000000	2173.69540000	6753345.52065172	1
+733	ETH-USDT	1H	1767452400000	3106.31000000	3107.59000000	3100.21000000	3101.54000000	1855.90364500	5759581.30738175	1
+734	ETH-USDT	1H	1767448800000	3103.10000000	3114.52000000	3101.45000000	3106.30000000	2156.11708100	6700047.98385065	1
+735	ETH-USDT	1H	1767445200000	3105.02000000	3108.00000000	3101.00000000	3103.11000000	1453.20519200	4511841.04194616	1
+736	ETH-USDT	1H	1767441600000	3098.55000000	3105.83000000	3093.60000000	3104.81000000	2727.95604700	8460862.05364679	1
+737	ETH-USDT	1H	1767438000000	3097.42000000	3100.30000000	3092.01000000	3098.47000000	1584.09333000	4905519.97548733	1
+738	ETH-USDT	1H	1767434400000	3100.94000000	3105.97000000	3097.00000000	3097.41000000	1639.20555200	5082762.49292657	1
+739	ETH-USDT	1H	1767430800000	3095.94000000	3110.78000000	3092.35000000	3100.93000000	3123.85114400	9696339.88856762	1
+740	ETH-USDT	1H	1767427200000	3090.62000000	3106.14000000	3084.23000000	3095.84000000	3200.43397200	9908602.85072289	1
+741	ETH-USDT	1H	1767423600000	3098.20000000	3105.25000000	3075.82000000	3090.62000000	10717.99495500	33115348.08520500	1
+742	ETH-USDT	1H	1767420000000	3112.01000000	3117.56000000	3098.21000000	3098.21000000	3082.15563200	9577926.90764031	1
+743	ETH-USDT	1H	1767416400000	3116.38000000	3118.80000000	3104.54000000	3112.01000000	2960.80674500	9213621.71045564	1
+744	ETH-USDT	1H	1767412800000	3125.50000000	3127.93000000	3114.34000000	3116.38000000	3011.62535500	9390090.71393376	1
+745	ETH-USDT	1H	1767409200000	3125.98000000	3127.63000000	3119.08000000	3125.46000000	2132.51539400	6661941.83353105	1
+746	ETH-USDT	1H	1767405600000	3130.86000000	3130.87000000	3120.00000000	3125.97000000	1771.25544400	5534168.18144349	1
+747	ETH-USDT	1H	1767402000000	3131.02000000	3132.00000000	3123.56000000	3130.85000000	1397.29983600	4371773.49147275	1
+748	ETH-USDT	1H	1767398400000	3125.44000000	3136.56000000	3122.09000000	3131.01000000	1596.52099100	4996558.67987113	1
+749	ETH-USDT	1H	1767394800000	3133.75000000	3135.62000000	3120.43000000	3125.44000000	1742.95363300	5449935.02972723	1
+750	ETH-USDT	1H	1767391200000	3130.76000000	3146.30000000	3128.01000000	3133.76000000	2698.70975400	8465295.93148747	1
+751	ETH-USDT	1H	1767387600000	3117.70000000	3133.97000000	3116.31000000	3130.84000000	1395.25806600	4361214.27447799	1
+752	ETH-USDT	1H	1767384000000	3123.88000000	3129.69000000	3111.26000000	3117.82000000	2169.17546000	6770098.57321128	1
+753	ETH-USDT	1H	1767380400000	3110.73000000	3127.99000000	3107.81000000	3123.50000000	2921.39533500	9114162.29366439	1
+754	ETH-USDT	1H	1767376800000	3122.99000000	3132.15000000	3097.13000000	3110.75000000	5624.00358900	17523704.19386200	1
+755	ETH-USDT	1H	1767373200000	3132.25000000	3150.00000000	3110.80000000	3122.99000000	14338.52793000	44988353.28496600	1
+756	ETH-USDT	1H	1767369600000	3086.29000000	3146.20000000	3078.84000000	3132.27000000	18074.35080500	56380910.91866670	1
+757	ETH-USDT	1H	1767366000000	3082.42000000	3097.35000000	3055.05000000	3086.34000000	11733.07947100	36118406.58315690	1
+758	ETH-USDT	1H	1767362400000	3049.87000000	3109.54000000	3020.35000000	3082.42000000	27732.17024700	85010264.17809260	1
+759	ETH-USDT	1H	1767358800000	3048.51000000	3058.00000000	3046.16000000	3049.91000000	2724.45376200	8313988.86685595	1
+760	ETH-USDT	1H	1767355200000	3047.54000000	3057.74000000	3043.05000000	3048.50000000	2285.77858100	6973558.29450840	1
+761	ETH-USDT	1H	1767351600000	3056.95000000	3057.40000000	3040.01000000	3047.55000000	4485.80252700	13674826.11093050	1
+762	ETH-USDT	1H	1767348000000	3048.10000000	3069.00000000	3045.61000000	3056.96000000	10964.04309200	33543891.32606630	1
+763	ETH-USDT	1H	1767344400000	3032.08000000	3054.60000000	3030.01000000	3047.95000000	7930.97384100	24137181.04272020	1
+764	ETH-USDT	1H	1767340800000	3018.11000000	3033.89000000	3016.00000000	3032.08000000	2778.34647300	8409160.11181623	1
+765	ETH-USDT	1H	1767337200000	3026.70000000	3032.29000000	3016.62000000	3018.11000000	4572.39310100	13828635.61010430	1
+766	ETH-USDT	1H	1767333600000	3016.51000000	3039.11000000	3014.55000000	3026.70000000	3175.40705000	9616635.38634139	1
+767	ETH-USDT	1H	1767330000000	3011.76000000	3018.63000000	3009.00000000	3016.70000000	1792.69481300	5402950.10368143	1
+768	ETH-USDT	1H	1767326400000	3022.59000000	3024.95000000	3010.50000000	3011.76000000	2982.36533400	8997485.45697257	1
+769	ETH-USDT	1H	1767322800000	3002.13000000	3035.39000000	3000.00000000	3022.60000000	8795.37369900	26568342.15078970	1
+770	ETH-USDT	1H	1767319200000	3002.87000000	3003.68000000	2992.40000000	3002.12000000	1717.17475600	5147772.81115760	1
+771	ETH-USDT	1H	1767315600000	3006.00000000	3008.00000000	2998.20000000	3002.86000000	1348.86111200	4050167.86702278	1
+772	ETH-USDT	1H	1767312000000	3004.22000000	3008.17000000	2995.36000000	3006.00000000	2029.25385300	6090974.93976334	1
+773	ETH-USDT	1H	1767308400000	2999.10000000	3009.73000000	2992.00000000	3004.21000000	3110.99527200	9343201.81430189	1
+774	ETH-USDT	1H	1767304800000	2989.82000000	3000.34000000	2987.60000000	2999.07000000	1277.03374700	3823300.00354924	1
+775	ETH-USDT	1H	1767301200000	2989.10000000	2993.34000000	2987.50000000	2989.82000000	375.45635700	1122758.77323375	1
+776	ETH-USDT	1H	1767297600000	2995.40000000	2997.00000000	2987.54000000	2988.91000000	977.68963600	2924618.31265343	1
+777	ETH-USDT	1H	1767294000000	2990.32000000	2997.99000000	2987.42000000	2995.40000000	739.39875500	2211987.98169784	1
+778	ETH-USDT	1H	1767290400000	2990.88000000	2992.93000000	2985.24000000	2990.31000000	1182.33152900	3534224.79727587	1
+779	ETH-USDT	1H	1767286800000	2982.71000000	3006.00000000	2981.21000000	2990.87000000	4942.15400400	14801771.48755530	1
+780	ETH-USDT	1H	1767283200000	2989.82000000	2991.00000000	2980.46000000	2982.38000000	3032.50092300	9054019.21045298	1
+781	ETH-USDT	1H	1767279600000	2985.32000000	2995.42000000	2980.80000000	2989.81000000	2480.57682300	7412324.23583815	1
+782	ETH-USDT	1H	1767276000000	2983.01000000	2986.61000000	2977.85000000	2985.32000000	1674.33979100	4991489.43811416	1
+783	ETH-USDT	1H	1767272400000	2987.60000000	2989.82000000	2982.20000000	2983.14000000	1274.93178100	3807221.64855249	1
+784	ETH-USDT	1H	1767268800000	2989.61000000	2990.50000000	2983.25000000	2987.60000000	926.28979400	2766649.12578764	1
+785	ETH-USDT	1H	1767265200000	2985.00000000	2993.40000000	2985.00000000	2989.61000000	1347.29718600	4026438.16031203	1
+786	ETH-USDT	1H	1767261600000	2984.09000000	2985.90000000	2982.00000000	2985.00000000	827.19313400	2468642.77439757	1
+787	ETH-USDT	1H	1767258000000	2982.61000000	2987.69000000	2982.24000000	2984.09000000	1675.35519000	5000078.38174027	1
+788	ETH-USDT	1H	1767254400000	2978.56000000	2983.40000000	2978.20000000	2982.60000000	1409.96596500	4203173.26253731	1
+789	ETH-USDT	1H	1767250800000	2976.63000000	2981.64000000	2976.62000000	2978.56000000	1813.32823800	5402565.64984480	1
+790	ETH-USDT	1H	1767247200000	2982.16000000	2982.16000000	2976.62000000	2976.63000000	1598.62697600	4762126.28555069	1
+791	ETH-USDT	1H	1767243600000	2975.96000000	2983.97000000	2975.96000000	2982.15000000	1202.93281300	3586350.09295735	1
+792	ETH-USDT	1H	1767240000000	2980.54000000	2981.32000000	2973.55000000	2975.96000000	3058.02254800	9104788.75898760	1
+793	ETH-USDT	1H	1767236400000	2982.74000000	2986.22000000	2979.87000000	2980.44000000	646.26028400	1927976.63885464	1
+794	ETH-USDT	1H	1767232800000	2984.24000000	2988.00000000	2981.13000000	2982.73000000	765.61933800	2285062.80863796	1
+795	ETH-USDT	1H	1767229200000	2979.86000000	2989.07000000	2979.32000000	2984.23000000	2059.71983100	6147979.45959800	1
+796	ETH-USDT	1H	1767225600000	2971.63000000	2983.00000000	2971.36000000	2979.86000000	1514.40843400	4510941.53259689	1
+797	ETH-USDT	1H	1767222000000	2977.24000000	2977.25000000	2970.22000000	2971.60000000	1994.68897100	5933158.47009146	1
+798	ETH-USDT	1H	1767218400000	2982.30000000	2984.35000000	2974.63000000	2977.24000000	1201.68332500	3581387.65364275	1
+799	ETH-USDT	1H	1767214800000	2976.00000000	2984.92000000	2974.68000000	2982.29000000	1952.20768700	5818769.90219708	1
+800	ETH-USDT	1H	1767211200000	2971.31000000	2979.98000000	2963.61000000	2975.94000000	3782.99627300	11236024.45218510	1
+801	ETH-USDT	1H	1767207600000	2974.23000000	2981.49000000	2970.23000000	2971.26000000	1219.23315100	3627755.97127406	1
+802	ETH-USDT	1H	1767204000000	2975.85000000	2986.00000000	2971.39000000	2974.22000000	2324.49626100	6928796.96664322	1
+803	ETH-USDT	1H	1767200400000	2976.36000000	2980.82000000	2968.06000000	2975.84000000	2351.95359400	6997730.21646507	1
+804	ETH-USDT	1H	1767196800000	2985.79000000	2997.97000000	2957.91000000	2976.35000000	8886.31722900	26434477.08641810	1
+805	ETH-USDT	1H	1767193200000	2993.62000000	2994.34000000	2966.93000000	2985.80000000	7632.21096700	22739774.36590260	1
+806	ETH-USDT	1H	1767189600000	2996.81000000	3028.57000000	2981.26000000	2994.00000000	10662.44400800	32048590.13604060	1
+807	ETH-USDT	1H	1767186000000	2987.39000000	3000.30000000	2986.43000000	2996.81000000	2283.17975500	6833590.48474852	1
+808	ETH-USDT	1H	1767182400000	3001.85000000	3003.25000000	2984.16000000	2987.39000000	4879.81192300	14612391.87438240	1
+809	ETH-USDT	1H	1767178800000	2981.16000000	3003.44000000	2980.10000000	3001.85000000	7363.50443200	22049585.92500260	1
+810	ETH-USDT	1H	1767175200000	2976.92000000	2982.88000000	2975.55000000	2981.15000000	2146.68279500	6394152.45742906	1
+811	ETH-USDT	1H	1767171600000	2969.55000000	2978.11000000	2969.46000000	2976.91000000	1453.50998200	4324232.30008457	1
+812	ETH-USDT	1H	1767168000000	2977.00000000	2980.23000000	2963.86000000	2969.56000000	2220.44240100	6600491.35219131	1
+813	ETH-USDT	1H	1767164400000	2975.60000000	2977.57000000	2970.28000000	2977.00000000	1227.09732700	3650445.86512513	1
+814	ETH-USDT	1H	1767160800000	2975.21000000	2978.85000000	2974.73000000	2975.60000000	1015.72587900	3023631.89590989	1
+815	ETH-USDT	1H	1767157200000	2969.01000000	2980.08000000	2969.01000000	2975.22000000	3103.81833800	9236848.23608536	1
+816	ETH-USDT	1H	1767153600000	2970.84000000	2975.78000000	2968.62000000	2969.00000000	1884.02129900	5600177.01306819	1
+817	ETH-USDT	1H	1767150000000	2981.46000000	2984.00000000	2965.64000000	2970.83000000	2211.96757600	6582965.88732680	1
+818	ETH-USDT	1H	1767146400000	2980.01000000	2983.60000000	2974.37000000	2981.45000000	1400.15655300	4172264.53719655	1
+819	ETH-USDT	1H	1767142800000	2966.41000000	2985.19000000	2962.30000000	2980.01000000	3105.26929300	9247627.37313596	1
+820	ETH-USDT	1H	1767139200000	2973.74000000	2973.75000000	2963.00000000	2966.40000000	1915.70443900	5682465.57338738	1
+821	ETH-USDT	1H	1767135600000	2969.78000000	2975.96000000	2967.57000000	2973.74000000	1424.21608400	4233483.39240388	1
+822	ETH-USDT	1H	1767132000000	2968.99000000	2971.94000000	2965.06000000	2969.62000000	1311.22746100	3893175.11204930	1
+823	ETH-USDT	1H	1767128400000	2959.00000000	2969.49000000	2954.07000000	2968.73000000	1988.80203900	5889654.92715881	1
+824	ETH-USDT	1H	1767124800000	2971.16000000	2973.90000000	2956.52000000	2958.79000000	2446.77086100	7251821.76759987	1
+825	ETH-USDT	1H	1767121200000	2971.86000000	2974.80000000	2944.44000000	2971.00000000	6432.30419000	19033020.55609880	1
+826	ETH-USDT	1H	1767117600000	2977.00000000	2978.99000000	2960.02000000	2971.86000000	3402.06834200	10107373.08615430	1
+827	ETH-USDT	1H	1767114000000	2982.70000000	2986.65000000	2965.85000000	2977.00000000	3956.65484800	11778460.06966380	1
+828	ETH-USDT	1H	1767110400000	2989.35000000	2994.76000000	2975.00000000	2982.70000000	4327.61306400	12919810.82410740	1
+829	ETH-USDT	1H	1767106800000	2996.46000000	3002.97000000	2970.00000000	2989.44000000	8848.03295000	26377491.09258960	1
+830	ETH-USDT	1H	1767103200000	2986.51000000	3009.92000000	2958.75000000	2996.74000000	15109.09880200	45053572.94383500	1
+831	ETH-USDT	1H	1767099600000	2980.94000000	2991.94000000	2979.15000000	2986.50000000	4531.24161700	13523600.84754290	1
+832	ETH-USDT	1H	1767096000000	2978.72000000	2986.44000000	2976.87000000	2980.95000000	2588.52550000	7717763.58570893	1
+833	ETH-USDT	1H	1767092400000	2977.20000000	2984.42000000	2972.81000000	2978.72000000	2904.98033800	8650311.30263612	1
+834	ETH-USDT	1H	1767088800000	2985.35000000	2988.43000000	2973.33000000	2977.05000000	2965.62123600	8840619.67009763	1
+835	ETH-USDT	1H	1767085200000	2977.60000000	2988.00000000	2970.99000000	2985.36000000	4697.30389200	13991406.81905280	1
+836	ETH-USDT	1H	1767081600000	2951.15000000	3003.05000000	2950.14000000	2977.40000000	13977.76832500	41699553.29601540	1
+837	ETH-USDT	1H	1767078000000	2945.74000000	2955.98000000	2945.15000000	2951.15000000	4555.28409400	13438770.53449190	1
+838	ETH-USDT	1H	1767074400000	2941.47000000	2952.42000000	2940.45000000	2945.74000000	2457.01372600	7241435.52595373	1
+839	ETH-USDT	1H	1767070800000	2946.01000000	2948.00000000	2937.24000000	2941.47000000	2940.98943500	8648569.12399411	1
+840	ETH-USDT	1H	1767067200000	2951.59000000	2958.60000000	2946.00000000	2946.00000000	3698.62556500	10920305.97818680	1
+841	ETH-USDT	1H	1767063600000	2928.25000000	2955.60000000	2919.39000000	2951.59000000	7136.09255800	20998029.91205690	1
+842	ETH-USDT	1H	1767060000000	2936.91000000	2939.88000000	2923.11000000	2928.20000000	2810.48601500	8237131.10332704	1
+843	ETH-USDT	1H	1767056400000	2938.20000000	2940.24000000	2925.21000000	2936.91000000	2243.29273000	6582851.02520961	1
+844	ETH-USDT	1H	1767052800000	2938.31000000	2942.64000000	2932.00000000	2938.19000000	4246.35325400	12474807.54088430	1
+845	ETH-USDT	1H	1767049200000	2938.21000000	2945.00000000	2932.89000000	2938.31000000	4474.34451700	13147972.99924980	1
+846	ETH-USDT	1H	1767045600000	2937.86000000	2944.71000000	2930.85000000	2938.21000000	7370.80867000	21656656.74705360	1
+847	ETH-USDT	1H	1767042000000	2930.06000000	2939.50000000	2929.02000000	2937.87000000	8420.18199700	24711897.33148980	1
+848	ETH-USDT	1H	1767038400000	2932.55000000	2943.16000000	2926.05000000	2930.06000000	16102.72063100	47231331.61741320	1
+849	ETH-USDT	1H	1767034800000	2919.33000000	2941.86000000	2917.85000000	2932.55000000	4939.71324400	14479682.81913710	1
+850	ETH-USDT	1H	1767031200000	2943.50000000	2946.14000000	2913.59000000	2919.30000000	5461.58603700	15989161.52461090	1
+851	ETH-USDT	1H	1767027600000	2936.46000000	2943.65000000	2926.50000000	2943.63000000	2563.99192600	7525970.94333737	1
+852	ETH-USDT	1H	1767024000000	2935.68000000	2942.86000000	2925.00000000	2936.46000000	3796.13805400	11142327.48279680	1
+853	ETH-USDT	1H	1767020400000	2928.65000000	2950.86000000	2920.00000000	2935.68000000	10785.86162300	31664465.11126670	1
+854	ETH-USDT	1H	1767016800000	2927.34000000	2965.80000000	2917.11000000	2928.74000000	12086.12336200	35564329.87086030	1
+855	ETH-USDT	1H	1767013200000	2931.16000000	2938.20000000	2918.86000000	2927.35000000	7292.29305900	21367424.04735200	1
+856	ETH-USDT	1H	1767009600000	2960.28000000	2960.30000000	2910.74000000	2931.15000000	18323.11415900	53730178.27059220	1
+857	ETH-USDT	1H	1767006000000	2966.59000000	2967.92000000	2958.77000000	2960.30000000	5133.34468900	15212332.59706130	1
+858	ETH-USDT	1H	1767002400000	2976.84000000	2984.37000000	2962.00000000	2966.59000000	6178.39006200	18375727.39917150	1
+859	ETH-USDT	1H	1766998800000	3014.12000000	3015.70000000	2957.02000000	2976.96000000	14188.56337400	42343026.60914250	1
+860	ETH-USDT	1H	1766995200000	3019.44000000	3026.65000000	3010.64000000	3014.34000000	4171.85852500	12593517.84798930	1
+861	ETH-USDT	1H	1766991600000	3036.24000000	3038.45000000	3009.16000000	3019.44000000	11567.51310300	34931400.98752950	1
+862	ETH-USDT	1H	1766988000000	3037.15000000	3044.31000000	3031.75000000	3036.23000000	6439.53514700	19554574.47243110	1
+863	ETH-USDT	1H	1766984400000	3039.71000000	3044.80000000	3032.17000000	3037.15000000	5907.60975800	17954984.57639230	1
+864	ETH-USDT	1H	1766980800000	3043.70000000	3057.16000000	3039.65000000	3039.70000000	8133.89666100	24781740.81402870	1
+865	ETH-USDT	1H	1766977200000	3003.55000000	3049.00000000	3002.80000000	3043.70000000	12828.42618600	38870314.00403670	1
+866	ETH-USDT	1H	1766973600000	2981.00000000	3018.92000000	2981.00000000	3003.54000000	14653.25106700	44030909.80735960	1
+867	ETH-USDT	1H	1766970000000	2966.69000000	2986.69000000	2952.85000000	2981.00000000	6000.08175200	17848980.28677770	1
+868	ETH-USDT	1H	1766966400000	2951.05000000	2977.23000000	2944.38000000	2966.70000000	5663.85951500	16796376.39661260	1
+869	ETH-USDT	1H	1766962800000	2950.28000000	2954.40000000	2940.55000000	2950.95000000	2758.87308800	8131039.30954808	1
+870	ETH-USDT	1H	1766959200000	2938.61000000	2955.96000000	2935.21000000	2950.28000000	1769.64038300	5212275.46903269	1
+871	ETH-USDT	1H	1766955600000	2932.50000000	2939.34000000	2928.92000000	2938.30000000	1797.74364300	5273102.36249263	1
+872	ETH-USDT	1H	1766952000000	2933.56000000	2937.82000000	2930.18000000	2932.55000000	1637.10618600	4802973.00584107	1
+873	ETH-USDT	1H	1766948400000	2931.49000000	2940.55000000	2926.69000000	2933.65000000	2942.18912100	8634783.63811670	1
+874	ETH-USDT	1H	1766944800000	2945.96000000	2946.55000000	2925.00000000	2931.49000000	3871.51443200	11358625.83698260	1
+875	ETH-USDT	1H	1766941200000	2943.12000000	2951.34000000	2942.70000000	2945.95000000	829.85697900	2446155.35403567	1
+876	ETH-USDT	1H	1766937600000	2949.25000000	2954.78000000	2940.05000000	2943.13000000	1528.75494100	4502964.45697364	1
+877	ETH-USDT	1H	1766934000000	2945.48000000	2960.68000000	2945.01000000	2949.25000000	2531.70055100	7475629.10039112	1
+878	ETH-USDT	1H	1766930400000	2940.40000000	2955.40000000	2940.05000000	2945.48000000	3521.25106900	10381030.43917520	1
+879	ETH-USDT	1H	1766926800000	2939.20000000	2944.99000000	2938.83000000	2940.35000000	1286.40954400	3784079.95636123	1
+880	ETH-USDT	1H	1766923200000	2944.19000000	2945.30000000	2937.55000000	2939.19000000	1088.54827400	3202049.41443253	1
+881	ETH-USDT	1H	1766919600000	2943.26000000	2947.00000000	2939.99000000	2944.19000000	2566.64234400	7555070.34299598	1
+882	ETH-USDT	1H	1766916000000	2937.89000000	2944.82000000	2937.05000000	2943.26000000	1078.04806500	3172052.54947880	1
+883	ETH-USDT	1H	1766912400000	2939.81000000	2944.29000000	2931.62000000	2937.89000000	1789.82165300	5254905.87569677	1
+884	ETH-USDT	1H	1766908800000	2939.29000000	2947.77000000	2938.39000000	2939.80000000	1295.41692200	3810408.30090315	1
+885	ETH-USDT	1H	1766905200000	2942.80000000	2942.93000000	2937.00000000	2939.29000000	1157.62723400	3402528.23714320	1
+886	ETH-USDT	1H	1766901600000	2935.06000000	2943.92000000	2934.52000000	2942.80000000	1723.30130400	5066297.93891626	1
+887	ETH-USDT	1H	1766898000000	2938.67000000	2941.14000000	2929.69000000	2935.05000000	3314.42011100	9730219.70477490	1
+888	ETH-USDT	1H	1766894400000	2943.36000000	2946.99000000	2938.47000000	2938.67000000	1504.85055500	4427555.11460944	1
+\.
+
+
+--
+-- Data for Name: orders; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.orders (id, user_id, strategy_id, order_id, symbol, side, order_type, status, price, amount, filled_amount, avg_price, fee, fee_currency, created_at, submitted_at, filled_at, canceled_at, note) FROM stdin;
+147	1	\N	3280149384403419136	ETH-USDT-SWAP	sell	limit	submitted	2132.09	234.74	0	\N	0	\N	2026-02-05 10:27:48.427057+08	2026-02-05 10:27:48.424015+08	\N	\N	\N
+148	1	\N	3280151060178862080	ETH-USDT-SWAP	buy	limit	submitted	2131.88	234.74	0	\N	0	\N	2026-02-05 10:28:37.533779+08	2026-02-05 10:28:37.530822+08	\N	\N	\N
+149	1	\N	3280151303280721920	ETH-USDT-SWAP	sell	limit	submitted	2136.86	234.22	0	\N	0	\N	2026-02-05 10:28:45.444339+08	2026-02-05 10:28:45.442612+08	\N	\N	\N
+150	1	\N	3280152966372589568	ETH-USDT-SWAP	buy	limit	submitted	2133.5	468.96	0	\N	0	\N	2026-02-05 10:29:34.345677+08	2026-02-05 10:29:34.342732+08	\N	\N	\N
+151	1	\N	3280153212058140672	ETH-USDT-SWAP	sell	limit	submitted	2138.79	234.01	0	\N	0	\N	2026-02-05 10:29:42.311288+08	2026-02-05 10:29:42.308853+08	\N	\N	\N
+152	1	\N	3280154870150397952	ETH-USDT-SWAP	buy	limit	submitted	2134.86	702.97	0	\N	0	\N	2026-02-05 10:30:31.077305+08	2026-02-05 10:30:31.074686+08	\N	\N	\N
+\.
+
+
+--
+-- Data for Name: positions; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.positions (id, user_id, strategy_id, symbol, amount, available_amount, frozen_amount, avg_price, total_cost, unrealized_pnl, realized_pnl, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: risk_actions; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.risk_actions (id, user_id, strategy_id, risk_control_id, action_type, trigger_reason, risk_metrics, execution_status, execution_details, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: risk_controls; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.risk_controls (id, user_id, strategy_id, level, risk_type, name, description, is_enabled, min_available_balance, max_position_value, max_order_amount, max_drawdown_percent, daily_loss_limit, total_loss_limit, max_consecutive_losses, max_position_per_symbol, max_concentration_ratio, max_trades_per_period, period_seconds, action_on_trigger, warning_threshold, auto_resume, is_triggered, trigger_count, last_trigger_at, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: strategies; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.strategies (id, user_id, name, type, status, symbol, timeframe, parameters, max_position, stop_loss, take_profit, total_profit, total_trades, win_rate, description, created_at, updated_at, started_at, stopped_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.users (id, username, email, hashed_password, is_active, is_superuser, okx_api_key, okx_secret_key, okx_passphrase, created_at, updated_at) FROM stdin;
+1	admin	admin@okk.com	$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzS3MjJ0G2	t	t	\N	\N	\N	2026-01-04 11:47:58.454395+08	\N
+\.
+
+
+--
+-- Name: ai_configs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.ai_configs_id_seq', 1, true);
+
+
+--
+-- Name: alerts_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.alerts_id_seq', 1, false);
+
+
+--
+-- Name: api_configs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.api_configs_id_seq', 1, true);
+
+
+--
+-- Name: backtest_trades_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.backtest_trades_id_seq', 285, true);
+
+
+--
+-- Name: backtests_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.backtests_id_seq', 1, false);
+
+
+--
+-- Name: klines_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.klines_id_seq', 888, true);
+
+
+--
+-- Name: orders_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.orders_id_seq', 152, true);
+
+
+--
+-- Name: positions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.positions_id_seq', 1, false);
+
+
+--
+-- Name: risk_actions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.risk_actions_id_seq', 1, false);
+
+
+--
+-- Name: risk_controls_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.risk_controls_id_seq', 1, true);
+
+
+--
+-- Name: strategies_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.strategies_id_seq', 18, true);
+
+
+--
+-- Name: users_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.users_id_seq', 2, true);
+
+
+--
+-- Name: ai_configs ai_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.ai_configs
+    ADD CONSTRAINT ai_configs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alerts alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.alerts
+    ADD CONSTRAINT alerts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: api_configs api_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.api_configs
+    ADD CONSTRAINT api_configs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: backtest_trades backtest_trades_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.backtest_trades
+    ADD CONSTRAINT backtest_trades_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: backtests backtests_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.backtests
+    ADD CONSTRAINT backtests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: klines klines_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.klines
+    ADD CONSTRAINT klines_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: orders orders_order_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT orders_order_id_key UNIQUE (order_id);
+
+
+--
+-- Name: orders orders_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT orders_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: positions positions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.positions
+    ADD CONSTRAINT positions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: risk_actions risk_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.risk_actions
+    ADD CONSTRAINT risk_actions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: risk_controls risk_controls_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.risk_controls
+    ADD CONSTRAINT risk_controls_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: strategies strategies_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.strategies
+    ADD CONSTRAINT strategies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: klines uix_symbol_interval_timestamp; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.klines
+    ADD CONSTRAINT uix_symbol_interval_timestamp UNIQUE (symbol, "interval", "timestamp");
+
+
+--
+-- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_email_key UNIQUE (email);
+
+
+--
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: users users_username_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_username_key UNIQUE (username);
+
+
+--
+-- Name: idx_alerts_alert_type; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_alerts_alert_type ON public.alerts USING btree (alert_type);
+
+
+--
+-- Name: idx_alerts_created_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_alerts_created_at ON public.alerts USING btree (created_at DESC);
+
+
+--
+-- Name: idx_alerts_is_read; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_alerts_is_read ON public.alerts USING btree (is_read);
+
+
+--
+-- Name: idx_alerts_strategy_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_alerts_strategy_id ON public.alerts USING btree (strategy_id);
+
+
+--
+-- Name: idx_alerts_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_alerts_user_id ON public.alerts USING btree (user_id);
+
+
+--
+-- Name: idx_api_configs_is_active; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_api_configs_is_active ON public.api_configs USING btree (is_active);
+
+
+--
+-- Name: idx_api_configs_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_api_configs_user_id ON public.api_configs USING btree (user_id);
+
+
+--
+-- Name: idx_backtest_trades_backtest_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_backtest_trades_backtest_id ON public.backtest_trades USING btree (backtest_id);
+
+
+--
+-- Name: idx_backtest_trades_timestamp; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_backtest_trades_timestamp ON public.backtest_trades USING btree ("timestamp");
+
+
+--
+-- Name: idx_backtests_created_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_backtests_created_at ON public.backtests USING btree (created_at);
+
+
+--
+-- Name: idx_backtests_status; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_backtests_status ON public.backtests USING btree (status);
+
+
+--
+-- Name: idx_backtests_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_backtests_user_id ON public.backtests USING btree (user_id);
+
+
+--
+-- Name: idx_klines_interval; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_klines_interval ON public.klines USING btree ("interval");
+
+
+--
+-- Name: idx_klines_symbol; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_klines_symbol ON public.klines USING btree (symbol);
+
+
+--
+-- Name: idx_klines_symbol_interval_timestamp; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_klines_symbol_interval_timestamp ON public.klines USING btree (symbol, "interval", "timestamp");
+
+
+--
+-- Name: idx_klines_timestamp; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_klines_timestamp ON public.klines USING btree ("timestamp");
+
+
+--
+-- Name: idx_orders_status; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_orders_status ON public.orders USING btree (status);
+
+
+--
+-- Name: idx_orders_strategy_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_orders_strategy_id ON public.orders USING btree (strategy_id);
+
+
+--
+-- Name: idx_orders_symbol; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_orders_symbol ON public.orders USING btree (symbol);
+
+
+--
+-- Name: idx_orders_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_orders_user_id ON public.orders USING btree (user_id);
+
+
+--
+-- Name: idx_positions_symbol; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_positions_symbol ON public.positions USING btree (symbol);
+
+
+--
+-- Name: idx_positions_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_positions_user_id ON public.positions USING btree (user_id);
+
+
+--
+-- Name: idx_risk_actions_action_type; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_risk_actions_action_type ON public.risk_actions USING btree (action_type);
+
+
+--
+-- Name: idx_risk_actions_created_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_risk_actions_created_at ON public.risk_actions USING btree (created_at DESC);
+
+
+--
+-- Name: idx_risk_actions_risk_control_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_risk_actions_risk_control_id ON public.risk_actions USING btree (risk_control_id);
+
+
+--
+-- Name: idx_risk_actions_strategy_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_risk_actions_strategy_id ON public.risk_actions USING btree (strategy_id);
+
+
+--
+-- Name: idx_risk_actions_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_risk_actions_user_id ON public.risk_actions USING btree (user_id);
+
+
+--
+-- Name: idx_risk_controls_is_enabled; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_risk_controls_is_enabled ON public.risk_controls USING btree (is_enabled);
+
+
+--
+-- Name: idx_risk_controls_is_triggered; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_risk_controls_is_triggered ON public.risk_controls USING btree (is_triggered);
+
+
+--
+-- Name: idx_risk_controls_level; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_risk_controls_level ON public.risk_controls USING btree (level);
+
+
+--
+-- Name: idx_risk_controls_risk_type; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_risk_controls_risk_type ON public.risk_controls USING btree (risk_type);
+
+
+--
+-- Name: idx_risk_controls_strategy_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_risk_controls_strategy_id ON public.risk_controls USING btree (strategy_id);
+
+
+--
+-- Name: idx_risk_controls_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_risk_controls_user_id ON public.risk_controls USING btree (user_id);
+
+
+--
+-- Name: idx_strategies_status; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_strategies_status ON public.strategies USING btree (status);
+
+
+--
+-- Name: idx_strategies_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_strategies_user_id ON public.strategies USING btree (user_id);
+
+
+--
+-- Name: alerts alerts_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.alerts
+    ADD CONSTRAINT alerts_strategy_id_fkey FOREIGN KEY (strategy_id) REFERENCES public.strategies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alerts alerts_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.alerts
+    ADD CONSTRAINT alerts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: api_configs api_configs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.api_configs
+    ADD CONSTRAINT api_configs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: backtest_trades backtest_trades_backtest_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.backtest_trades
+    ADD CONSTRAINT backtest_trades_backtest_id_fkey FOREIGN KEY (backtest_id) REFERENCES public.backtests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: orders orders_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT orders_strategy_id_fkey FOREIGN KEY (strategy_id) REFERENCES public.strategies(id) ON DELETE SET NULL;
+
+
+--
+-- Name: orders orders_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT orders_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: positions positions_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.positions
+    ADD CONSTRAINT positions_strategy_id_fkey FOREIGN KEY (strategy_id) REFERENCES public.strategies(id) ON DELETE SET NULL;
+
+
+--
+-- Name: positions positions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.positions
+    ADD CONSTRAINT positions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: risk_actions risk_actions_risk_control_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.risk_actions
+    ADD CONSTRAINT risk_actions_risk_control_id_fkey FOREIGN KEY (risk_control_id) REFERENCES public.risk_controls(id) ON DELETE SET NULL;
+
+
+--
+-- Name: risk_actions risk_actions_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.risk_actions
+    ADD CONSTRAINT risk_actions_strategy_id_fkey FOREIGN KEY (strategy_id) REFERENCES public.strategies(id) ON DELETE SET NULL;
+
+
+--
+-- Name: risk_actions risk_actions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.risk_actions
+    ADD CONSTRAINT risk_actions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: risk_controls risk_controls_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.risk_controls
+    ADD CONSTRAINT risk_controls_strategy_id_fkey FOREIGN KEY (strategy_id) REFERENCES public.strategies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: risk_controls risk_controls_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.risk_controls
+    ADD CONSTRAINT risk_controls_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: strategies strategies_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.strategies
+    ADD CONSTRAINT strategies_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict NVCDSgZLn7PxUGKLquJZwp8IqQUing24Z7WQZA62peCuppGbGUVUZ4MEd2bxIdn
+
