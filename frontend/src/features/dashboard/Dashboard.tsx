@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Row, Col, Card, Table, Spin, message, Button, Statistic, Progress, Tag } from 'antd'
+import { Row, Col, Card, Table, Spin, message, Button, Statistic, Progress, Tag, Tooltip } from 'antd'
 import {
   TrendingUp,
   TrendingDown,
@@ -7,6 +7,10 @@ import {
   DollarSign,
   Wifi,
   Clock,
+  ShieldAlert,
+  Activity,
+  BarChart2,
+  AlertTriangle,
 } from 'lucide-react'
 import type { ColumnsType } from 'antd/es/table'
 import { accountApi, marketApi, strategyApi, orderApi } from '@/services/api'
@@ -27,6 +31,12 @@ const Dashboard = () => {
   const [currentTime, setCurrentTime] = useState<Date>(new Date())
   const [recentOrders, setRecentOrders] = useState<any[]>([])
 
+  // 新增风险指标状态
+  const [marginRatio, setMarginRatio] = useState<number>(0)        // 保证金率 (%)
+  const [dailyPnlBaseline, setDailyPnlBaseline] = useState<number | null>(null) // 今日基线净值
+  const [maxDrawdown, setMaxDrawdown] = useState<number>(0)         // 最大回撤金额
+  const [maxDrawdownPct, setMaxDrawdownPct] = useState<number>(0)   // 最大回撤百分比
+
   // 格式化相对时间
   const getRelativeTime = (date: Date): string => {
     const seconds = Math.floor((currentTime.getTime() - date.getTime()) / 1000)
@@ -44,39 +54,52 @@ const Dashboard = () => {
     try {
       setLoading(true)
 
-      // 并行获取余额、持仓、策略和最近订单
-      const [balanceData, positionsData, strategiesData, ordersData] = await Promise.all([
-        accountApi.getBalance().catch((err) => {
-          return null
-        }),
-        accountApi.getPositions().catch((err) => {
-          return []
-        }),
-        strategyApi.getList().catch((err) => {
-          return { items: [] }
-        }),
-        orderApi.getList({ status: 'filled', limit: 10 }).catch((err) => {
-          return []
-        }),
+      // 并行获取余额、持仓、策略、最近订单、今日基线、最大回撤
+      const [balanceData, positionsData, strategiesData, ordersData, dailyPnlData, snapshotsData] = await Promise.all([
+        accountApi.getBalance().catch(() => null),
+        accountApi.getPositions().catch(() => []),
+        strategyApi.getList().catch(() => ({ items: [] })),
+        orderApi.getList({ status: 'filled', limit: 10 }).catch(() => []),
+        accountApi.getDailyPnlBaseline().catch(() => null),
+        accountApi.getAccountSnapshots(7).catch(() => null),
       ])
 
       setBalance(balanceData)
+
+      // 提取保证金率（OKX 返回的 mgnRatio 字段）
+      if (balanceData && balanceData.mgnRatio) {
+        const mgnRatio = parseFloat(balanceData.mgnRatio)
+        // OKX mgnRatio 是比率（如 0.9 = 90%），乘以100转为百分比
+        setMarginRatio(isFinite(mgnRatio) ? mgnRatio * 100 : 0)
+      }
+
+      // 今日盈亏基线
+      if (dailyPnlData?.has_baseline && dailyPnlData.baseline_equity != null) {
+        setDailyPnlBaseline(dailyPnlData.baseline_equity)
+      } else {
+        setDailyPnlBaseline(null)
+      }
+
+      // 最大回撤
+      if (snapshotsData) {
+        setMaxDrawdown(snapshotsData.max_drawdown || 0)
+        setMaxDrawdownPct(snapshotsData.max_drawdown_pct || 0)
+      }
 
       // 从余额数据中提取现货余额显示为"持仓"
       const spotBalances: any[] = []
       if (balanceData && balanceData.details) {
         for (const detail of balanceData.details) {
-          const eq = parseFloat(detail.eq || '0') // 总持仓数量（包含可用+锁定）
+          const eq = parseFloat(detail.eq || '0')
           const eqUsd = parseFloat(detail.eqUsd || '0')
-          const accAvgPx = parseFloat(detail.accAvgPx || '0') // OKX提供的累计成本均价
+          const accAvgPx = parseFloat(detail.accAvgPx || '0')
 
-          // 只显示价值大于0.5 USDT的币种，排除USDT
           if (eqUsd > 0.5 && detail.ccy !== 'USDT') {
             spotBalances.push({
               ccy: detail.ccy,
-              eq, // 使用总持仓而不是可用余额
+              eq,
               eqUsd,
-              accAvgPx, // 保存OKX的成本均价
+              accAvgPx,
               spotUpl: parseFloat(detail.spotUpl || '0'),
             })
           }
@@ -92,32 +115,32 @@ const Dashboard = () => {
               const symbol = `${bal.ccy}-USDT`
               const ticker = await marketApi.getTicker(symbol)
               const currentPrice = parseFloat((ticker as any)?.last || '0')
-
-              // 使用OKX提供的成本均价，如果没有则使用当前价格作为参考
               const avgPrice = bal.accAvgPx > 0 ? bal.accAvgPx : currentPrice
 
               return {
                 key: `spot-${bal.ccy}`,
                 type: 'SPOT',
                 symbol: symbol,
-                amount: bal.eq, // 使用总持仓数量
-                avgPrice: avgPrice, // 使用OKX的成本均价
+                amount: bal.eq,
+                avgPrice: avgPrice,
                 currentPrice: currentPrice,
                 profit: bal.spotUpl,
                 profitPercent: bal.eqUsd > 0 ? (bal.spotUpl / bal.eqUsd) * 100 : 0,
                 value: bal.eqUsd,
+                margin: 0,
               }
             } catch (error) {
               return {
                 key: `spot-${bal.ccy}`,
                 type: 'SPOT',
                 symbol: `${bal.ccy}-USDT`,
-                amount: bal.eq, // 使用总持仓数量
-                avgPrice: bal.accAvgPx || 0, // 使用OKX的成本均价
+                amount: bal.eq,
+                avgPrice: bal.accAvgPx || 0,
                 currentPrice: 0,
                 profit: bal.spotUpl,
                 profitPercent: 0,
                 value: bal.eqUsd,
+                margin: 0,
               }
             }
           })
@@ -126,14 +149,13 @@ const Dashboard = () => {
       }
 
       // 处理合约持仓数据
-      const positions = Array.isArray(positionsData) ? positionsData : []
+      const posArr = Array.isArray(positionsData) ? positionsData : []
       const contractPositions: any[] = []
 
-      if (positions.length > 0) {
-        for (const pos of positions) {
+      if (posArr.length > 0) {
+        for (const pos of posArr) {
           try {
             const posData = pos as any
-            // 后端返回的格式: symbol, avg_price, size, current_price, unrealized_pnl等
             const symbol = posData.symbol || posData.instId
             const ticker = await marketApi.getTicker(symbol)
             const currentPrice = posData.current_price || parseFloat((ticker as any)?.last || '0')
@@ -141,13 +163,11 @@ const Dashboard = () => {
             const posSize = posData.size || parseFloat(posData.pos || '0')
             const upl = posData.unrealized_pnl || parseFloat(posData.upl || '0')
             const uplRatio = posData.unrealized_pnl_pct || parseFloat(posData.uplRatio || '0') * 100
-
-            // 计算持仓价值 (如果后端没返回)
             const value = posSize * currentPrice
 
             contractPositions.push({
               key: `contract-${symbol}`,
-              type: 'SWAP', // 永续合约
+              type: 'SWAP',
               symbol: symbol,
               amount: posSize,
               avgPrice: avgPx,
@@ -155,28 +175,24 @@ const Dashboard = () => {
               profit: upl,
               profitPercent: uplRatio,
               value: value,
+              margin: posData.margin || 0,
             })
           } catch (error) {
-            const posData = pos as any
-            // 处理错误,跳过该持仓
+            // 跳过该持仓
           }
         }
       }
 
-      // 合并现货和合约持仓
       const allPositions = [...spotPositions, ...contractPositions]
       setPositionsWithPrice(allPositions)
-      setPositions(positions)
+      setPositions(posArr)
 
-      // 处理策略数据
       const allStrategies = (strategiesData as any)?.items || []
       setStrategies(allStrategies)
 
-      // 筛选出运行中的策略
       const running = allStrategies.filter((s: any) => s.status === 'running')
       setRunningStrategies(running)
 
-      // 处理订单数据 (只显示最近10条已成交订单)
       const orders = Array.isArray(ordersData) ? ordersData : []
       setRecentOrders(orders.slice(0, 10))
     } catch (error) {
@@ -190,67 +206,44 @@ const Dashboard = () => {
     fetchDashboardData()
     const timer = setInterval(fetchDashboardData, 30000)
 
-    // 每秒更新当前时间（用于相对时间显示）
     const timeUpdateTimer = setInterval(() => {
       setCurrentTime(new Date())
     }, 1000)
 
-    // 订阅所有策略的实时更新
     wsService.subscribeAllStrategies()
-
-    // 立即检查当前WebSocket连接状态
     setWsConnected(wsService.isConnected())
 
-    // 监听WebSocket连接状态
     const unsubscribeConnect = wsService.onConnect(() => {
       setWsConnected(true)
-      setLastUpdateTime(new Date()) // 连接成功时更新时间
+      setLastUpdateTime(new Date())
     })
 
     const unsubscribeDisconnect = wsService.onDisconnect(() => {
       setWsConnected(false)
     })
 
-    // 监听策略状态更新（每50秒数据库持久化时）
     const unsubscribeUpdate = wsService.onStrategyUpdate((data: StrategyUpdateData) => {
-      setLastUpdateTime(new Date()) // 更新时间戳
-      // 更新运行中策略列表中的对应策略
+      setLastUpdateTime(new Date())
       setRunningStrategies((prev) =>
         prev.map((s) =>
           s.id === data.strategy_id
-            ? {
-                ...s,
-                total_profit: data.total_profit,
-                total_trades: data.total_trades,
-                win_rate: data.win_rate,
-              }
+            ? { ...s, total_profit: data.total_profit, total_trades: data.total_trades, win_rate: data.win_rate }
             : s
         )
       )
     })
 
-    // 监听策略实时统计（每5秒一次）
     const unsubscribeStats = wsService.onStrategyStats((data: StrategyStatsData) => {
-      setLastUpdateTime(new Date()) // 更新时间戳
-      // 可以选择在这里更新更详细的统计信息
+      setLastUpdateTime(new Date())
       setRunningStrategies((prev) =>
         prev.map((s) =>
-          s.id === data.strategy_id
-            ? {
-                ...s,
-                // 更新实时统计数据
-                _realtime_stats: data,
-              }
-            : s
+          s.id === data.strategy_id ? { ...s, _realtime_stats: data } : s
         )
       )
     })
 
-    // 监听全局订单更新
     const unsubscribeOrder = wsService.onOrderUpdate((orderData: OrderUpdateData) => {
-      setLastUpdateTime(new Date()) // 更新时间戳
-
-      // 根据订单事件显示通知
+      setLastUpdateTime(new Date())
       const sideText = orderData.side === 'buy' ? '买入' : '卖出'
       const strategyName = runningStrategies.find(s => s.id === orderData.strategy_id)?.name || `策略${orderData.strategy_id}`
 
@@ -267,27 +260,29 @@ const Dashboard = () => {
       }
     })
 
-    // 监听余额更新(WebSocket推送)
+    // 监听余额更新，提取保证金率
     const unsubscribeBalance = wsService.onBalanceUpdate((data: BalanceUpdateData) => {
       setLastUpdateTime(new Date())
-      // 更新余额数据
       setBalance({
         totalEq: data.total_equity.toString(),
         availBal: data.available_balance.toString(),
         total_upl: data.unrealized_pnl.toString(),
         details: data.details,
       })
+      // 实时更新保证金率
+      if (data.margin_ratio != null && isFinite(data.margin_ratio)) {
+        // OKX mgnRatio 是比率（0~1），乘以100转为百分比；若已是百分比则不乘
+        const ratio = data.margin_ratio > 1 ? data.margin_ratio : data.margin_ratio * 100
+        setMarginRatio(ratio)
+      }
     })
 
-    // 监听持仓更新(WebSocket推送)
     const unsubscribePositions = wsService.onPositionsUpdate(async (data: PositionsUpdateData) => {
       setLastUpdateTime(new Date())
 
-      // 转换持仓数据为前端格式
       const contractPositions = await Promise.all(
         data.positions.map(async (pos) => {
           try {
-            // 获取当前价格(如果WebSocket没提供或需要更新)
             const ticker = await marketApi.getTicker(pos.symbol)
             const currentPrice = pos.current_price || parseFloat((ticker as any)?.last || '0')
 
@@ -301,9 +296,9 @@ const Dashboard = () => {
               profit: pos.unrealized_pnl,
               profitPercent: pos.unrealized_pnl_pct,
               value: pos.size * currentPrice,
+              margin: pos.margin || 0,
             }
           } catch (error) {
-            console.error(`获取价格失败 ${pos.symbol}:`, error)
             return {
               key: `contract-${pos.symbol}`,
               type: pos.inst_type || 'SWAP',
@@ -314,12 +309,12 @@ const Dashboard = () => {
               profit: pos.unrealized_pnl,
               profitPercent: pos.unrealized_pnl_pct,
               value: pos.size * pos.current_price,
+              margin: pos.margin || 0,
             }
           }
         })
       )
 
-      // 更新持仓列表(这里只更新合约持仓,现货持仓保持原有逻辑)
       setPositionsWithPrice((prev) => {
         const spotPositions = prev.filter((p) => p.type === 'SPOT')
         return [...spotPositions, ...contractPositions]
@@ -340,19 +335,63 @@ const Dashboard = () => {
     }
   }, [])
 
-  // 计算统计数据
+  // ─── 计算统计数据 ────────────────────────────────────────────────────────────
+
   const totalAssets = balance ? parseFloat(balance.totalEq || '0') : 0
   const totalUpl = positionsWithPrice.reduce((sum, pos) => sum + (pos.profit || 0), 0)
   const uplPercent = totalAssets > 0 ? (totalUpl / totalAssets) * 100 : 0
-  const totalPositionValue = positionsWithPrice.reduce(
-    (sum, pos) => sum + (pos.value || 0),
-    0
-  )
+  const totalPositionValue = positionsWithPrice.reduce((sum, pos) => sum + (pos.value || 0), 0)
 
-  // 计算所有策略的总盈亏
-  const totalStrategyProfit = runningStrategies.reduce((sum, s) => {
-    return sum + (s.total_profit || 0)
-  }, 0)
+  // 今日盈亏 = 当前净值 - 今日基线净值
+  const dailyPnl = dailyPnlBaseline != null ? totalAssets - dailyPnlBaseline : null
+  const dailyPnlPct = dailyPnlBaseline != null && dailyPnlBaseline > 0
+    ? ((totalAssets - dailyPnlBaseline) / dailyPnlBaseline) * 100
+    : null
+
+  // 保证金占用比 = 合约持仓占用保证金合计 / 总净值
+  const totalMarginUsed = positionsWithPrice
+    .filter(p => p.type === 'SWAP')
+    .reduce((sum, pos) => sum + (pos.margin || 0), 0)
+  const marginUsagePct = totalAssets > 0 ? (totalMarginUsed / totalAssets) * 100 : 0
+
+  // 账户综合杠杆 = 合约持仓总价值 / 总净值
+  const contractPositionValue = positionsWithPrice
+    .filter(p => p.type === 'SWAP')
+    .reduce((sum, pos) => sum + (pos.value || 0), 0)
+  const accountLeverage = totalAssets > 0 ? contractPositionValue / totalAssets : 0
+
+  // 策略总盈亏
+  const totalStrategyProfit = runningStrategies.reduce((sum, s) => sum + (s.total_profit || 0), 0)
+
+  // 风险健康度 (0–100分)
+  // 扣分规则：保证金率(最多-40)、账户杠杆(最多-30)、最大回撤(最多-30)
+  const riskHealth = Math.max(0, Math.min(100, (() => {
+    let score = 100
+    if (marginRatio > 0) {
+      score -= Math.min(40, (marginRatio / 100) * 40)
+    }
+    if (accountLeverage > 1) {
+      score -= Math.min(30, ((accountLeverage - 1) / 9) * 30)
+    }
+    if (maxDrawdownPct > 0) {
+      score -= Math.min(30, (maxDrawdownPct / 30) * 30)
+    }
+    return score
+  })()))
+
+  const getRiskHealthColor = (score: number) => {
+    if (score >= 75) return '#22c55e'
+    if (score >= 50) return '#f59e0b'
+    return '#ef4444'
+  }
+
+  const getRiskHealthLabel = (score: number) => {
+    if (score >= 75) return '健康'
+    if (score >= 50) return '警惕'
+    return '高风险'
+  }
+
+  // ─── Loading ─────────────────────────────────────────────────────────────────
 
   if (loading && !balance) {
     return (
@@ -363,6 +402,8 @@ const Dashboard = () => {
       </div>
     )
   }
+
+  // ─── 持仓表格列定义 ──────────────────────────────────────────────────────────
 
   const positionColumns: ColumnsType<any> = [
     {
@@ -469,10 +510,13 @@ const Dashboard = () => {
     },
   ]
 
+  // ─── Render ──────────────────────────────────────────────────────────────────
+
   return (
     <div>
-      {/* 顶部统计卡片 */}
+      {/* ── 第一排：主要财务指标 ── */}
       <Row gutter={[16, 16]}>
+        {/* 总资产 */}
         <Col xs={24} sm={12} lg={6} xl={4} xxl={4}>
           <Card variant="borderless" size="small" style={{ height: '100%' }}>
             <div style={{ marginBottom: 8 }}>
@@ -491,6 +535,7 @@ const Dashboard = () => {
           </Card>
         </Col>
 
+        {/* 未实现盈亏 */}
         <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
           <Card variant="borderless" size="small" style={{ height: '100%' }}>
             <div style={{ marginBottom: 8 }}>
@@ -515,13 +560,50 @@ const Dashboard = () => {
                 size="small"
               />
               <div style={{ fontSize: 11, color: '#737373', marginTop: 4 }}>
-                {uplPercent >= 0 ? '+' : ''}
-                {formatPercent(uplPercent)}% {t('dashboard.unrealizedPnlPercent')}
+                {uplPercent >= 0 ? '+' : ''}{formatPercent(uplPercent)}% {t('dashboard.unrealizedPnlPercent')}
               </div>
             </div>
           </Card>
         </Col>
 
+        {/* 今日盈亏 */}
+        <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
+          <Card variant="borderless" size="small" style={{ height: '100%' }}>
+            <div style={{ marginBottom: 8 }}>
+              <div className="pro-card-header">今日盈亏</div>
+            </div>
+            {dailyPnl != null ? (
+              <>
+                <Statistic
+                  value={dailyPnl}
+                  precision={2}
+                  prefix={dailyPnl >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                  valueStyle={{
+                    fontSize: 28,
+                    fontWeight: 700,
+                    color: dailyPnl >= 0 ? '#22c55e' : '#ef4444',
+                    fontFamily: 'monospace',
+                  }}
+                />
+                <div style={{ marginTop: 8, fontSize: 11, color: '#737373' }}>
+                  {dailyPnlPct != null && (
+                    <span className={dailyPnlPct >= 0 ? 'text-up' : 'text-down'}>
+                      {dailyPnlPct >= 0 ? '+' : ''}{formatPercent(dailyPnlPct)}%
+                    </span>
+                  )}
+                  <span style={{ marginLeft: 4 }}>自今日0:00</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace', color: '#737373' }}>--</div>
+                <div style={{ marginTop: 8, fontSize: 11, color: '#737373' }}>等待首次快照生成</div>
+              </>
+            )}
+          </Card>
+        </Col>
+
+        {/* 策略总盈亏 */}
         <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
           <Card variant="borderless" size="small" style={{ height: '100%' }}>
             <div style={{ marginBottom: 8 }}>
@@ -544,26 +626,7 @@ const Dashboard = () => {
           </Card>
         </Col>
 
-        <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
-          <Card variant="borderless" size="small" style={{ height: '100%' }}>
-            <div style={{ marginBottom: 8 }}>
-              <div className="pro-card-header">{t('dashboard.positions').toUpperCase()}</div>
-            </div>
-            <Statistic
-              value={positionsWithPrice.length}
-              valueStyle={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace' }}
-              suffix={
-                <span style={{ fontSize: 14, color: '#737373' }}>
-                  /{positionsWithPrice.length}
-                </span>
-              }
-            />
-            <div style={{ marginTop: 8, fontSize: 11, color: '#737373' }}>
-              {t('dashboard.positionCount')}
-            </div>
-          </Card>
-        </Col>
-
+        {/* 持仓总价值 */}
         <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
           <Card variant="borderless" size="small" style={{ height: '100%' }}>
             <div style={{ marginBottom: 8 }}>
@@ -576,13 +639,224 @@ const Dashboard = () => {
               valueStyle={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace' }}
             />
             <div style={{ marginTop: 8, fontSize: 11, color: '#737373' }}>
-              {t('dashboard.positionValue')}
+              {positionsWithPrice.length} 个持仓
             </div>
           </Card>
         </Col>
       </Row>
 
-      {/* 持仓列表 */}
+      {/* ── 第二排：风险 & 杠杆指标 ── */}
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        {/* 保证金率 */}
+        <Col xs={24} sm={12} lg={6} xl={4} xxl={4}>
+          <Tooltip title="保证金率反映账户整体风险程度，数值越低风险越高。OKX强平线通常在 ≤ 0%">
+            <Card variant="borderless" size="small" style={{ height: '100%' }}>
+              <div style={{ marginBottom: 8 }}>
+                <div className="pro-card-header" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <ShieldAlert size={11} />
+                  保证金率
+                </div>
+              </div>
+              {marginRatio > 0 ? (
+                <>
+                  <div
+                    style={{
+                      fontSize: 28,
+                      fontWeight: 700,
+                      fontFamily: 'monospace',
+                      color: marginRatio > 500 ? '#22c55e' : marginRatio > 200 ? '#f59e0b' : '#ef4444',
+                    }}
+                  >
+                    {formatPercent(marginRatio)}%
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    <Progress
+                      percent={Math.min(100, marginRatio / 10)}
+                      strokeColor={marginRatio > 500 ? '#22c55e' : marginRatio > 200 ? '#f59e0b' : '#ef4444'}
+                      showInfo={false}
+                      size="small"
+                    />
+                    <div style={{ fontSize: 11, color: '#737373', marginTop: 4 }}>
+                      {marginRatio > 500 ? '安全' : marginRatio > 200 ? '注意' : '危险'}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace', color: '#737373' }}>--</div>
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#737373' }}>无合约持仓</div>
+                </>
+              )}
+            </Card>
+          </Tooltip>
+        </Col>
+
+        {/* 保证金占用比 */}
+        <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
+          <Tooltip title="已占用保证金 / 账户总净值。反映资金被锁定的比例，占比越高流动性越低">
+            <Card variant="borderless" size="small" style={{ height: '100%' }}>
+              <div style={{ marginBottom: 8 }}>
+                <div className="pro-card-header" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Activity size={11} />
+                  保证金占用比
+                </div>
+              </div>
+              <div
+                style={{
+                  fontSize: 28,
+                  fontWeight: 700,
+                  fontFamily: 'monospace',
+                  color: marginUsagePct < 30 ? '#22c55e' : marginUsagePct < 60 ? '#f59e0b' : '#ef4444',
+                }}
+              >
+                {totalAssets > 0 ? `${formatPercent(marginUsagePct)}%` : '--'}
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <Progress
+                  percent={Math.min(100, marginUsagePct)}
+                  strokeColor={marginUsagePct < 30 ? '#22c55e' : marginUsagePct < 60 ? '#f59e0b' : '#ef4444'}
+                  showInfo={false}
+                  size="small"
+                />
+                <div style={{ fontSize: 11, color: '#737373', marginTop: 4 }}>
+                  已用 ${formatAmount(totalMarginUsed)}
+                </div>
+              </div>
+            </Card>
+          </Tooltip>
+        </Col>
+
+        {/* 账户综合杠杆率 */}
+        <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
+          <Tooltip title="合约持仓总价值 / 账户总净值。代表当前整体杠杆倍数，建议保持在 3x 以内">
+            <Card variant="borderless" size="small" style={{ height: '100%' }}>
+              <div style={{ marginBottom: 8 }}>
+                <div className="pro-card-header" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <BarChart2 size={11} />
+                  账户综合杠杆
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                <div
+                  style={{
+                    fontSize: 28,
+                    fontWeight: 700,
+                    fontFamily: 'monospace',
+                    color: accountLeverage < 2 ? '#22c55e' : accountLeverage < 5 ? '#f59e0b' : '#ef4444',
+                  }}
+                >
+                  {totalAssets > 0 ? formatPercent(accountLeverage, 2) : '--'}
+                </div>
+                {totalAssets > 0 && (
+                  <span style={{ fontSize: 16, color: '#a3a3a3', fontWeight: 600 }}>x</span>
+                )}
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <Progress
+                  percent={Math.min(100, (accountLeverage / 10) * 100)}
+                  strokeColor={accountLeverage < 2 ? '#22c55e' : accountLeverage < 5 ? '#f59e0b' : '#ef4444'}
+                  showInfo={false}
+                  size="small"
+                />
+                <div style={{ fontSize: 11, color: '#737373', marginTop: 4 }}>
+                  合约价值 ${formatAmount(contractPositionValue)}
+                </div>
+              </div>
+            </Card>
+          </Tooltip>
+        </Col>
+
+        {/* 最大回撤 (7天) */}
+        <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
+          <Tooltip title="近7天账户净值从峰值到谷值的最大跌幅。系统启动后每小时自动记录一次净值快照">
+            <Card variant="borderless" size="small" style={{ height: '100%' }}>
+              <div style={{ marginBottom: 8 }}>
+                <div className="pro-card-header" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <AlertTriangle size={11} />
+                  最大回撤 (7d)
+                </div>
+              </div>
+              {maxDrawdownPct > 0 ? (
+                <>
+                  <div
+                    style={{
+                      fontSize: 28,
+                      fontWeight: 700,
+                      fontFamily: 'monospace',
+                      color: maxDrawdownPct < 5 ? '#22c55e' : maxDrawdownPct < 15 ? '#f59e0b' : '#ef4444',
+                    }}
+                  >
+                    -{formatPercent(maxDrawdownPct)}%
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    <Progress
+                      percent={Math.min(100, (maxDrawdownPct / 30) * 100)}
+                      strokeColor={maxDrawdownPct < 5 ? '#22c55e' : maxDrawdownPct < 15 ? '#f59e0b' : '#ef4444'}
+                      showInfo={false}
+                      size="small"
+                    />
+                    <div style={{ fontSize: 11, color: '#737373', marginTop: 4 }}>
+                      最大亏损 ${formatAmount(maxDrawdown)}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace', color: '#22c55e' }}>0%</div>
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#737373' }}>暂无回撤记录</div>
+                </>
+              )}
+            </Card>
+          </Tooltip>
+        </Col>
+
+        {/* 风险健康度 */}
+        <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
+          <Tooltip title="综合评分：保证金率(40%) + 账户杠杆(30%) + 最大回撤(30%)。75分以上为健康，50-75分需关注，50分以下为高风险">
+            <Card variant="borderless" size="small" style={{ height: '100%' }}>
+              <div style={{ marginBottom: 8 }}>
+                <div className="pro-card-header" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <ShieldAlert size={11} />
+                  风险健康度
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                <div
+                  style={{
+                    fontSize: 28,
+                    fontWeight: 700,
+                    fontFamily: 'monospace',
+                    color: getRiskHealthColor(riskHealth),
+                  }}
+                >
+                  {Math.round(riskHealth)}
+                </div>
+                <span style={{ fontSize: 14, color: '#737373' }}>/100</span>
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <Progress
+                  percent={riskHealth}
+                  strokeColor={getRiskHealthColor(riskHealth)}
+                  showInfo={false}
+                  size="small"
+                />
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: getRiskHealthColor(riskHealth),
+                    marginTop: 4,
+                    fontWeight: 600,
+                  }}
+                >
+                  {getRiskHealthLabel(riskHealth)}
+                </div>
+              </div>
+            </Card>
+          </Tooltip>
+        </Col>
+      </Row>
+
+      {/* ── 持仓列表 ── */}
       <Card
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -606,7 +880,6 @@ const Dashboard = () => {
         }
         extra={
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {/* WebSocket连接状态 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <div
                 style={{
@@ -623,7 +896,6 @@ const Dashboard = () => {
               </span>
             </div>
 
-            {/* 最后更新时间 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <Clock size={11} style={{ color: '#a3a3a3' }} />
               <span style={{ fontSize: 11, color: '#a3a3a3' }}>
@@ -631,7 +903,6 @@ const Dashboard = () => {
               </span>
             </div>
 
-            {/* 刷新按钮 */}
             <Button
               type="text"
               size="small"
@@ -665,7 +936,7 @@ const Dashboard = () => {
         />
       </Card>
 
-      {/* 策略状态 */}
+      {/* ── 策略状态 + 最近交易 ── */}
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} md={12}>
           <Card

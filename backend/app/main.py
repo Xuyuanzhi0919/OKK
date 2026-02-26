@@ -52,9 +52,17 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 async def startup_event():
     """应用启动事件"""
     from loguru import logger
-    from app.core.database import SessionLocal
+    from app.core.database import SessionLocal, engine
     from app.models.strategy import Strategy
     from app.models.api_config import APIConfig
+
+    # 自动创建新增的 account_snapshots 表（checkfirst=True 保证幂等）
+    try:
+        from app.models.account_snapshot import AccountSnapshot
+        AccountSnapshot.__table__.create(bind=engine, checkfirst=True)
+        logger.info("✅ account_snapshots 表已就绪")
+    except Exception as e:
+        logger.error(f"❌ 创建 account_snapshots 表失败: {e}")
     from app.services.strategy.manager import strategy_manager
     from app.websocket.okx_websocket import OKXWebSocketClient
     from app.websocket.manager import ws_manager

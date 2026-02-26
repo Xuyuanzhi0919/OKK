@@ -10,6 +10,7 @@ from .backtest import Backtest, BacktestTrade
 from .api_config import APIConfig
 from .alert import Alert
 from .risk_control import RiskControl, RiskAction
+from .account_snapshot import AccountSnapshot
 
 __all__ = [
     "User",
@@ -28,4 +29,5 @@ __all__ = [
     "Alert",
     "RiskControl",
     "RiskAction",
+    "AccountSnapshot",
 ]

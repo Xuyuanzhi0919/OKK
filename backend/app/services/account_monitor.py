@@ -1,5 +1,5 @@
 """
-账户监控服务 - 定期推送账户余额和持仓数据
+账户监控服务 - 定期推送账户余额和持仓数据，并定时保存净值快照
 """
 import asyncio
 from loguru import logger
@@ -19,7 +19,7 @@ def safe_float(value, default=0.0):
 
 
 class AccountMonitor:
-    """账户监控器 - 定期推送账户数据"""
+    """账户监控器 - 定期推送账户数据并保存净值快照"""
 
     def __init__(self, interval: int = 10):
         """
@@ -31,6 +31,9 @@ class AccountMonitor:
         self.interval = interval
         self.is_running = False
         self._task = None
+        # 快照计数器：每360次循环(= 3600秒 = 1小时)保存一次快照
+        self._snapshot_counter = 0
+        self._snapshot_interval = 360
 
     async def start(self):
         """启动监控"""
@@ -40,7 +43,7 @@ class AccountMonitor:
 
         self.is_running = True
         self._task = asyncio.create_task(self._monitor_loop())
-        logger.info(f"✅ 账户监控器已启动 (推送间隔: {self.interval}秒)")
+        logger.info(f"✅ 账户监控器已启动 (推送间隔: {self.interval}秒, 快照间隔: {self._snapshot_interval * self.interval}秒)")
 
     async def stop(self):
         """停止监控"""
@@ -55,13 +58,22 @@ class AccountMonitor:
 
     async def _monitor_loop(self):
         """监控循环"""
+        first_run = True
         while self.is_running:
             try:
-                # 推送余额更新
-                await self._push_balance_update()
+                # 推送余额更新，同时获取用于快照的数据
+                snapshot_data = await self._push_balance_update()
 
                 # 推送持仓更新
                 await self._push_positions_update()
+
+                # 首次运行立即保存快照，之后每小时一次
+                self._snapshot_counter += 1
+                if first_run or self._snapshot_counter >= self._snapshot_interval:
+                    self._snapshot_counter = 0
+                    first_run = False
+                    if snapshot_data:
+                        await self._save_snapshot(snapshot_data)
 
                 # 等待下一次推送
                 await asyncio.sleep(self.interval)
@@ -72,22 +84,20 @@ class AccountMonitor:
                 logger.error(f"账户监控循环出错: {e}")
                 await asyncio.sleep(self.interval)
 
-    async def _push_balance_update(self):
-        """推送余额更新"""
+    async def _push_balance_update(self) -> dict | None:
+        """推送余额更新，返回用于快照的核心数据"""
         try:
             # 获取用户的交易所实例
             exchange = api_config_service.get_exchange(user_id=1)
             if not exchange:
-                return
+                return None
 
             # 获取账户余额
             balance_data = await exchange.get_balance()
 
             if balance_data:
                 # 构造WebSocket推送数据
-                # OKX API字段: totalEq, adjEq, isoEq等
                 total_eq = safe_float(balance_data.get("totalEq"))
-                adj_eq = safe_float(balance_data.get("adjEq"))  # 有效保证金
                 imr = safe_float(balance_data.get("imr"))  # 占用保证金
 
                 # 计算可用余额(从details中累加)
@@ -107,6 +117,7 @@ class AccountMonitor:
                     "available_balance": available_balance,
                     "unrealized_pnl": total_upl,
                     "margin_ratio": safe_float(balance_data.get("mgnRatio")),
+                    "imr": imr,
                     "details": details,
                     "timestamp": int(datetime.now().timestamp() * 1000)
                 }
@@ -115,8 +126,17 @@ class AccountMonitor:
                 await broadcast_balance_update(ws_data)
                 logger.debug(f"余额更新已推送: 总权益={total_eq}, 未实现盈亏={total_upl}")
 
+                # 返回用于快照的核心数据
+                return {
+                    "total_equity": total_eq,
+                    "available_balance": available_balance,
+                    "unrealized_pnl": total_upl,
+                }
+
         except Exception as e:
             logger.error(f"推送余额更新失败: {e}")
+
+        return None
 
     async def _push_positions_update(self):
         """推送持仓更新"""
@@ -167,6 +187,31 @@ class AccountMonitor:
 
         except Exception as e:
             logger.error(f"推送持仓更新失败: {e}")
+
+    async def _save_snapshot(self, data: dict):
+        """保存账户净值快照到数据库（每小时一次）"""
+        def _sync_save():
+            from app.core.database import SessionLocal
+            from app.models.account_snapshot import AccountSnapshot
+            db = SessionLocal()
+            try:
+                snapshot = AccountSnapshot(
+                    user_id=1,
+                    total_equity=data["total_equity"],
+                    available_balance=data.get("available_balance", 0.0),
+                    unrealized_pnl=data.get("unrealized_pnl", 0.0),
+                )
+                db.add(snapshot)
+                db.commit()
+                logger.info(f"账户净值快照已保存: equity={data['total_equity']:.2f}")
+            except Exception as e:
+                db.rollback()
+                logger.error(f"保存账户净值快照失败: {e}")
+            finally:
+                db.close()
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _sync_save)
 
 
 # 全局实例

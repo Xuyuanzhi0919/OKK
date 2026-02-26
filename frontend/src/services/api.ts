@@ -181,6 +181,30 @@ export const accountApi = {
         pos_id: posId
       },
     }).then(res => (res as any).data as Position[]),
+
+  // 获取账户净值历史快照（用于计算最大回撤）
+  getAccountSnapshots: (days: number = 7) =>
+    api.get<{
+      code: number; msg: string; data: {
+        snapshots: Array<{ total_equity: number; available_balance: number; unrealized_pnl: number; timestamp: string }>
+        max_drawdown: number
+        max_drawdown_pct: number
+        days: number
+        count: number
+      }
+    }>('/positions/account-snapshots', { params: { days } })
+      .then(res => (res as any).data),
+
+  // 获取今日盈亏基线（UTC+8 自然日 0:00 重置）
+  getDailyPnlBaseline: () =>
+    api.get<{
+      code: number; msg: string; data: {
+        baseline_equity: number | null
+        baseline_time: string | null
+        has_baseline: boolean
+      }
+    }>('/positions/daily-pnl')
+      .then(res => (res as any).data),
 }
 
 // 告警API

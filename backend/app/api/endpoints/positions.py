@@ -3,6 +3,7 @@
 """
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
+from datetime import datetime, timedelta, timezone
 from app.services.exchange.okx import OKXExchange
 from app.services.api_config_service import api_config_service
 from loguru import logger
@@ -122,3 +123,143 @@ async def list_positions(
     except Exception as e:
         logger.error(f"获取持仓失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/account-snapshots")
+async def get_account_snapshots(
+    days: int = Query(7, ge=1, le=30, description="查询天数，最多30天")
+):
+    """
+    获取账户净值历史快照
+
+    返回近 N 天的净值快照列表，并计算期间的最大回撤。
+    快照由后台每小时自动保存一次（服务首次启动时立即保存一次）。
+    """
+    from app.core.database import SessionLocal
+    from app.models.account_snapshot import AccountSnapshot
+
+    tz_utc8 = timezone(timedelta(hours=8))
+    now = datetime.now(tz_utc8)
+    start_time = now - timedelta(days=days)
+
+    db = SessionLocal()
+    try:
+        snapshots = (
+            db.query(AccountSnapshot)
+            .filter(
+                AccountSnapshot.user_id == 1,
+                AccountSnapshot.created_at >= start_time,
+            )
+            .order_by(AccountSnapshot.created_at.asc())
+            .all()
+        )
+
+        snap_list = [
+            {
+                "total_equity": s.total_equity,
+                "available_balance": s.available_balance,
+                "unrealized_pnl": s.unrealized_pnl,
+                "timestamp": s.created_at.isoformat(),
+            }
+            for s in snapshots
+        ]
+
+        # 计算最大回撤（从峰值到谷值的最大跌幅）
+        max_drawdown = 0.0
+        max_drawdown_pct = 0.0
+        if snap_list:
+            peak = snap_list[0]["total_equity"]
+            for snap in snap_list:
+                equity = snap["total_equity"]
+                if equity > peak:
+                    peak = equity
+                elif peak > 0:
+                    dd_pct = (peak - equity) / peak * 100
+                    if dd_pct > max_drawdown_pct:
+                        max_drawdown_pct = dd_pct
+                        max_drawdown = peak - equity
+
+        return {
+            "code": 0,
+            "msg": "success",
+            "data": {
+                "snapshots": snap_list,
+                "max_drawdown": round(max_drawdown, 4),
+                "max_drawdown_pct": round(max_drawdown_pct, 4),
+                "days": days,
+                "count": len(snap_list),
+            },
+        }
+    except Exception as e:
+        logger.error(f"获取账户快照失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.get("/daily-pnl")
+async def get_daily_pnl():
+    """
+    获取今日盈亏基线（UTC+8 自然日 0:00 重置）
+
+    返回今日0:00最近一次快照的净值作为基线，前端结合当前净值计算今日盈亏。
+    若今日无快照，则返回昨日最后一条快照作为替代基线。
+    """
+    from app.core.database import SessionLocal
+    from app.models.account_snapshot import AccountSnapshot
+
+    tz_utc8 = timezone(timedelta(hours=8))
+    now = datetime.now(tz_utc8)
+    # 今日 UTC+8 0:00
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    db = SessionLocal()
+    try:
+        # 优先获取今日0:00之后的第一条快照作为基线
+        baseline = (
+            db.query(AccountSnapshot)
+            .filter(
+                AccountSnapshot.user_id == 1,
+                AccountSnapshot.created_at >= today_start,
+            )
+            .order_by(AccountSnapshot.created_at.asc())
+            .first()
+        )
+
+        # 若今日暂无快照，取昨日最后一条
+        if not baseline:
+            baseline = (
+                db.query(AccountSnapshot)
+                .filter(
+                    AccountSnapshot.user_id == 1,
+                    AccountSnapshot.created_at < today_start,
+                )
+                .order_by(AccountSnapshot.created_at.desc())
+                .first()
+            )
+
+        if baseline:
+            return {
+                "code": 0,
+                "msg": "success",
+                "data": {
+                    "baseline_equity": baseline.total_equity,
+                    "baseline_time": baseline.created_at.isoformat(),
+                    "has_baseline": True,
+                },
+            }
+        else:
+            return {
+                "code": 0,
+                "msg": "success",
+                "data": {
+                    "baseline_equity": None,
+                    "baseline_time": None,
+                    "has_baseline": False,
+                },
+            }
+    except Exception as e:
+        logger.error(f"获取今日盈亏基线失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
