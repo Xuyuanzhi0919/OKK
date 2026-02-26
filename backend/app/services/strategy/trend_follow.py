@@ -72,6 +72,12 @@ class TrendFollowStrategy(StrategyBase):
         self._slow_prev: Optional[float] = None
         self._slow_curr: Optional[float] = None
 
+        # 合约规格（在 start() 时动态获取）
+        self._ct_val: float = 0.1    # 合约面值（默认 ETH-USDT-SWAP）
+        self._lot_sz: float = 1.0    # 下单数量精度（张）
+        self._min_sz: float = 1.0    # 最小下单量（张）
+        self._is_swap: bool = symbol.endswith("-SWAP") or symbol.endswith("-FUTURES")
+
         # 仓位状态
         self._in_position: bool = False
         self._entry_price:  float = 0.0
@@ -103,6 +109,25 @@ class TrendFollowStrategy(StrategyBase):
         self._entry_price = 0.0
         self._position_qty = 0.0
         self._last_kline_period = 0
+
+        # 获取合约规格（SWAP/FUTURES 需要知道合约面值和最小手数）
+        if self._is_swap:
+            try:
+                inst_type = "SWAP" if self.symbol.endswith("-SWAP") else "FUTURES"
+                instruments = await self.exchange.get_instruments(
+                    inst_type=inst_type, inst_id=self.symbol
+                )
+                if instruments:
+                    info = instruments[0]
+                    self._ct_val = float(info.get("ctVal", self._ct_val))
+                    self._lot_sz = float(info.get("lotSz", self._lot_sz))
+                    self._min_sz = float(info.get("minSz", self._min_sz))
+                    logger.info(
+                        f"[{self.symbol}] 合约规格: ctVal={self._ct_val} "
+                        f"lotSz={self._lot_sz} minSz={self._min_sz}"
+                    )
+            except Exception as e:
+                logger.warning(f"[{self.symbol}] 获取合约规格失败，使用默认值: {e}")
 
         # 用历史 K 线预热 EMA
         await self._init_ema()
@@ -203,10 +228,14 @@ class TrendFollowStrategy(StrategyBase):
             logger.warning(f"[{self.symbol}] K 线数据不足: {len(klines) if klines else 0}")
             return
 
-        # 取倒数第 2 根（最后一根可能未完成）
-        confirmed = klines[:-1]
-        closes = [float(k["c"]) for k in confirmed]
+        # OKX 返回最新在前（降序），需反转为升序（最旧在前）供 EMA 使用
+        # confirm=='1' 代表已完结 K 线，过滤掉当前未完成的那根
+        confirmed = [k for k in reversed(klines) if k.get("confirm") == "1"]
+        if len(confirmed) < self.slow_period + 2:
+            logger.warning(f"[{self.symbol}] 已确认 K 线数量不足: {len(confirmed)}")
+            return
 
+        closes = [float(k["c"]) for k in confirmed]
         self._update_ema_from_closes(closes)
 
         if self._fast_curr is None or self._slow_curr is None:
@@ -222,11 +251,17 @@ class TrendFollowStrategy(StrategyBase):
                  self._fast_prev >= self._slow_prev and
                  self._fast_curr < self._slow_curr)
 
-        current_price = float(klines[-1]["c"])
+        # 用最新 K 线收盘价作为参考价（klines[0] 是最新那根）
+        current_price = float(klines[0]["c"])
+
+        logger.debug(
+            f"[{self.symbol}] EMA fast={self._fast_curr:.4f} slow={self._slow_curr:.4f} "
+            f"golden={golden} death={death} price={current_price:.2f}"
+        )
 
         if golden and not self._in_position:
             if self.use_rsi and self._rsi(closes) >= self.rsi_threshold:
-                logger.info(f"[{self.symbol}] 金叉但 RSI 超买，跳过开仓")
+                logger.info(f"[{self.symbol}] 金叉但 RSI 超买({self._rsi(closes):.1f})，跳过开仓")
                 return
             await self._open_position(current_price)
 
@@ -266,11 +301,14 @@ class TrendFollowStrategy(StrategyBase):
         try:
             klines = await self.exchange.get_kline(self.symbol, _TIMEFRAME, _KLINE_LIMIT)
             if klines and len(klines) >= self.slow_period + 2:
-                closes = [float(k["c"]) for k in klines[:-1]]
+                # OKX 返回降序，反转为升序；过滤已确认 K 线
+                confirmed = [k for k in reversed(klines) if k.get("confirm") == "1"]
+                closes = [float(k["c"]) for k in confirmed]
                 self._update_ema_from_closes(closes)
-                logger.info(
-                    f"[{self.symbol}] EMA 预热完成: fast={self._fast_curr:.2f} slow={self._slow_curr:.2f}"
-                )
+                if self._fast_curr and self._slow_curr:
+                    logger.info(
+                        f"[{self.symbol}] EMA 预热完成: fast={self._fast_curr:.2f} slow={self._slow_curr:.2f}"
+                    )
         except Exception as e:
             logger.warning(f"[{self.symbol}] EMA 预热失败（首次 tick 时会重试）: {e}")
 
@@ -297,17 +335,32 @@ class TrendFollowStrategy(StrategyBase):
         """开多仓（市价）"""
         try:
             balance = await self.exchange.get_balance()
-            # 取 USDT 可用余额
-            usdt = balance.get("USDT", {})
-            available = float(usdt.get("free", usdt.get("available", 0)))
-            if available <= 0:
-                logger.warning(f"[{self.symbol}] 可用余额不足，跳过开仓")
+
+            # OKX 余额格式: balance['details'] 是列表，每个元素含 ccy/availBal
+            available = 0.0
+            for d in balance.get("details", []):
+                if d.get("ccy") == "USDT":
+                    available = float(d.get("availBal", 0))
+                    break
+
+            if available <= 10:
+                logger.warning(f"[{self.symbol}] 可用 USDT 余额不足({available:.2f})，跳过开仓")
                 return
 
-            qty = available * self.pos_ratio / price
-            qty = round(qty, 6)
+            budget = available * self.pos_ratio
+
+            if self._is_swap:
+                # 合约张数 = 预算 / (价格 × 合约面值)，向下取整，最少 1 张
+                contracts = budget / (price * self._ct_val) if self._ct_val > 0 else 1
+                qty = max(self._min_sz, int(contracts / self._lot_sz) * self._lot_sz)
+            else:
+                qty = round(budget / price, 6)
+
             if qty <= 0:
+                logger.warning(f"[{self.symbol}] 计算数量为 0（budget={budget:.2f} price={price:.2f}），跳过")
                 return
+
+            logger.info(f"[{self.symbol}] 准备开多: qty={qty} budget={budget:.2f} USDT @ {price:.2f}")
 
             order = await self.place_order_with_retry(
                 side="buy",
@@ -319,8 +372,7 @@ class TrendFollowStrategy(StrategyBase):
                 self._entry_price = price
                 self._position_qty = qty
                 logger.info(
-                    f"[{self.symbol}] 开多 qty={qty:.6f} @ {price:.2f} "
-                    f"RSI={self._rsi.__name__}"
+                    f"[{self.symbol}] 开多成功 qty={qty} @ {price:.2f}"
                 )
         except Exception as e:
             logger.error(f"[{self.symbol}] 开多失败: {e}")
