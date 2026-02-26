@@ -21,6 +21,7 @@ from decimal import Decimal
 from loguru import logger
 
 from app.services.strategy.base import StrategyBase
+from app.services.notification import notification_service
 
 
 # ── 最优超参数（不可随意修改，来自回测验证） ─────────────────────────
@@ -486,6 +487,21 @@ class TrendFollowStrategy(StrategyBase):
                     logger.info(
                         f"[{self.symbol}] 开多成功 qty={qty} entry={self._entry_price:.2f}（均价）"
                     )
+                # Telegram 开仓通知
+                try:
+                    await notification_service.notify_position_opened(
+                        user_id=self.user_id,
+                        strategy_id=self.strategy_id,
+                        strategy_name=f"趋势策略#{self.strategy_id}",
+                        symbol=self.symbol,
+                        side="buy",
+                        entry_price=self._entry_price,
+                        amount=qty,
+                        leverage=self.leverage,
+                        margin=margin_budget,
+                    )
+                except Exception as e:
+                    logger.warning(f"[{self.symbol}] 开仓通知发送失败: {e}")
         except Exception as e:
             logger.error(f"[{self.symbol}] 开多失败: {e}")
 
@@ -538,6 +554,32 @@ class TrendFollowStrategy(StrategyBase):
                     f"entry={saved_entry:.2f} close={close_price:.2f} "
                     f"pnl={pnl:+.4f} 累计={self.realized_pnl:+.4f}"
                 )
+                # Telegram 平仓通知
+                reason_map = {
+                    "stop_loss":     "止损平仓",
+                    "trailing_stop": "移动止损",
+                    "take_profit":   "止盈平仓",
+                    "death_cross":   "死叉平仓",
+                    "stop":          "手动停止",
+                }
+                reason_text = reason_map.get(reason, reason)
+                pnl_pct = (close_price - saved_entry) / saved_entry * 100 if saved_entry > 0 else 0
+                try:
+                    await notification_service.notify_position_closed(
+                        user_id=self.user_id,
+                        strategy_id=self.strategy_id,
+                        strategy_name=f"趋势策略#{self.strategy_id}",
+                        symbol=self.symbol,
+                        side="buy",
+                        entry_price=saved_entry,
+                        exit_price=close_price,
+                        amount=qty,
+                        pnl=pnl,
+                        pnl_pct=pnl_pct,
+                        reason=reason_text,
+                    )
+                except Exception as e:
+                    logger.warning(f"[{self.symbol}] 平仓通知发送失败: {e}")
             else:
                 # 下单失败，恢复持仓状态
                 logger.error(f"[{self.symbol}] 平仓下单失败，恢复持仓状态")
