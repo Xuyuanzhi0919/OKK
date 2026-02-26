@@ -115,7 +115,13 @@ const PositionList = () => {
       dataIndex: 'updated_at',
       key: 'updated_at',
       width: 180,
-      render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm:ss'),
+      render: (time: string) => {
+        if (!time) return '-'
+        // 兼容 OKX 返回的毫秒时间戳字符串（如 "1699000000000"）和 ISO 字符串两种格式
+        const ts = Number(time)
+        const d = isNaN(ts) ? dayjs(time) : dayjs(ts)
+        return d.isValid() ? d.format('YYYY-MM-DD HH:mm:ss') : '-'
+      },
     },
   ]
 

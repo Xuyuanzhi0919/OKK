@@ -104,6 +104,16 @@ async def list_positions(
             # 前端必须用此值，否则直接 size×price 会差一个合约面值倍数
             notional_usd = safe_float(pos.get('notionalUsd', 0))
 
+            # OKX uTime/cTime 是毫秒级 Unix 时间戳字符串，需转为 ISO 格式再返回前端
+            def ms_to_iso(ms_str: str) -> str:
+                if not ms_str:
+                    return ''
+                try:
+                    from datetime import datetime, timezone
+                    return datetime.fromtimestamp(int(ms_str) / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+                except Exception:
+                    return ms_str
+
             result.append({
                 "id": idx + 1,
                 "strategy_id": None,
@@ -119,8 +129,8 @@ async def list_positions(
                 "notional_usd": notional_usd if notional_usd > 0 else None,
                 "margin": margin,
                 "liquidation_price": liq_px if liq_px > 0 else None,
-                "created_at": pos.get('cTime', ''),
-                "updated_at": pos.get('uTime', '')
+                "created_at": ms_to_iso(pos.get('cTime', '')),
+                "updated_at": ms_to_iso(pos.get('uTime', ''))
             })
 
         logger.info(f"获取到 {len(result)} 个持仓")
