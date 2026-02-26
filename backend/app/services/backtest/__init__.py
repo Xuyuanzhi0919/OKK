@@ -14,4 +14,5 @@ __all__ = [
     "BacktestMetrics",
     "GridBacktestEngine",
     "GridMarketMakingBacktest",
+    "OrderBookImbalanceBacktestEngine",
 ]
