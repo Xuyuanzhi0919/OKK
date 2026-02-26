@@ -191,6 +191,7 @@ const Dashboard = () => {
               return {
                 key: `contract-${symbol}`,
                 type: 'SWAP',
+                side: posData.side || (posSize > 0 ? 'long' : 'short'),
                 symbol,
                 amount: posSize,
                 avgPrice: posData.avg_price || parseFloat(posData.avgPx || '0'),
@@ -337,6 +338,7 @@ const Dashboard = () => {
             return {
               key: `contract-${pos.symbol}`,
               type: pos.inst_type || 'SWAP',
+              side: pos.side || (pos.size > 0 ? 'long' : 'short'),
               symbol: pos.symbol,
               amount: pos.size,
               avgPrice: pos.avg_price,
@@ -351,6 +353,7 @@ const Dashboard = () => {
             return {
               key: `contract-${pos.symbol}`,
               type: pos.inst_type || 'SWAP',
+              side: pos.side || (pos.size > 0 ? 'long' : 'short'),
               symbol: pos.symbol,
               amount: pos.size,
               avgPrice: pos.avg_price,
@@ -456,6 +459,31 @@ const Dashboard = () => {
 
   const positionColumns: ColumnsType<any> = [
     {
+      title: '方向',
+      dataIndex: 'side',
+      key: 'side',
+      width: 56,
+      render: (side, record) => {
+        if (record.type === 'SPOT') return null
+        const isLong = side === 'long'
+        return (
+          <Tag
+            style={{
+              margin: 0,
+              fontSize: 10,
+              padding: '1px 6px',
+              fontWeight: 700,
+              border: 'none',
+              background: isLong ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+              color: isLong ? '#22c55e' : '#ef4444',
+            }}
+          >
+            {isLong ? '多' : '空'}
+          </Tag>
+        )
+      },
+    },
+    {
       title: t('dashboard.type').toUpperCase(),
       dataIndex: 'type',
       key: 'type',
@@ -489,9 +517,12 @@ const Dashboard = () => {
       key: 'amount',
       width: 120,
       align: 'right',
-      render: (value) => (
+      render: (value, record) => (
         <span className="font-mono" style={{ fontSize: 13 }}>
           {formatQuantityDisplay(value)}
+          {record.type === 'SWAP' && (
+            <span style={{ fontSize: 10, color: '#737373', marginLeft: 2 }}>张</span>
+          )}
         </span>
       ),
     },

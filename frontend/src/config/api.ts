@@ -21,6 +21,13 @@ export const BACKTEST_API = {
   trades: (id: number | string) => `${API_V1}/backtest/${id}/trades`,
   updateDescription: (id: number | string) => `${API_V1}/backtest/${id}/description`,
 
+  // 策略类型
+  strategyTypes: `${API_V1}/backtest/strategy-types`,
+  
+  // 交易对列表
+  symbols: `${API_V1}/backtest/symbols`,
+  symbolsDetail: `${API_V1}/backtest/symbols/detail`,
+
   // K线数据管理
   klines: {
     fetch: `${API_V1}/backtest/klines/fetch`,

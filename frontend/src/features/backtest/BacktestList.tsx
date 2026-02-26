@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
-import { BACKTEST_API } from '@/config/api'
+import { BACKTEST_API, API_BASE_URL } from '@/config/api'
 import { formatAmount, formatPercent } from '@/utils/format'
 
 const { RangePicker } = DatePicker
@@ -248,7 +248,7 @@ const BacktestList = () => {
     queryKey: ['available-symbols'],
     queryFn: async () => {
       try {
-        const response = await fetch(`${BACKTEST_API.base}/symbols`)
+        const response = await fetch(`${API_BASE_URL}/api/v1/backtest/symbols`)
         if (!response.ok) {
           throw new Error('获取交易对列表失败')
         }
