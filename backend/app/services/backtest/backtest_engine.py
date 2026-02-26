@@ -119,7 +119,7 @@ class BacktestEngine:
 
     def buy(self, price: float, amount: float, timestamp: int) -> Optional[Trade]:
         """
-        买入
+        买入（合约模式下使用保证金）
 
         Args:
             price: 买入价格
@@ -129,10 +129,11 @@ class BacktestEngine:
         Returns:
             交易记录，如果资金不足返回None
         """
-        # 计算成本
-        cost = price * amount
-        fee = cost * self.fee_rate
-        total_cost = cost + fee
+        # 计算所需保证金（杠杆模式下）
+        position_value = price * amount
+        margin_required = position_value / self.leverage
+        fee = position_value * self.fee_rate
+        total_cost = margin_required + fee
 
         # 检查资金是否足够
         if total_cost > self.capital:
@@ -143,19 +144,21 @@ class BacktestEngine:
         position_before = self.position.amount
         capital_before = self.capital
 
-        # 更新持仓（加权平均成本，含手续费）
+        # 更新持仓（加权平均成本）
         if self.position.amount > 0:
             total_amount = self.position.amount + amount
-            total_cost_basis = (self.position.avg_price * self.position.amount) + cost + fee
+            total_cost_basis = (self.position.avg_price * self.position.amount) + position_value
             self.position.avg_price = total_cost_basis / total_amount
         else:
-            # 含买入手续费的完整成本均价
-            self.position.avg_price = price * (1 + self.fee_rate)
+            self.position.avg_price = price
 
         self.position.amount += amount
+        self.position.direction = "long"
+        self.position.margin_used = self.position.amount * price / self.leverage
 
         # 更新资金
         self.capital -= total_cost
+        self.margin_account.margin_used = self.position.margin_used
 
         # 记录交易后状态
         position_after = self.position.amount
@@ -173,17 +176,20 @@ class BacktestEngine:
             capital_before=capital_before,
             capital_after=capital_after,
             pnl=0.0,  # 买入时pnl为0
-            pnl_percent=0.0
+            pnl_percent=0.0,
+            direction="long",
+            leverage=self.leverage,
+            margin_used=margin_required
         )
 
         self.trades.append(trade)
-        logger.debug(f"买入: {amount:.8f} @ {price:.2f}, 手续费: {fee:.4f}, 剩余资金: {self.capital:.2f}")
+        logger.debug(f"买入: {amount:.8f} @ {price:.2f}, 保证金: {margin_required:.2f}, 杠杆: {self.leverage}x, 剩余资金: {self.capital:.2f}")
 
         return trade
 
     def sell(self, price: float, amount: float, timestamp: int) -> Optional[Trade]:
         """
-        卖出
+        卖出平多（合约模式下）
 
         Args:
             price: 卖出价格
@@ -198,28 +204,35 @@ class BacktestEngine:
             logger.warning(f"持仓不足: 需要 {amount:.8f}, 可用 {self.position.amount:.8f}")
             return None
 
-        # 计算收益
-        revenue = price * amount
-        fee = revenue * self.fee_rate
-        net_revenue = revenue - fee
-
-        # 计算盈亏
-        cost_basis = self.position.avg_price * amount
-        pnl = net_revenue - cost_basis
-        pnl_percent = (pnl / cost_basis) * 100 if cost_basis > 0 else 0.0
+        # 计算收益（杠杆模式下）
+        position_value = price * amount
+        fee = position_value * self.fee_rate
+        
+        # 计算盈亏（基于价格变化，杠杆效应已体现在价格变化上）
+        price_pnl = price - self.position.avg_price
+        gross_pnl = price_pnl * amount
+        net_pnl = gross_pnl - fee
+        
+        # 计算收益率（相对于保证金）
+        margin_used = position_value / self.leverage
+        pnl_percent = (net_pnl / margin_used) * 100 if margin_used > 0 else 0.0
 
         # 记录交易前状态
         position_before = self.position.amount
         capital_before = self.capital
+
+        # 返还保证金 + 盈亏
+        self.capital += margin_used + net_pnl
 
         # 更新持仓
         self.position.amount -= amount
         if self.position.amount <= 0:
             self.position.amount = 0
             self.position.avg_price = 0
-
-        # 更新资金
-        self.capital += net_revenue
+            self.position.direction = "flat"
+            self.position.margin_used = 0
+        
+        self.margin_account.margin_used = self.position.margin_used
 
         # 记录交易后状态
         position_after = self.position.amount
@@ -236,12 +249,14 @@ class BacktestEngine:
             position_after=position_after,
             capital_before=capital_before,
             capital_after=capital_after,
-            pnl=pnl,
-            pnl_percent=pnl_percent
+            pnl=net_pnl,
+            pnl_percent=pnl_percent,
+            direction="long",
+            leverage=self.leverage
         )
 
         self.trades.append(trade)
-        logger.debug(f"卖出: {amount:.8f} @ {price:.2f}, 盈亏: {pnl:.2f} ({pnl_percent:.2f}%), 剩余资金: {self.capital:.2f}")
+        logger.debug(f"卖出: {amount:.8f} @ {price:.2f}, 盈亏: {net_pnl:.2f} ({pnl_percent:.2f}%), 剩余资金: {self.capital:.2f}")
 
         return trade
 
@@ -348,12 +363,13 @@ class BacktestEngine:
         fee = buy_cost * self.fee_rate
 
         # 计算盈亏（做空：高价卖低价买=盈利）
-        sell_revenue = self.position.avg_price * amount
-        pnl = sell_revenue - buy_cost - fee
-        pnl_percent = (pnl / sell_revenue) * 100 if sell_revenue > 0 else 0.0
-
-        # 释放保证金
-        margin_released = (self.position.avg_price * amount) / self.leverage
+        price_pnl = self.position.avg_price - price  # 做空：价格下跌盈利
+        gross_pnl = price_pnl * amount
+        net_pnl = gross_pnl - fee
+        
+        # 计算收益率（相对于保证金）
+        margin_released = buy_cost / self.leverage
+        pnl_percent = (net_pnl / margin_released) * 100 if margin_released > 0 else 0.0
 
         # 记录交易前状态
         position_before = self.position.amount
@@ -370,7 +386,7 @@ class BacktestEngine:
             self.position.margin_used = abs(self.position.amount) * self.position.avg_price / self.leverage
 
         # 更新资金（返还保证金 + 盈亏）
-        self.capital += margin_released + pnl
+        self.capital += margin_released + net_pnl
         self.margin_account.margin_used = self.position.margin_used
 
         # 记录交易后状态
@@ -388,7 +404,7 @@ class BacktestEngine:
             position_after=position_after,
             capital_before=capital_before,
             capital_after=capital_after,
-            pnl=pnl,
+            pnl=net_pnl,
             pnl_percent=pnl_percent,
             direction="short",
             leverage=self.leverage,
@@ -396,7 +412,7 @@ class BacktestEngine:
         )
 
         self.trades.append(trade)
-        logger.debug(f"平空仓: {amount:.8f} @ {price:.2f}, 盈亏: {pnl:.2f} ({pnl_percent:.2f}%)")
+        logger.debug(f"平空仓: {amount:.8f} @ {price:.2f}, 盈亏: {net_pnl:.2f} ({pnl_percent:.2f}%)")
 
         return trade
 
