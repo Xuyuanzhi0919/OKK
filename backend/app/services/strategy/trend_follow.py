@@ -131,6 +131,33 @@ class TrendFollowStrategy(StrategyBase):
 
         # 用历史 K 线预热 EMA
         await self._init_ema()
+
+        # 立即入场：如果 fast > slow（当前处于上升趋势），直接开多
+        # 避免启动后要等下一次金叉才能入场，错过已有趋势
+        if (self._fast_curr is not None and
+                self._slow_curr is not None and
+                self._fast_curr > self._slow_curr and
+                not self._in_position):
+            try:
+                ticker = await self.exchange.get_ticker(self.symbol)
+                price = float(ticker.get("last", 0))
+                if price > 0:
+                    # 仍然检查 RSI 过滤
+                    klines = await self.exchange.get_kline(self.symbol, _TIMEFRAME, _KLINE_LIMIT)
+                    confirmed = [k for k in reversed(klines) if k.get("confirm") == "1"]
+                    closes = [float(k["c"]) for k in confirmed]
+                    if self.use_rsi and closes and self._rsi(closes) >= self.rsi_threshold:
+                        logger.info(
+                            f"[{self.symbol}] 启动时处于上升趋势但 RSI 超买({self._rsi(closes):.1f})，等待回落后金叉再入场"
+                        )
+                    else:
+                        logger.info(
+                            f"[{self.symbol}] 启动时处于上升趋势 (fast={self._fast_curr:.2f} > slow={self._slow_curr:.2f})，立即开多"
+                        )
+                        await self._open_position(price)
+            except Exception as e:
+                logger.warning(f"[{self.symbol}] 启动时立即入场失败: {e}")
+
         logger.info(f"策略 {self.strategy_id} [{self.symbol}] 已启动")
 
     async def stop(self, cancel_orders: bool = True):
