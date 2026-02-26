@@ -83,6 +83,7 @@ class TrendFollowStrategy(StrategyBase):
         self._in_position: bool = False
         self._entry_price:  float = 0.0
         self._position_qty: float = 0.0   # 持仓数量（合约张数 or 币数）
+        self._open_time:    float = 0.0   # 开仓时间（unix 秒），用于最短持仓保护
 
         # K 线周期追踪（毫秒级时间戳，以 15min 对齐）
         self._last_kline_period: int = 0
@@ -173,6 +174,11 @@ class TrendFollowStrategy(StrategyBase):
                         await self._open_position(price)
             except Exception as e:
                 logger.warning(f"[{self.symbol}] 启动时立即入场失败: {e}")
+
+        # ── Fix: 将 _last_kline_period 初始化为当前周期，避免首次 tick 立即触发信号 ──
+        now_ms = int(time.time() * 1000)
+        period_ms = 15 * 60 * 1000
+        self._last_kline_period = (now_ms // period_ms) * period_ms
 
         logger.info(f"策略 {self.strategy_id} [{self.symbol}] 已启动")
 
@@ -318,7 +324,15 @@ class TrendFollowStrategy(StrategyBase):
             await self._open_position(current_price)
 
         elif death and self._in_position:
-            await self._close_position(reason="death_cross")
+            # Fix: 至少持有一根完整 15m K 线后才允许死叉平仓，防止开仓几秒后被信号抖动立即平仓
+            min_hold_sec = 15 * 60
+            held_sec = time.time() - self._open_time
+            if held_sec < min_hold_sec:
+                logger.info(
+                    f"[{self.symbol}] 死叉信号，但持仓时间仅 {held_sec:.0f}s < {min_hold_sec}s，跳过"
+                )
+            else:
+                await self._close_position(reason="death_cross")
 
     # ═══════════════════════════════════════════════════════════
     # EMA 计算
@@ -421,6 +435,7 @@ class TrendFollowStrategy(StrategyBase):
             )
             if order:
                 self._in_position = True
+                self._open_time = time.time()
                 # 使用实际成交均价（place_order_with_retry 已查询订单详情）
                 avg_px = order.get("avgPx") or order.get("fillPx")
                 self._entry_price = float(avg_px) if avg_px and float(avg_px) > 0 else price
@@ -437,9 +452,18 @@ class TrendFollowStrategy(StrategyBase):
         """平多仓（市价）"""
         if not self._in_position or self._position_qty <= 0:
             return
+
+        # Fix: 在第一个 await 之前立即清除持仓标志，彻底防止并发重复平仓
+        # 若后续下单失败则在 except 里恢复
+        saved_entry = self._entry_price
+        saved_qty   = self._position_qty
+        self._in_position  = False
+        self._entry_price  = 0.0
+        self._position_qty = 0.0
+
         try:
             # 查询实际持仓数量（防止因其他原因数量变化）
-            qty = self._position_qty
+            qty = saved_qty
             try:
                 positions = await self.exchange.get_positions()
                 for pos in positions:
@@ -455,10 +479,9 @@ class TrendFollowStrategy(StrategyBase):
                 order_type="market",
             )
             if order:
-                close_price = float(order.get("avgPx") or order.get("fillPx") or
-                                    self._entry_price)
+                close_price = float(order.get("avgPx") or order.get("fillPx") or saved_entry)
                 ct_val = self._ct_val if self._is_swap else 1.0
-                pnl = (close_price - self._entry_price) * qty * ct_val
+                pnl = (close_price - saved_entry) * qty * ct_val
                 self._sell_count += 1
 
                 # 更新统计
@@ -471,13 +494,19 @@ class TrendFollowStrategy(StrategyBase):
 
                 logger.info(
                     f"[{self.symbol}] 平多({reason}) qty={qty:.6f} "
-                    f"entry={self._entry_price:.2f} close={close_price:.2f} "
+                    f"entry={saved_entry:.2f} close={close_price:.2f} "
                     f"pnl={pnl:+.4f} 累计={self.realized_pnl:+.4f}"
                 )
-
-            self._in_position = False
-            self._entry_price = 0.0
-            self._position_qty = 0.0
+            else:
+                # 下单失败，恢复持仓状态
+                logger.error(f"[{self.symbol}] 平仓下单失败，恢复持仓状态")
+                self._in_position  = True
+                self._entry_price  = saved_entry
+                self._position_qty = saved_qty
 
         except Exception as e:
             logger.error(f"[{self.symbol}] 平多失败: {e}")
+            # 异常时恢复持仓状态，避免持仓丢失
+            self._in_position  = True
+            self._entry_price  = saved_entry
+            self._position_qty = saved_qty
