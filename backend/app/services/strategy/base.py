@@ -298,12 +298,30 @@ class StrategyBase(ABC):
                     pos_side=pos_side
                 )
 
-                logger.info(f"订单创建成功: {order.get('order_id')}")
+                order_id = order.get("ordId")
+                logger.info(f"订单创建成功: ordId={order_id}")
+
+                # 市价单会立即成交，延迟查询完整订单信息（含 state/avgPx/accFillSz）
+                order_detail = order
+                if order_type == "market" and order_id:
+                    try:
+                        await asyncio.sleep(0.8)
+                        order_detail = await self.exchange.get_order(
+                            symbol=self.symbol,
+                            order_id=order_id
+                        )
+                        logger.info(
+                            f"订单详情: state={order_detail.get('state')} "
+                            f"avgPx={order_detail.get('avgPx')} "
+                            f"accFillSz={order_detail.get('accFillSz')}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"查询订单详情失败，使用原始数据: {e}")
 
                 # 保存订单到数据库
-                await self._save_order_to_db(order, side, order_type, price, amount)
+                await self._save_order_to_db(order_detail, side, order_type, price, amount)
 
-                return order
+                return order_detail
 
             except Exception as e:
                 last_error = e
