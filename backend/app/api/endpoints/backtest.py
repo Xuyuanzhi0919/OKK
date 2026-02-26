@@ -7,14 +7,27 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from datetime import datetime
 
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.core.config import settings
+from loguru import logger
 from app.services.exchange.okx import OKXExchange
 from app.services.backtest import KlineService
 from app.services.backtest.backtest_service import BacktestService
 from app.models import Backtest
 
 router = APIRouter()
+
+
+async def _run_backtest_bg(backtest_id: int):
+    """后台回测任务 - 使用独立DB会话，避免请求会话在任务完成前关闭"""
+    db = SessionLocal()
+    try:
+        service = BacktestService(db=db)
+        await service.run_backtest(backtest_id)
+    except Exception as e:
+        logger.error(f"后台回测任务异常: backtest_id={backtest_id}, error={e}")
+    finally:
+        db.close()
 
 
 # ==================== Pydantic 模型 ====================
@@ -456,8 +469,8 @@ async def create_and_run_backtest(
             description=request.description
         )
 
-        # 在后台执行回测
-        background_tasks.add_task(backtest_service.run_backtest, backtest.id)
+        # 在后台执行回测（使用独立会话，避免请求会话提前关闭）
+        background_tasks.add_task(_run_backtest_bg, backtest.id)
 
         return backtest
 

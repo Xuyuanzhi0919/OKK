@@ -23,28 +23,29 @@ interface StrategyCreateModalProps {
 }
 
 // 策略类型（与后端 StrategyType 保持一致）
+// 注意：所有策略类型目前都未实现，创建后无法启动
 const STRATEGY_TYPES = [
   {
     group: '网格策略',
     items: [
-      { value: 'grid', label: '网格策略', desc: '在价格区间内自动低买高卖，适合震荡行情' },
+      { value: 'grid', label: '网格策略', desc: '在价格区间内自动低买高卖，适合震荡行情（开发中）', disabled: true },
     ],
   },
   {
     group: '波段策略',
     items: [
-      { value: 'swing_long', label: '波段做多', desc: '基于技术指标的波段做多策略' },
-      { value: 'swing_short', label: '波段做空', desc: '基于技术指标的波段做空策略' },
-      { value: 'ai_swing_long', label: 'AI波段做多', desc: 'AI增强的波段做多策略' },
+      { value: 'swing_long', label: '波段做多', desc: '基于技术指标的波段做多策略（开发中）', disabled: true },
+      { value: 'swing_short', label: '波段做空', desc: '基于技术指标的波段做空策略（开发中）', disabled: true },
+      { value: 'ai_swing_long', label: 'AI波段做多', desc: 'AI增强的波段做多策略（开发中）', disabled: true },
     ],
   },
   {
     group: '其他策略',
     items: [
-      { value: 'martin', label: '马丁格尔', desc: '亏损后加倍仓位的策略' },
-      { value: 'trend', label: '趋势跟踪', desc: '追踪市场趋势进行交易' },
-      { value: 'arbitrage', label: '套利', desc: '利用价格差异进行套利' },
-      { value: 'custom', label: '自定义', desc: '用户自定义策略' },
+      { value: 'martin', label: '马丁格尔', desc: '亏损后加倍仓位的策略（开发中）', disabled: true },
+      { value: 'trend', label: '趋势跟踪', desc: '追踪市场趋势进行交易（开发中）', disabled: true },
+      { value: 'arbitrage', label: '套利', desc: '利用价格差异进行套利（开发中）', disabled: true },
+      { value: 'custom', label: '自定义', desc: '用户自定义策略（开发中）', disabled: true },
     ],
   },
 ]

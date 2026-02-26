@@ -68,6 +68,7 @@ const BacktestList = () => {
   const queryClient = useQueryClient()
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [form] = Form.useForm<CreateBacktestFormData>()
+  const [confirmValues, setConfirmValues] = useState<Partial<CreateBacktestFormData>>({})
   const [strategyType, setStrategyType] = useState<string>('grid')
   const [gridCalculations, setGridCalculations] = useState<{
     gridSpacing: number
@@ -713,6 +714,10 @@ const BacktestList = () => {
           } else if (strategyType === 'grid_mm') {
             await form.validateFields(['grid_spread', 'grid_levels', 'amount_per_grid', 'fee_rate'])
           }
+        }
+        if (step === 2) {
+          // 进入确认步骤前快照当前表单值（避免在 JSX 中直接调用 form.getFieldsValue 触发警告）
+          setConfirmValues(form.getFieldsValue())
         }
         setCurrentStep(step)
       } catch (error) {
@@ -1615,7 +1620,7 @@ const BacktestList = () => {
               />
 
               {(() => {
-                const values = form.getFieldsValue()
+                const values = confirmValues
                 const getStrategyName = (type: string) => {
                   const names: Record<string, string> = {
                     'grid': '网格策略',

@@ -224,7 +224,6 @@ const StrategyList = () => {
     [StrategyStatus.PAUSED]: 'orange',
     [StrategyStatus.ERROR]: 'red',
   }
-
   const statusTextMap: Record<string, string> = {
     [StrategyStatus.RUNNING]: 'RUNNING',
     [StrategyStatus.STOPPED]: 'STOPPED',
@@ -234,30 +233,30 @@ const StrategyList = () => {
 
   const columns: ColumnsType<Strategy> = [
     {
-      title: t('strategy.name'),
+      title: '名称',
       dataIndex: 'name',
       key: 'name',
       width: 180,
       render: (text) => <span style={{ fontWeight: 600 }}>{text}</span>,
     },
     {
-      title: t('strategy.type'),
+      title: '类型',
       dataIndex: 'type',
       key: 'type',
-      width: 120,
+      width: 100,
       render: (type) => <Tag>{String(type).toUpperCase()}</Tag>,
     },
     {
-      title: t('strategy.symbol'),
+      title: '交易对',
       dataIndex: 'symbol',
       key: 'symbol',
       width: 130,
     },
     {
-      title: t('strategy.status'),
+      title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: 90,
       render: (status) => (
         <Tag color={statusColorMap[status] || 'default'}>
           {statusTextMap[status] || status}
@@ -265,10 +264,10 @@ const StrategyList = () => {
       ),
     },
     {
-      title: t('strategy.totalProfit'),
+      title: '总盈亏',
       dataIndex: 'total_profit',
       key: 'total_profit',
-      width: 120,
+      width: 110,
       align: 'right',
       render: (profit) => {
         const value = profit || 0
@@ -281,18 +280,18 @@ const StrategyList = () => {
       },
     },
     {
-      title: t('strategy.totalTrades'),
+      title: '总交易',
       dataIndex: 'total_trades',
       key: 'total_trades',
-      width: 100,
+      width: 80,
       align: 'right',
       render: (trades) => trades || 0,
     },
     {
-      title: t('strategy.winRate'),
+      title: '胜率',
       dataIndex: 'win_rate',
       key: 'win_rate',
-      width: 90,
+      width: 70,
       align: 'right',
       render: (rate) => {
         const value = rate || 0
@@ -301,7 +300,7 @@ const StrategyList = () => {
       },
     },
     {
-      title: t('common.actions'),
+      title: '操作',
       key: 'actions',
       width: 280,
       fixed: 'right',
