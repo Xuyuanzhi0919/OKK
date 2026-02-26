@@ -100,18 +100,23 @@ async def list_positions(
             upl_ratio = safe_float(pos.get('uplRatio', 0))
             margin = safe_float(pos.get('margin', 0))
             liq_px = safe_float(pos.get('liqPx', 0))
+            # notionalUsd: OKX 已按合约面值算好的名义价值（USD），SWAP 张数≠币数，
+            # 前端必须用此值，否则直接 size×price 会差一个合约面值倍数
+            notional_usd = safe_float(pos.get('notionalUsd', 0))
 
             result.append({
                 "id": idx + 1,
                 "strategy_id": None,
                 "strategy_name": None,
                 "symbol": pos.get('instId', ''),
+                "inst_type": pos.get('instType', 'SWAP'),
                 "side": "long" if pos_size > 0 else "short",
                 "size": abs(pos_size),
                 "avg_price": avg_px,
                 "current_price": mark_px,
                 "unrealized_pnl": upl,
                 "unrealized_pnl_pct": upl_ratio * 100,
+                "notional_usd": notional_usd if notional_usd > 0 else None,
                 "margin": margin,
                 "liquidation_price": liq_px if liq_px > 0 else None,
                 "created_at": pos.get('cTime', ''),
