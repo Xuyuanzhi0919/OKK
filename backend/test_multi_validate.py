@@ -158,7 +158,7 @@ async def fetch_klines_for_symbol(symbol: str, interval: str, days: int):
         db.close()
 
 
-def run_backtest_for_config(symbol: str, interval: str, days: int, leverage: int = 3):
+def run_backtest_for_config(symbol: str, interval: str, days: int, leverage: int = 1):
     """运行单个配置的回测"""
     db = SessionLocal()
     try:
@@ -183,8 +183,9 @@ def run_backtest_for_config(symbol: str, interval: str, days: int, leverage: int
         
         initial_capital = 10000
         position_ratio = 0.4
-        amount_per_trade = (initial_capital * position_ratio * leverage) / first_price
-        
+        # buy() 是现货逻辑，不支持杠杆，直接用资金比例计算仓位
+        amount_per_trade = (initial_capital * position_ratio) / first_price
+
         # 使用优化后的参数
         engine = TrendFollowEngine(
             symbol=symbol,
@@ -193,7 +194,7 @@ def run_backtest_for_config(symbol: str, interval: str, days: int, leverage: int
             slow_period=30,
             amount_per_trade=amount_per_trade,
             fee_rate=0.0005,
-            leverage=leverage,
+            leverage=1,
             stop_loss_percent=0.01,
             take_profit_percent=0.05,
         )
