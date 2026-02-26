@@ -22,6 +22,8 @@ from loguru import logger
 
 from app.services.strategy.base import StrategyBase
 from app.services.notification import notification_service
+from app.core.database import SessionLocal
+from app.models.strategy import Strategy as DBStrategy
 
 
 # ── 最优超参数（不可随意修改，来自回测验证） ─────────────────────────
@@ -116,10 +118,35 @@ class TrendFollowStrategy(StrategyBase):
 
     async def start(self):
         self.is_running = True
+        self._last_kline_period = 0
+
+        # ── 从数据库恢复持仓状态（防止重启后持仓信息丢失）────────────
         self._in_position = False
         self._entry_price = 0.0
         self._position_qty = 0.0
-        self._last_kline_period = 0
+        self._open_time = 0.0
+        self._highest_price = 0.0
+        self._trail_stop_px = 0.0
+
+        try:
+            _db = SessionLocal()
+            try:
+                db_s = _db.query(DBStrategy).filter(DBStrategy.id == self.strategy_id).first()
+                if db_s and db_s.position_in_position:
+                    self._in_position     = True
+                    self._entry_price     = float(db_s.position_entry_price or 0)
+                    self._position_qty    = float(db_s.position_qty or 0)
+                    self._open_time       = float(db_s.position_open_time or 0)
+                    self._highest_price   = float(db_s.position_highest_price or self._entry_price)
+                    self._trail_stop_px   = float(db_s.position_trail_stop_px or 0)
+                    logger.warning(
+                        f"[{self.symbol}] 🔄 重启后恢复持仓: qty={self._position_qty} "
+                        f"entry={self._entry_price:.2f} highest={self._highest_price:.2f}"
+                    )
+            finally:
+                _db.close()
+        except Exception as e:
+            logger.warning(f"[{self.symbol}] 从数据库恢复持仓状态失败，视为无持仓: {e}")
 
         # 获取合约规格（SWAP/FUTURES 需要知道合约面值和最小手数）
         if self._is_swap:
@@ -157,6 +184,7 @@ class TrendFollowStrategy(StrategyBase):
 
         # 立即入场：如果 fast > slow（当前处于上升趋势），直接开多
         # 避免启动后要等下一次金叉才能入场，错过已有趋势
+        # 注意：如果重启后已恢复持仓，跳过自动开仓
         if (self._fast_curr is not None and
                 self._slow_curr is not None and
                 self._fast_curr > self._slow_curr and
