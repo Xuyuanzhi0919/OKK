@@ -28,8 +28,26 @@ router = APIRouter()
 
 
 # 临时：获取当前用户ID（后续需要实现认证）
-def get_current_user_id() -> int:
-    """获取当前用户ID（临时实现）"""
+def get_current_user_id(db: Session = Depends(get_db)) -> int:
+    """获取当前用户ID（临时实现，自动创建默认用户）"""
+    from app.models.user import User
+    
+    # 检查用户ID=1是否存在
+    user = db.query(User).filter(User.id == 1).first()
+    if not user:
+        # 自动创建默认用户
+        user = User(
+            id=1,
+            username="default",
+            email="default@example.com",
+            hashed_password="$2b$12$dummy_hashed_password_not_for_login",
+            is_active=True,
+            is_superuser=False
+        )
+        db.add(user)
+        db.commit()
+        logger.info("自动创建默认用户 id=1")
+    
     return 1  # TODO: 实现真实的用户认证
 
 

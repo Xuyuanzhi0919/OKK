@@ -143,13 +143,14 @@ class BacktestEngine:
         position_before = self.position.amount
         capital_before = self.capital
 
-        # 更新持仓（加权平均成本）
+        # 更新持仓（加权平均成本，含手续费）
         if self.position.amount > 0:
             total_amount = self.position.amount + amount
-            total_cost_basis = (self.position.avg_price * self.position.amount) + cost
+            total_cost_basis = (self.position.avg_price * self.position.amount) + cost + fee
             self.position.avg_price = total_cost_basis / total_amount
         else:
-            self.position.avg_price = price
+            # 含买入手续费的完整成本均价
+            self.position.avg_price = price * (1 + self.fee_rate)
 
         self.position.amount += amount
 
@@ -573,6 +574,17 @@ class BacktestEngine:
         # 最终进度
         if progress_callback:
             progress_callback(total_klines, total_klines)
+
+        # 强制平掉期末持仓，确保所有盈亏都体现在交易记录中
+        if klines and self.position.amount != 0:
+            final_price = float(klines[-1]['close'])
+            final_ts = int(klines[-1]['timestamp'])
+            if self.position.amount > 0:
+                logger.info(f"回测结束，强制平多仓: {self.position.amount:.8f} @ {final_price:.2f}")
+                self.sell(final_price, self.position.amount, final_ts)
+            elif self.position.amount < 0:
+                logger.info(f"回测结束，强制平空仓: {abs(self.position.amount):.8f} @ {final_price:.2f}")
+                self.cover(final_price, abs(self.position.amount), final_ts)
 
         # 计算最终权益
         if klines:
