@@ -205,7 +205,7 @@ class TrendFollowStrategy(StrategyBase):
 
         # 取倒数第 2 根（最后一根可能未完成）
         confirmed = klines[:-1]
-        closes = [float(k["close"]) for k in confirmed]
+        closes = [float(k["c"]) for k in confirmed]
 
         self._update_ema_from_closes(closes)
 
@@ -222,7 +222,7 @@ class TrendFollowStrategy(StrategyBase):
                  self._fast_prev >= self._slow_prev and
                  self._fast_curr < self._slow_curr)
 
-        current_price = float(klines[-1]["close"])
+        current_price = float(klines[-1]["c"])
 
         if golden and not self._in_position:
             if self.use_rsi and self._rsi(closes) >= self.rsi_threshold:
@@ -266,7 +266,7 @@ class TrendFollowStrategy(StrategyBase):
         try:
             klines = await self.exchange.get_kline(self.symbol, _TIMEFRAME, _KLINE_LIMIT)
             if klines and len(klines) >= self.slow_period + 2:
-                closes = [float(k["close"]) for k in klines[:-1]]
+                closes = [float(k["c"]) for k in klines[:-1]]
                 self._update_ema_from_closes(closes)
                 logger.info(
                     f"[{self.symbol}] EMA 预热完成: fast={self._fast_curr:.2f} slow={self._slow_curr:.2f}"
