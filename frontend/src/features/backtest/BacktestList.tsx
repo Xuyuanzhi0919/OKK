@@ -1150,11 +1150,14 @@ const BacktestList = () => {
               >
                 <Select
                   showSearch
-                  placeholder="请选择交易对"
+                  placeholder="选择或输入交易对(如BTC-USDT)"
                   filterOption={(input, option) =>
-                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
-                  options={(availableSymbols || ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT']).map(sym => ({
+                  options={(availableSymbols && availableSymbols.length > 0
+                    ? availableSymbols
+                    : ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT', 'XRP-USDT', 'DOGE-USDT', 'ADA-USDT', 'AVAX-USDT', 'LINK-USDT', 'DOT-USDT', 'MATIC-USDT', 'UNI-USDT', 'LTC-USDT', 'ATOM-USDT', 'ETC-USDT', 'FIL-USDT', 'ARB-USDT', 'OP-USDT', 'APT-USDT', 'NEAR-USDT']
+                  ).map(sym => ({
                     label: sym,
                     value: sym
                   }))}
