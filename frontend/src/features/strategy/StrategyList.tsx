@@ -69,7 +69,7 @@ const CREATE_MENU_ITEMS = [
 
 const StrategyList = () => {
   const { t } = useTranslation()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const [strategies, setStrategies] = useState<Strategy[]>([])
   const [loading, setLoading] = useState(false)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
@@ -153,7 +153,7 @@ const StrategyList = () => {
 
   // 停止策略
   const handleStopStrategy = (id: number, name: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: '停止策略',
       icon: <AlertCircle size={24} />,
       content: <p>确定要停止策略 <strong>{name}</strong> 吗？</p>,
@@ -176,7 +176,7 @@ const StrategyList = () => {
 
   // 删除策略
   const handleDeleteStrategy = (id: number, name: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: '删除策略',
       icon: <AlertCircle size={24} />,
       content: <p>确定要删除策略 <strong>{name}</strong> 吗？此操作不可恢复。</p>,

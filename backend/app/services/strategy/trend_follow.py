@@ -152,6 +152,33 @@ class TrendFollowStrategy(StrategyBase):
             self._last_kline_period = current_period
             await self._process_kline_signal()
 
+    async def calculate_pnl(self) -> Dict:
+        """
+        返回当前盈亏统计，供 /api/v1/strategies/{id}/pnl 接口调用。
+        """
+        unrealized = 0.0
+        try:
+            if self._in_position and self._entry_price > 0 and self._position_qty > 0:
+                ticker = await self.exchange.get_ticker(self.symbol)
+                current_price = float(ticker.get("last", 0))
+                if current_price > 0:
+                    unrealized = (current_price - self._entry_price) * self._position_qty
+        except Exception as e:
+            logger.warning(f"[{self.symbol}] 计算未实现盈亏失败: {e}")
+
+        return {
+            "total_pnl":      round(self.realized_pnl + unrealized, 4),
+            "realized_pnl":   round(self.realized_pnl, 4),
+            "unrealized_pnl": round(unrealized, 4),
+            "total_fee":      0,
+            "pnl_rate":       0,
+            "buy_count":      self.total_trades,
+            "sell_count":     self.total_trades,
+            "win_rate":       round(self.win_rate, 1),
+            "in_position":    self._in_position,
+            "entry_price":    self._entry_price,
+        }
+
     async def on_kline(self, kline: Dict):
         """K 线推送回调（当前架构未使用，保留接口兼容）"""
         pass
