@@ -274,75 +274,11 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
     </>
   )
 
-  const GridMMParams = () => (
+  // 波段策略参数
+  const SwingParams = () => (
     <>
-      <Divider orientation="left" style={compactDivider}>网格做市参数</Divider>
+      <Divider orientation="left" style={compactDivider}>波段参数</Divider>
       <Row gutter={12}>
-        <Col span={12}>
-          <Form.Item name="grid_spread" label="网格间距 (%)" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="0.1 ~ 10" min={0.1} max={10} step={0.1} precision={2} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="grid_levels" label="每侧层数" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="1 ~ 20" min={1} max={20} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="amount_per_grid" label="每格投入 (USDT)" rules={[{ required: true, message: '请输入' }]} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} min={1} precision={2} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="total_amount" label="总投入 (USDT)" style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="可选" min={10} precision={2} />
-          </Form.Item>
-        </Col>
-      </Row>
-    </>
-  )
-
-  const MAParams = () => (
-    <>
-      <Divider orientation="left" style={compactDivider}>均线参数</Divider>
-      <Row gutter={12}>
-        <Col span={12}>
-          <Form.Item name="fast_period" label="快速均线周期" initialValue={5} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} min={1} max={100} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="slow_period" label="慢速均线周期" initialValue={20} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} min={1} max={200} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="ma_type" label="均线类型" initialValue="EMA" style={compactItem}>
-            <Select>
-              <Select.Option value="EMA">EMA（指数移动平均）</Select.Option>
-              <Select.Option value="SMA">SMA（简单移动平均）</Select.Option>
-            </Select>
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="amount_per_trade" label="每次交易数量" initialValue={0.01} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} placeholder="单位：币" min={0.001} precision={4} />
-          </Form.Item>
-        </Col>
-      </Row>
-    </>
-  )
-
-  const DualMAParams = () => (
-    <>
-      <MAParams />
-      <Divider orientation="left" style={compactDivider}>多空参数</Divider>
-      <Row gutter={12}>
-        <Col span={12}>
-          <Form.Item name="position_ratio" label="仓位比例" initialValue={0.5} style={compactItem}>
-            <InputNumber style={{ width: '100%' }} min={0.1} max={1} step={0.1} precision={1} />
-          </Form.Item>
-        </Col>
         <Col span={12}>
           <Form.Item name="leverage" label="杠杆倍数" initialValue={1} style={compactItem}>
             <InputNumber style={{ width: '100%' }} min={1} max={20} />
@@ -358,12 +294,52 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
             <InputNumber style={{ width: '100%' }} placeholder="可选" min={0} max={200} />
           </Form.Item>
         </Col>
+      </Row>
+    </>
+  )
+
+  // 马丁格尔策略参数
+  const MartinParams = () => (
+    <>
+      <Divider orientation="left" style={compactDivider}>马丁格尔参数</Divider>
+      <Row gutter={12}>
         <Col span={12}>
-          <Form.Item name="enable_short" label="启用做空" initialValue={false} style={compactItem}>
-            <Select>
-              <Select.Option value={false}>否</Select.Option>
-              <Select.Option value={true}>是</Select.Option>
-            </Select>
+          <Form.Item name="initial_amount" label="初始仓位" initialValue={0.01} style={compactItem}>
+            <InputNumber style={{ width: '100%' }} placeholder="单位：币" min={0.001} precision={4} />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name="multiplier" label="倍数" initialValue={2} style={compactItem}>
+            <InputNumber style={{ width: '100%' }} min={1.5} max={5} step={0.5} precision={1} />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name="max_levels" label="最大层数" initialValue={5} style={compactItem}>
+            <InputNumber style={{ width: '100%' }} min={1} max={10} />
+          </Form.Item>
+        </Col>
+      </Row>
+    </>
+  )
+
+  // 趋势跟踪策略参数
+  const TrendParams = () => (
+    <>
+      <Divider orientation="left" style={compactDivider}>趋势跟踪参数</Divider>
+      <Row gutter={12}>
+        <Col span={12}>
+          <Form.Item name="fast_period" label="快速均线周期" initialValue={5} style={compactItem}>
+            <InputNumber style={{ width: '100%' }} min={1} max={100} />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name="slow_period" label="慢速均线周期" initialValue={20} style={compactItem}>
+            <InputNumber style={{ width: '100%' }} min={1} max={200} />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name="amount_per_trade" label="每次交易数量" initialValue={0.01} style={compactItem}>
+            <InputNumber style={{ width: '100%' }} placeholder="单位：币" min={0.001} precision={4} />
           </Form.Item>
         </Col>
       </Row>
@@ -372,11 +348,13 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
 
   const renderParams = () => {
     switch (strategyType) {
-      case 'grid':        return <GridParams />
-      case 'grid_mm':     return <GridMMParams />
-      case 'ma_cross':    return <MAParams />
-      case 'dual_ma_cross': return <DualMAParams />
-      default:            return null
+      case 'grid':          return <GridParams />
+      case 'swing_long':    return <SwingParams />
+      case 'swing_short':   return <SwingParams />
+      case 'ai_swing_long': return <SwingParams />
+      case 'martin':        return <MartinParams />
+      case 'trend':         return <TrendParams />
+      default:              return null
     }
   }
 
