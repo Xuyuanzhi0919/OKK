@@ -38,15 +38,31 @@ interface FetchKlineResponse {
   skipped: number
 }
 
+// 默认交易对：合约（SWAP）优先，后接现货（SPOT）
+const DEFAULT_SYMBOLS = [
+  // ── 合约（USDT 本位永续）──
+  'BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP',
+  'XRP-USDT-SWAP', 'DOGE-USDT-SWAP', 'ADA-USDT-SWAP', 'AVAX-USDT-SWAP',
+  'LINK-USDT-SWAP', 'DOT-USDT-SWAP', 'LTC-USDT-SWAP', 'ATOM-USDT-SWAP',
+  'ETC-USDT-SWAP', 'ARB-USDT-SWAP', 'OP-USDT-SWAP', 'APT-USDT-SWAP',
+  'NEAR-USDT-SWAP', 'SUI-USDT-SWAP', 'TRX-USDT-SWAP', 'KSM-USDT-SWAP',
+  'INJ-USDT-SWAP', 'SEI-USDT-SWAP', 'ORDI-USDT-SWAP', 'WLD-USDT-SWAP',
+  'PEPE-USDT-SWAP', 'SHIB-USDT-SWAP',
+  // ── 现货（SPOT）──
+  'BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT', 'XRP-USDT',
+  'DOGE-USDT', 'ADA-USDT', 'AVAX-USDT', 'LINK-USDT', 'DOT-USDT',
+  'LTC-USDT', 'ATOM-USDT', 'ETC-USDT', 'ARB-USDT', 'OP-USDT',
+  'APT-USDT', 'NEAR-USDT', 'KSM-USDT', 'INJ-USDT', 'PEPE-USDT',
+]
+
 const KlineManager = () => {
   const { modal, message: messageApi } = App.useApp()
   const [fetchModalOpen, setFetchModalOpen] = useState(false)
   const [form] = Form.useForm<FetchKlineFormData>()
   const [dataRanges, setDataRanges] = useState<DataRange[]>([])
   const [loadingRanges, setLoadingRanges] = useState(false)
+  const [selectSymbols, setSelectSymbols] = useState<string[]>(DEFAULT_SYMBOLS)
 
-  // 常用交易对和周期配置
-  const commonSymbols = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'BNB-USDT']
   const intervals = [
     { value: '1m', label: '1分钟' },
     { value: '5m', label: '5分钟' },
@@ -57,31 +73,42 @@ const KlineManager = () => {
     { value: '1D', label: '1天' },
   ]
 
-  // 加载数据范围
+  // 加载数据范围：先从 API 拿到 DB 中实际有数据的交易对，再查每个的范围
   const loadDataRanges = async () => {
     setLoadingRanges(true)
     const ranges: DataRange[] = []
 
     try {
-      for (const symbol of commonSymbols) {
+      // 1. 获取 DB 中实际有 K 线数据的交易对
+      let actualSymbols: string[] = []
+      try {
+        const symRes = await fetch(BACKTEST_API.symbols)
+        if (symRes.ok) {
+          const dbSymbols: string[] = await symRes.json()
+          actualSymbols = dbSymbols
+          // 更新下拉框：DB 已有数据的排前面，再追加默认列表
+          setSelectSymbols([...new Set([...dbSymbols, ...DEFAULT_SYMBOLS])])
+        }
+      } catch {}
+
+      // 2. 仅对 DB 中有数据的交易对发送范围查询（避免无效请求）
+      for (const symbol of actualSymbols) {
         for (const interval of intervals) {
           try {
             const params = new URLSearchParams({ symbol, interval: interval.value })
             const response = await fetch(`${BACKTEST_API.klines.range}?${params}`)
             if (response.ok) {
               const data = await response.json()
-              if (data) {
+              if (data && data.count > 0) {
                 ranges.push({ symbol, interval: interval.value, ...data })
               }
             }
-          } catch (e) {
-            // 忽略单个请求的错误
-          }
+          } catch {}
         }
       }
 
       setDataRanges(ranges)
-    } catch (e) {
+    } catch {
       messageApi.error('加载数据范围失败')
     } finally {
       setLoadingRanges(false)
@@ -218,7 +245,7 @@ const KlineManager = () => {
     const endTime = dayjs().subtract(2, 'hour')
     const startTime = endTime.subtract(7, 'days')
     form.setFieldsValue({
-      symbol: 'BTC-USDT',
+      symbol: 'BTC-USDT-SWAP',
       interval: '1H',
       time_range: [startTime, endTime],
     })
@@ -359,20 +386,34 @@ const KlineManager = () => {
             form={form}
             layout="vertical"
             initialValues={{
-              symbol: 'BTC-USDT',
+              symbol: 'BTC-USDT-SWAP',
               interval: '1H',
             }}
           >
             <Form.Item
               name="symbol"
               label="交易对"
-              rules={[{ required: true, message: '请输入交易对' }]}
+              rules={[{ required: true, message: '请选择交易对' }]}
             >
               <Select
-                placeholder="选择或输入交易对"
+                placeholder="选择或搜索交易对，如 BTC-USDT-SWAP"
                 showSearch
-                options={commonSymbols.map((s) => ({ label: s, value: s }))}
-              />
+                allowClear
+                filterOption={(input, option) =>
+                  String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+              >
+                <Select.OptGroup label="合约（SWAP）">
+                  {selectSymbols.filter(s => s.endsWith('-SWAP')).map(s => (
+                    <Select.Option key={s} value={s}>{s}</Select.Option>
+                  ))}
+                </Select.OptGroup>
+                <Select.OptGroup label="现货（SPOT）">
+                  {selectSymbols.filter(s => !s.endsWith('-SWAP')).map(s => (
+                    <Select.Option key={s} value={s}>{s}</Select.Option>
+                  ))}
+                </Select.OptGroup>
+              </Select>
             </Form.Item>
 
             <Form.Item name="interval" label="K线周期" rules={[{ required: true }]}>
