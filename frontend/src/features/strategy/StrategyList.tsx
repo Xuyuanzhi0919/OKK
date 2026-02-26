@@ -345,7 +345,7 @@ const StrategyList = () => {
             icon={<Eye size={14} />}
             onClick={() => handleViewDetail(record)}
           >
-            {t('common.detail')}
+            详情
           </Button>
           <Button
             type="text"
@@ -353,7 +353,7 @@ const StrategyList = () => {
             icon={<BarChart3 size={14} />}
             onClick={() => handleViewPerformance(record)}
           >
-            {t('strategy.performance')}
+            表现
           </Button>
           {record.status !== StrategyStatus.RUNNING && (
             <>
