@@ -515,7 +515,8 @@ class DualSideStrategy(StrategyBase):
                 symbol=self.symbol,
                 side=order_side,
                 order_type="market",
-                size=qty,
+                amount=qty,
+                td_mode="isolated",
                 pos_side=pos_side,
             )
 
@@ -575,7 +576,8 @@ class DualSideStrategy(StrategyBase):
                 symbol=self.symbol,
                 side=order_side,
                 order_type="market",
-                size=self._position_qty,
+                amount=self._position_qty,
+                td_mode="isolated",
                 pos_side=pos_side,
                 reduce_only=True,
             )
