@@ -260,12 +260,26 @@ class DualSideStrategy(StrategyBase):
         except Exception as e:
             logger.warning(f"[{self.symbol}] 获取合约规格失败: {e}")
 
+        # 设置双向持仓模式（开平仓模式）
+        try:
+            await self.exchange.set_position_mode("long_short_mode")
+            logger.info(f"[{self.symbol}] 持仓模式已设置为双向持仓 (long_short_mode)")
+        except Exception as e:
+            logger.warning(f"[{self.symbol}] 设置持仓模式失败(可能已是双向模式): {e}")
+
         # 设置杠杆
         try:
             await self.exchange.set_leverage(
                 lever=str(self.leverage),
                 mgn_mode=self.margin_mode,
                 inst_id=self.symbol,
+                pos_side="long",
+            )
+            await self.exchange.set_leverage(
+                lever=str(self.leverage),
+                mgn_mode=self.margin_mode,
+                inst_id=self.symbol,
+                pos_side="short",
             )
             logger.info(f"[{self.symbol}] 杠杆已设置为 {self.leverage}x ({self.margin_mode})")
         except Exception as e:

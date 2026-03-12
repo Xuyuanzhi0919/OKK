@@ -466,6 +466,31 @@ class OKXExchange(ExchangeBase):
 
         return data[0]
 
+    async def set_position_mode(self, pos_mode: str = "long_short_mode") -> Dict:
+        """
+        设置持仓模式
+
+        Args:
+            pos_mode: 持仓模式
+                - long_short_mode: 开平仓模式（双向持仓，支持同时持有多空）
+                - net_mode: 买卖模式（单向持仓，默认）
+
+        Returns:
+            {'posMode': 'long_short_mode'}
+        """
+        response = await self._request(
+            method="POST",
+            endpoint="/api/v5/account/set-position-mode",
+            data={"posMode": pos_mode},
+            auth_required=True
+        )
+
+        if response.get("code") != "0":
+            raise Exception(f"设置持仓模式失败: {response.get('msg')}")
+
+        data = response.get("data", [{}])
+        return data[0] if data else {}
+
     async def create_order(
         self,
         symbol: str,
