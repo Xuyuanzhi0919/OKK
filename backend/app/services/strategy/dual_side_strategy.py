@@ -488,7 +488,8 @@ class DualSideStrategy(StrategyBase):
         try:
             # 获取可用余额
             balance = await self.exchange.get_balance("USDT")
-            available = float(balance.get("available", 0))
+            details = balance.get("details", [])
+            available = float(details[0].get("availBal", 0)) if details else 0.0
             if available <= 0:
                 logger.warning(f"[{self.symbol}] 余额不足，无法开仓")
                 return
