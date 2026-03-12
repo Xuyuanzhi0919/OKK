@@ -93,13 +93,29 @@ class StrategyManager:
                 user_id=user_id,
             )
         elif strategy_type_enum == StrategyType.GRID:
-            raise NotImplementedError("网格策略已移除")
+            from app.services.strategy.grid_strategy import GridStrategy
+            return GridStrategy(
+                strategy_id=strategy_id,
+                exchange=exchange,
+                symbol=symbol,
+                parameters=parameters,
+                user_id=user_id,
+            )
         elif strategy_type_enum == StrategyType.SWING_LONG:
             raise NotImplementedError("波段做多策略已移除")
         elif strategy_type_enum == StrategyType.AI_SWING_LONG:
             raise NotImplementedError("AI波段做多策略已移除")
         elif strategy_type_enum == StrategyType.SWING_SHORT:
             raise NotImplementedError("波段做空策略已移除")
+        elif strategy_type_enum == StrategyType.DUAL_SIDE:
+            from app.services.strategy.dual_side_strategy import DualSideStrategy
+            return DualSideStrategy(
+                strategy_id=strategy_id,
+                exchange=exchange,
+                symbol=symbol,
+                parameters=parameters,
+                user_id=user_id,
+            )
         elif strategy_type_enum == StrategyType.MARTIN:
             raise NotImplementedError("马丁格尔策略尚未实现")
         elif strategy_type_enum == StrategyType.ARBITRAGE:

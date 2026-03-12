@@ -45,6 +45,7 @@ const STRATEGY_TYPE_LABELS: Record<string, string> = {
   ai_swing_long: 'AI波段做多',
   martin: '马丁格尔',
   trend: '趋势跟踪',
+  dual_side: '双向持仓',
   arbitrage: '套利',
   custom: '自定义',
 }
@@ -52,6 +53,8 @@ const STRATEGY_TYPE_LABELS: Record<string, string> = {
 // 可用实盘策略过滤选项
 const STRATEGY_TYPE_OPTIONS: { label: string; value: string }[] = [
   { label: 'EMA趋势跟踪', value: 'trend' },
+  { label: '双向持仓', value: 'dual_side' },
+  { label: '网格交易', value: 'grid' },
 ]
 
 // 状态选项
@@ -65,6 +68,8 @@ const STATUS_OPTIONS = [
 // 创建策略下拉菜单（与 STRATEGY_TYPES 保持一致）
 const CREATE_MENU_ITEMS = [
   { key: 'trend', label: 'EMA 趋势跟踪' },
+  { key: 'dual_side', label: '双向持仓' },
+  { key: 'grid', label: '网格交易' },
 ]
 
 const StrategyList = () => {

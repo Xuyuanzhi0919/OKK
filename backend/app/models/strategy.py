@@ -26,6 +26,7 @@ class StrategyType(str, enum.Enum):
     TREND = "trend"  # 趋势跟踪
     ARBITRAGE = "arbitrage"  # 套利
     ORDER_BOOK_IMBALANCE = "order_book_imbalance"  # 订单簿不平衡高频策略
+    DUAL_SIDE = "dual_side"  # 双向持仓策略（多空双向）
     CUSTOM = "custom"  # 自定义
 
 

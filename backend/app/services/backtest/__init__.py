@@ -5,6 +5,7 @@ from .kline_service import KlineService
 from .backtest_engine import BacktestEngine, Trade, Position
 from .metrics import BacktestMetrics
 from .grid_backtest import GridBacktestEngine, GridMarketMakingBacktest
+from .dual_side_backtest import DualSideBacktestEngine
 
 __all__ = [
     "KlineService",
@@ -14,5 +15,5 @@ __all__ = [
     "BacktestMetrics",
     "GridBacktestEngine",
     "GridMarketMakingBacktest",
-    "OrderBookImbalanceBacktestEngine",
+    "DualSideBacktestEngine",
 ]

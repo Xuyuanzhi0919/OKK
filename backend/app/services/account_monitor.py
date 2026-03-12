@@ -4,6 +4,7 @@
 import asyncio
 from loguru import logger
 from datetime import datetime
+from typing import Optional
 from app.websocket.manager import broadcast_balance_update, broadcast_positions_update
 from app.services.api_config_service import api_config_service
 
@@ -102,7 +103,7 @@ class AccountMonitor:
                 logger.error(f"账户监控循环出错: {e}")
                 await asyncio.sleep(self.interval)
 
-    async def _push_balance_update(self) -> dict | None:
+    async def _push_balance_update(self) -> Optional[dict]:
         """推送余额更新，返回用于快照的核心数据"""
         try:
             exchange = self._get_exchange()

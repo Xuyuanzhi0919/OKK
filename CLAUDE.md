@@ -57,11 +57,12 @@ backend/app/
 
 2. **策略抽象层** (`services/strategy/`)
    - `StrategyBase` 基类定义生命周期：`start()` → `on_tick()` → `on_order_update()` → `stop()`
-   - 已实现策略：
+   - 已实现策略（可用）：
      - `GridStrategy` - 网格策略 (`grid_strategy.py`)
-     - `SwingLongStrategy` - 波段做多策略 (`swing_long_strategy.py`)
-     - `SwingShortStrategy` - 波段做空策略 (`swing_short_strategy.py`)
-     - `AISwingLongStrategy` - AI增强波段策略 (`ai_swing_long_strategy.py`)
+     - `DualSideStrategy` - 双向持仓策略，EMA双均线金叉/死叉信号，支持多空切换，含移动止损 (`dual_side_strategy.py`)
+     - `TrendFollowStrategy` - 趋势跟踪策略 (`trend_follow.py`)
+     - `OrderBookImbalanceStrategy` - 订单簿不平衡高频策略 (`order_book_imbalance.py`)
+   - 已移除策略（manager.py 中 raise NotImplementedError）：`SwingLong`、`SwingShort`、`AISwingLong`
 
 3. **策略管理器** (`services/strategy/manager.py`)
    - 单例模式，管理所有运行中的策略实例
@@ -197,9 +198,12 @@ docker exec -it okk_postgres psql -U okk_user -d okk_quant
 # 运行Alembic迁移
 alembic upgrade head
 
-# 手动运行SQL迁移（按顺序）
+# 手动运行SQL迁移（按顺序执行，当前最新为009）
 psql ... -f migrations/001_create_alerts_table.sql
-psql ... -f migrations/006_add_ioc_post_only_order_types.sql
+# ... 006_add_ioc_post_only_order_types.sql
+# ... 007_add_strategy_position_state.sql
+# ... 008_add_position_side.sql
+psql ... -f migrations/009_add_dual_side_strategy_type.sql
 ```
 
 ### Docker生产部署
@@ -260,8 +264,9 @@ python activate_api_config.py
 3. **回测服务** (`services/backtest/backtest_service.py`):
    - 从数据库查询K线数据（`KlineService`）
    - 根据策略类型创建回测引擎：
-     - `GridBacktestEngine` - 网格策略
-     - `GridMarketMakingBacktest` - 网格做市
+     - `GridBacktestEngine` - 网格策略 (`grid_backtest.py`)
+     - `DualSideBacktestEngine` - 双向持仓策略，支持多空双向，含止损止盈和移动止损统计 (`dual_side_backtest.py`)
+     - `MACrossBacktest` - 均线交叉策略 (`ma_cross_backtest.py`)
    - 调用引擎的 `run(klines, progress_callback)` 方法
    - 计算性能指标（`BacktestMetrics`）：总收益率、年化收益率、最大回撤、夏普比率、胜率、盈亏比
    - 保存结果到 `backtests` 和 `backtest_trades` 表
@@ -355,7 +360,7 @@ OKX_PROXY=http://127.0.0.1:7897         # OKX API在某些地区需要代理
 | 表名 | 说明 |
 |------|------|
 | `users` | 用户表（id, username, hashed_password） |
-| `strategies` | 策略配置（type: grid/swing_long/swing_short/ai_swing_long） |
+| `strategies` | 策略配置（type: grid/dual_side/trend/order_book_imbalance，含 position_side/position_entry_price 等持仓状态字段） |
 | `orders` | 订单记录（含filled_amount, avg_price, fee, realized_pnl） |
 | `backtests` | 回测记录（含equity_curve JSON数组） |
 | `backtest_trades` | 回测交易记录 |
@@ -402,6 +407,8 @@ class MyStrategy(StrategyBase):
 
 在 `services/strategy/manager.py` 的 `create_strategy()` 方法中添加对应分支，并在 `models/strategy.py` 的 `StrategyType` 枚举中添加类型。
 
+**持仓状态持久化（DualSide/Trend类策略必须实现）:** 策略需将持仓状态写入 `strategies` 表的专用字段（`position_side`、`position_entry_price`、`position_qty`、`position_open_time`、`position_highest_price`、`position_trail_stop_px`），并在 `start()` 中从数据库恢复，支持重启后继续运行。
+
 ## API端点开发
 
 1. 在 `backend/app/api/endpoints/` 创建新文件
@@ -423,8 +430,8 @@ class MyStrategy(StrategyBase):
 ## 项目状态
 
 - ✅ 核心架构和OKX API对接完成
-- ✅ 网格、波段做多、波段做空、AI增强四种策略实现
-- ✅ 回测系统完成
+- ✅ 网格、双向持仓、趋势跟踪、订单簿不平衡四种策略实现（swing_long/swing_short/ai_swing_long 已废弃移除）
+- ✅ 回测系统完成（Grid、DualSide、MACross 三种引擎）
 - ✅ 风控系统完成（5种类型 + 4级触发动作）
 - ✅ WebSocket实时推送完成（Socket.IO + OKX WS）
 - ✅ 多渠道通知推送完成

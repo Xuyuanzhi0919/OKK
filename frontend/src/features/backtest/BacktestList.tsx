@@ -1151,6 +1151,7 @@ const BacktestList = () => {
                     <Select.Option value="grid_mm">网格做市</Select.Option>
                   </Select.OptGroup>
                   <Select.OptGroup label="趋势策略">
+                    <Select.Option value="dual_side">双向持仓(推荐)</Select.Option>
                     <Select.Option value="ma_cross">均线交叉</Select.Option>
                     <Select.Option value="dual_ma_cross">双均线(多空)</Select.Option>
                   </Select.OptGroup>
@@ -1452,6 +1453,98 @@ const BacktestList = () => {
                   <Form.Item name="description" label="描述">
                     <TextArea rows={2} placeholder="回测描述(可选)" />
                   </Form.Item>
+                </>
+              )}
+
+              {/* ── 双向持仓策略 ── */}
+              {strategyType === 'dual_side' && (
+                <>
+                  <Alert
+                    message="双向持仓策略"
+                    description="EMA双均线判断趋势，金叉开多/死叉开空，趋势反转时自动反向开仓。支持杠杆、止损止盈和移动止损。建议使用15分钟周期。"
+                    type="info" showIcon style={{ marginBottom: 12 }}
+                  />
+
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="fast_period"
+                        label={<span>EMA快线周期 <Tooltip title="默认12，回测验证最优值"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        initialValue={12}
+                      >
+                        <InputNumber min={1} max={50} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="slow_period"
+                        label={<span>EMA慢线周期 <Tooltip title="默认40，回测验证最优值"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        initialValue={40}
+                      >
+                        <InputNumber min={1} max={200} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={12}>
+                    <Col span={8}>
+                      <Form.Item
+                        name="position_ratio"
+                        label={<span>仓位比例 <Tooltip title="每次开仓使用资金的比例"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        initialValue={0.3}
+                      >
+                        <InputNumber min={0.1} max={1} step={0.1} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        name="leverage"
+                        label={<span>杠杆倍数 <Tooltip title="建议3-5x低杠杆"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        initialValue={5}
+                      >
+                        <InputNumber min={1} max={20} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        name="fee_rate"
+                        label={<span>手续费率 <Tooltip title="OKX默认0.1%"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        initialValue={0.001}
+                      >
+                        <InputNumber min={0} max={0.01} step={0.0001} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={12}>
+                    <Col span={8}>
+                      <Form.Item
+                        name="stop_loss"
+                        label={<span>止损比例 <Tooltip title="亏损达到此比例时平仓"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        initialValue={0.02}
+                      >
+                        <InputNumber min={0.01} max={0.2} step={0.01} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        name="take_profit"
+                        label={<span>止盈比例 <Tooltip title="盈利达到此比例时平仓"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        initialValue={0.06}
+                      >
+                        <InputNumber min={0.01} max={0.5} step={0.01} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        name="trailing_stop"
+                        label={<span>移动止损 <Tooltip title="价格回撤此比例时触发止损，0表示禁用"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        initialValue={0.02}
+                      >
+                        <InputNumber min={0} max={0.1} step={0.005} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
                 </>
               )}
 

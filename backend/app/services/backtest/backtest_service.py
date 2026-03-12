@@ -283,6 +283,13 @@ class BacktestService:
                 amount_per_grid=float(params.get('amount_per_grid', 0.001)),
                 fee_rate=float(params.get('fee_rate', 0.001))
             )
+        elif strategy_type == 'dual_side':
+            from .dual_side_backtest import DualSideBacktestEngine
+            return DualSideBacktestEngine.from_params(
+                symbol=backtest.symbol,
+                initial_capital=float(backtest.initial_capital),
+                params=params
+            )
         
         raise ValueError(f"无法创建策略引擎: {strategy_type}")
 

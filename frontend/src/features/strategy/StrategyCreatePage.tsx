@@ -44,6 +44,24 @@ const STRATEGY_META: Record<string, {
       '单次开仓资金≤50%，防止单笔交易风险过大',
     ],
   },
+  dual_side: {
+    label: '双向持仓策略',
+    tag: '新策略',
+    tagColor: '#1890ff',
+    icon: <RiseOutlined />,
+    summary: '支持多空双向交易的合约策略，基于 EMA 双均线判断趋势方向。金叉开多，死叉开空，趋势反转时自动平仓并反向开仓。支持3x-5x杠杆，适合波动较大的市场。',
+    fixedParams: [
+      { label: 'EMA 快线', value: '12 根', tooltip: '短期 EMA 周期' },
+      { label: 'EMA 慢线', value: '40 根', tooltip: '长期 EMA 周期，代表中期趋势方向' },
+      { label: '杠杆', value: '3x-5x', tooltip: '建议使用低杠杆，风险可控' },
+      { label: '方向', value: '多空双向', tooltip: '金叉做多，死叉做空' },
+    ],
+    notes: [
+      '支持移动止损，锁定盈利',
+      '趋势反转时自动平仓并反向开仓',
+      '建议使用3x-5x低杠杆，控制风险',
+    ],
+  },
 }
 
 // ── 交易对列表 ──────────────────────────────────────────────
