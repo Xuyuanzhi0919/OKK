@@ -321,12 +321,36 @@ class DualSideStrategy(StrategyBase):
 
     async def _check_initial_entry(self):
         """启动时检查是否需要自动开仓"""
-        if self._position_side:  # 已有持仓，跳过
+        if self._position_side:  # 数据库已恢复持仓，跳过
             return
 
         if self._fast_curr is None or self._slow_curr is None:
             logger.warning(f"[{self.symbol}] EMA未初始化，跳过自动开仓")
             return
+
+        # 先查交易所实际持仓，防止重启时重复开仓
+        try:
+            positions = await self.exchange.get_positions(inst_id=self.symbol)
+            for pos in positions:
+                qty = float(pos.get("pos", 0))
+                if qty == 0:
+                    continue
+                pos_side = pos.get("posSide", "")  # long / short / net
+                avg_px = float(pos.get("avgPx", 0))
+                if pos_side in ("long", "short") and avg_px > 0:
+                    # 交易所有持仓，直接恢复，不开新仓
+                    self._position_side = pos_side
+                    self._entry_price = avg_px
+                    self._position_qty = abs(qty)
+                    self._extreme_price = avg_px
+                    await self._save_position_state()
+                    logger.warning(
+                        f"[{self.symbol}] 🔄 从交易所恢复持仓: side={pos_side} "
+                        f"qty={abs(qty)} entry={avg_px:.4f}"
+                    )
+                    return
+        except Exception as e:
+            logger.warning(f"[{self.symbol}] 查询交易所持仓失败，继续开仓逻辑: {e}")
 
         try:
             ticker = await self.exchange.get_ticker(self.symbol)
