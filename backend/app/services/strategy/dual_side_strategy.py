@@ -651,15 +651,33 @@ class DualSideStrategy(StrategyBase):
                 # 保存到数据库
                 await self._save_position_state()
 
-                # 止损/止盈/移动止损触发后，按当前EMA趋势方向重新入场
+                # 止损/止盈/移动止损触发后，按EMA趋势方向重新入场
+                # 需同时满足：fast与slow的相对位置 AND fast自身的运动方向一致
                 if reason in ("stop_loss", "take_profit", "trailing_stop"):
-                    if self._fast_curr is not None and self._slow_curr is not None:
-                        new_side = "long" if self._fast_curr > self._slow_curr else "short"
-                        logger.info(
-                            f"[{self.symbol}] 止损止盈后同向重入: {new_side} "
-                            f"(fast={self._fast_curr:.2f} slow={self._slow_curr:.2f})"
-                        )
-                        await self._open_position(price, new_side)
+                    if (self._fast_curr is not None and self._slow_curr is not None
+                            and self._fast_prev is not None):
+                        fast_above_slow = self._fast_curr > self._slow_curr
+                        fast_rising = self._fast_curr > self._fast_prev
+                        if fast_above_slow and fast_rising:
+                            # 金叉向上：fast在slow上方且仍在上升 → 开多
+                            logger.info(
+                                f"[{self.symbol}] 止损止盈后重入多: "
+                                f"fast={self._fast_curr:.2f}↑ slow={self._slow_curr:.2f}"
+                            )
+                            await self._open_position(price, "long")
+                        elif not fast_above_slow and not fast_rising:
+                            # 死叉向下：fast在slow下方且仍在下降 → 开空
+                            logger.info(
+                                f"[{self.symbol}] 止损止盈后重入空: "
+                                f"fast={self._fast_curr:.2f}↓ slow={self._slow_curr:.2f}"
+                            )
+                            await self._open_position(price, "short")
+                        else:
+                            logger.info(
+                                f"[{self.symbol}] 止损止盈后信号不明确，等待下一个K线信号 "
+                                f"(fast={self._fast_curr:.2f} slow={self._slow_curr:.2f} "
+                                f"fast_prev={self._fast_prev:.2f})"
+                            )
         except Exception as e:
             logger.error(f"[{self.symbol}] 平仓失败: {e}")
 
