@@ -626,6 +626,16 @@ class DualSideStrategy(StrategyBase):
 
                 # 保存到数据库
                 await self._save_position_state()
+
+                # 止损/止盈/移动止损触发后，按当前EMA趋势方向重新入场
+                if reason in ("stop_loss", "take_profit", "trailing_stop"):
+                    if self._fast_curr is not None and self._slow_curr is not None:
+                        new_side = "long" if self._fast_curr > self._slow_curr else "short"
+                        logger.info(
+                            f"[{self.symbol}] 止损止盈后同向重入: {new_side} "
+                            f"(fast={self._fast_curr:.2f} slow={self._slow_curr:.2f})"
+                        )
+                        await self._open_position(price, new_side)
         except Exception as e:
             logger.error(f"[{self.symbol}] 平仓失败: {e}")
 
