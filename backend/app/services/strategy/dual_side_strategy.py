@@ -483,8 +483,8 @@ class DualSideStrategy(StrategyBase):
         if self.trailing_stop > 0:
             await self._update_trailing_stop(price, pnl_pct)
 
-        # 盈利保护止损：当浮盈曾经超过0，锁住峰值盈利的profit_lock_ratio
-        if self.profit_lock_ratio > 0 and self._peak_pnl_pct > 0:
+        # 盈利保护止损：峰值盈利超过 stop_loss 才激活，避免小波动误触发
+        if self.profit_lock_ratio > 0 and self._peak_pnl_pct >= self.stop_loss:
             profit_lock_floor = self._peak_pnl_pct * self.profit_lock_ratio
             if pnl_pct < profit_lock_floor:
                 logger.info(
