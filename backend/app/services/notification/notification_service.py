@@ -362,6 +362,35 @@ class NotificationService:
         await self._send_notification(user_id, message)
         logger.error(f"⚠️ 风险预警: {strategy_name} - {message_text}")
 
+    async def send_strategy_notification(
+        self,
+        strategy_id: int,
+        title: str,
+        message: str,
+        level: str = "info",
+        data: Optional[Dict] = None
+    ):
+        """
+        策略通知（开仓、平仓、止损等）
+
+        Args:
+            strategy_id: 策略ID
+            title: 通知标题
+            message: 通知内容
+            level: 通知级别 info/success/warning/error
+            data: 额外数据
+        """
+        msg = {
+            "type": "strategy_notification",
+            "level": level,
+            "title": title,
+            "message": message,
+            "data": data or {},
+            "timestamp": datetime.now().isoformat()
+        }
+        # 通知广播给所有用户（策略通知不区分user_id，user_id=1兜底）
+        await self._send_notification(user_id=1, message=msg)
+
     async def _send_notification(self, user_id: int, message: Dict):
         """
         发送通知到各个渠道
