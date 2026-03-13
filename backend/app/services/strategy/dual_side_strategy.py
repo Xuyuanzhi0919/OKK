@@ -521,16 +521,14 @@ class DualSideStrategy(StrategyBase):
                 logger.warning(f"[{self.symbol}] 计算的仓位数量为0")
                 return
 
-            # 下单
+            # 下单（通过基类方法，自动保存到数据库）
             order_side = "buy" if side == "long" else "sell"
             pos_side = "long" if side == "long" else "short"
 
-            result = await self.exchange.create_order(
-                symbol=self.symbol,
+            result = await self.place_order_with_retry(
                 side=order_side,
+                amount=Decimal(str(qty)),
                 order_type="market",
-                amount=qty,
-                td_mode="isolated",
                 pos_side=pos_side,
             )
 
@@ -582,18 +580,15 @@ class DualSideStrategy(StrategyBase):
             # 计算盈亏
             pnl = self._calculate_pnl_for_price(price)
 
-            # 下单平仓
+            # 下单平仓（通过基类方法，自动保存到数据库）
             order_side = "sell" if self._position_side == "long" else "buy"
             pos_side = self._position_side
 
-            result = await self.exchange.create_order(
-                symbol=self.symbol,
+            result = await self.place_order_with_retry(
                 side=order_side,
+                amount=Decimal(str(self._position_qty)),
                 order_type="market",
-                amount=self._position_qty,
-                td_mode="isolated",
                 pos_side=pos_side,
-                reduce_only=True,
             )
 
             if result:
