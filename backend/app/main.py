@@ -207,7 +207,8 @@ async def shutdown_event():
             logger.warning(f"正在停止 {len(running_strategy_ids)} 个运行中的策略...")
             for strategy_id in running_strategy_ids:
                 try:
-                    await strategy_manager.stop_strategy(strategy_id)
+                    # close_position=False：后端重启只停止监控，不平仓，重启后从交易所恢复持仓
+                    await strategy_manager.stop_strategy(strategy_id, close_position=False)
                     logger.info(f"已停止策略 {strategy_id}")
                 except Exception as e:
                     logger.error(f"停止策略 {strategy_id} 失败: {e}")
