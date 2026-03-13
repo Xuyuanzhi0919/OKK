@@ -39,6 +39,7 @@ _DEFAULT_STOP_LOSS = 0.02      # 2%
 _DEFAULT_TAKE_PROFIT = 0.06    # 6%
 _DEFAULT_TRAILING_STOP = 0.02  # 2%
 _DEFAULT_POSITION_RATIO = 0.3  # 30%
+_DEFAULT_PROFIT_LOCK_RATIO = 0.5  # 锁住峰值盈利的50%，0表示禁用
 
 
 class DualSideStrategy(StrategyBase):
@@ -73,6 +74,8 @@ class DualSideStrategy(StrategyBase):
         self.take_profit: float = float(p.get("take_profit", _DEFAULT_TAKE_PROFIT))
         self.trailing_stop: float = float(p.get("trailing_stop", _DEFAULT_TRAILING_STOP))
         self.position_ratio: float = float(p.get("position_ratio", _DEFAULT_POSITION_RATIO))
+        # 盈利保护：峰值盈利的多少比例作为止损下限，0=禁用
+        self.profit_lock_ratio: float = float(p.get("profit_lock_ratio", _DEFAULT_PROFIT_LOCK_RATIO))
         
         # 保证金模式
         self.margin_mode: str = p.get("margin_mode", "isolated")  # isolated 或 cross
@@ -96,6 +99,7 @@ class DualSideStrategy(StrategyBase):
         self._open_time: float = 0.0
         self._extreme_price: float = 0.0   # 多仓=最高价，空仓=最低价
         self._trail_stop_px: float = 0.0
+        self._peak_pnl_pct: float = 0.0    # 本次持仓期间的浮盈峰值百分比
 
         # K线周期追踪
         self._last_kline_period: int = 0
@@ -471,9 +475,26 @@ class DualSideStrategy(StrategyBase):
         else:
             pnl_pct = (self._entry_price - price) / self._entry_price
 
-        # 移动止损
+        # 更新峰值盈利（只升不降）
+        if pnl_pct > self._peak_pnl_pct:
+            self._peak_pnl_pct = pnl_pct
+
+        # 移动止损（基于价格峰值）
         if self.trailing_stop > 0:
             await self._update_trailing_stop(price, pnl_pct)
+
+        # 盈利保护止损：当浮盈曾经超过0，锁住峰值盈利的profit_lock_ratio
+        if self.profit_lock_ratio > 0 and self._peak_pnl_pct > 0:
+            profit_lock_floor = self._peak_pnl_pct * self.profit_lock_ratio
+            if pnl_pct < profit_lock_floor:
+                logger.info(
+                    f"[{self.symbol}] 触发盈利保护止损: "
+                    f"当前盈利={pnl_pct*100:.2f}% "
+                    f"低于保护线={profit_lock_floor*100:.2f}% "
+                    f"(峰值={self._peak_pnl_pct*100:.2f}% × {self.profit_lock_ratio})"
+                )
+                await self._close_position(reason="profit_lock")
+                return
 
         # 固定止损
         if pnl_pct <= -self.stop_loss:
@@ -563,6 +584,7 @@ class DualSideStrategy(StrategyBase):
                 self._open_time = time.time()
                 self._extreme_price = price
                 self._trail_stop_px = 0
+                self._peak_pnl_pct = 0.0  # 重置峰值盈利
 
                 if side == "long":
                     self._long_count += 1
