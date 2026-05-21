@@ -600,6 +600,14 @@ class AdaptiveGridTrendStrategy(StrategyBase):
             return order
 
     async def calculate_pnl(self) -> Dict:
+        exchange_position = await self._get_exchange_position_pnl()
+        if exchange_position:
+            self._unrealized_pnl = exchange_position["unrealized_pnl"]
+            self._position_qty = exchange_position["qty"] or self._position_qty
+            self._entry_price = exchange_position["entry_price"] or self._entry_price
+            if not self._position_side:
+                self._position_side = exchange_position["side"]
+
         in_position = bool(self._position_side)
         return {
             "total_pnl": self.realized_pnl + self._unrealized_pnl,
@@ -616,4 +624,46 @@ class AdaptiveGridTrendStrategy(StrategyBase):
             "position_qty": self._position_qty,
             "stop_px": self._stop_px,
             "take_profit_px": self._take_profit_px,
+            "exchange_position": exchange_position,
         }
+
+    async def _get_exchange_position_pnl(self) -> Optional[Dict]:
+        """优先使用 OKX 官方持仓 upl，避免合约张数/ctVal/标记价口径不一致。"""
+        try:
+            positions = await self.exchange.get_positions(inst_id=self.symbol)
+        except Exception as exc:
+            logger.debug(f"[{self.symbol}] 获取交易所持仓盈亏失败，使用策略内存估算: {exc}")
+            return None
+
+        def as_float(value, default=0.0) -> float:
+            try:
+                if value in (None, ""):
+                    return default
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        expected_side = self._position_side
+        for pos in positions:
+            qty = as_float(pos.get("pos"))
+            if qty == 0:
+                continue
+            pos_side = pos.get("posSide") or "net"
+            side = pos_side if pos_side in ("long", "short") else ("long" if qty > 0 else "short")
+            if expected_side and side != expected_side:
+                continue
+
+            return {
+                "side": side,
+                "qty": abs(qty),
+                "entry_price": as_float(pos.get("avgPx")),
+                "mark_price": as_float(pos.get("markPx") or pos.get("last")),
+                "unrealized_pnl": as_float(pos.get("upl")),
+                "unrealized_pnl_pct": as_float(pos.get("uplRatio")) * 100,
+                "notional_usd": as_float(pos.get("notionalUsd")),
+                "margin": as_float(pos.get("margin")),
+                "leverage": as_float(pos.get("lever")),
+                "pos_side": pos_side,
+            }
+
+        return None
