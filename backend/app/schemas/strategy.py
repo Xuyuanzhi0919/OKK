@@ -15,6 +15,7 @@ class StrategyBase(BaseModel):
     name: str = Field(..., description="策略名称")
     type: StrategyType = Field(..., description="策略类型")
     symbol: str = Field(..., description="交易对")
+    api_config_id: Optional[int] = Field(None, description="绑定的API配置ID")
     timeframe: Optional[str] = Field(None, description="时间周期")
     parameters: Dict[str, Any] = Field(default_factory=dict, description="策略参数")
     description: Optional[str] = Field(None, description="策略描述")
@@ -31,6 +32,7 @@ class StrategyUpdate(BaseModel):
     """更新策略请求"""
     name: Optional[str] = None
     symbol: Optional[str] = None
+    api_config_id: Optional[int] = None
     timeframe: Optional[str] = None
     parameters: Optional[Dict[str, Any]] = None
     description: Optional[str] = None
@@ -88,3 +90,4 @@ class StrategyStatsResponse(BaseModel):
     total_sell_volume: Optional[float] = None
     grid_orders: Optional[int] = None
     grid_orders_detail: Optional[list[GridOrderDetail]] = Field(None, description="网格订单详情列表")
+    signal_status: Optional[dict] = Field(None, description="策略当前信号状态")

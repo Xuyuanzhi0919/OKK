@@ -110,8 +110,10 @@ CREATE INDEX idx_positions_symbol ON positions(symbol);
 
 -- 插入测试用户（密码: admin123）
 INSERT INTO users (username, email, hashed_password, is_superuser)
-VALUES ('admin', 'admin@okk.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzS3MjJ0G2', TRUE)
-ON CONFLICT (username) DO NOTHING;
+VALUES ('admin', 'admin@okk.com', '$2b$12$XZfL2JOv0K1ytph5pt9fO.bTak9m.H6GN20KFYkd4wKoJSqK4a9ia', TRUE)
+ON CONFLICT (username) DO UPDATE SET
+    hashed_password = EXCLUDED.hashed_password,
+    is_superuser = TRUE;
 
 -- 显示创建结果
 \echo '====================================='

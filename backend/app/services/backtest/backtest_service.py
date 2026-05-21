@@ -9,18 +9,14 @@ from datetime import datetime
 
 from app.models import Backtest, BacktestTrade, Kline
 from .kline_service import KlineService
-from .grid_backtest import GridBacktestEngine, GridMarketMakingBacktest
-from .ma_cross_backtest import MACrossBacktestEngine, DualMACrossBacktestEngine
+from .adaptive_grid_trend_backtest import AdaptiveGridTrendBacktestEngine
 from .backtest_engine import BacktestEngine
 from .metrics import BacktestMetrics
 
 
 # 策略类型注册表
 BACKTEST_ENGINES: Dict[str, Type[BacktestEngine]] = {
-    "grid": GridBacktestEngine,
-    "grid_mm": GridMarketMakingBacktest,
-    "ma_cross": MACrossBacktestEngine,
-    "dual_ma_cross": DualMACrossBacktestEngine,
+    "adaptive_grid_trend": AdaptiveGridTrendBacktestEngine,
 }
 
 
@@ -72,7 +68,7 @@ class BacktestService:
         Args:
             user_id: 用户ID
             name: 回测名称
-            strategy_type: 策略类型 (grid/grid_mm)
+            strategy_type: 策略类型，目前仅支持 adaptive_grid_trend
             symbol: 交易对
             interval: K线周期
             start_time: 开始时间戳(毫秒)
@@ -84,6 +80,9 @@ class BacktestService:
         Returns:
             回测记录
         """
+        if strategy_type not in BACKTEST_ENGINES:
+            raise ValueError(f"不支持的策略类型: {strategy_type}，可用类型: {list(BACKTEST_ENGINES.keys())}")
+
         backtest = Backtest(
             user_id=user_id,
             name=name,
@@ -258,34 +257,6 @@ class BacktestService:
         # 检查引擎是否支持 from_params 方法
         if hasattr(engine_class, 'from_params'):
             return engine_class.from_params(
-                symbol=backtest.symbol,
-                initial_capital=float(backtest.initial_capital),
-                params=params
-            )
-        
-        # 兼容旧版网格策略
-        if strategy_type == 'grid':
-            return GridBacktestEngine(
-                symbol=backtest.symbol,
-                initial_capital=float(backtest.initial_capital),
-                grid_lower=float(params.get('grid_lower', 50000)),
-                grid_upper=float(params.get('grid_upper', 60000)),
-                grid_num=int(params.get('grid_num', 10)),
-                amount_per_grid=float(params.get('amount_per_grid', 0.001)),
-                fee_rate=float(params.get('fee_rate', 0.001))
-            )
-        elif strategy_type == 'grid_mm':
-            return GridMarketMakingBacktest(
-                symbol=backtest.symbol,
-                initial_capital=float(backtest.initial_capital),
-                grid_spread=float(params.get('grid_spread', 0.01)),
-                grid_levels=int(params.get('grid_levels', 5)),
-                amount_per_grid=float(params.get('amount_per_grid', 0.001)),
-                fee_rate=float(params.get('fee_rate', 0.001))
-            )
-        elif strategy_type == 'dual_side':
-            from .dual_side_backtest import DualSideBacktestEngine
-            return DualSideBacktestEngine.from_params(
                 symbol=backtest.symbol,
                 initial_capital=float(backtest.initial_capital),
                 params=params

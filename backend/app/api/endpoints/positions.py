@@ -1,20 +1,21 @@
 """
 持仓和账户管理API
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 from app.services.exchange.okx import OKXExchange
 from app.services.api_config_service import api_config_service
+from app.api.deps import require_current_user_id
 from loguru import logger
 
 router = APIRouter()
 
 
-def get_okx_exchange() -> OKXExchange:
+def get_okx_exchange(user_id: int) -> OKXExchange:
     """获取OKX交易所实例 (优先使用数据库配置)"""
     try:
-        return api_config_service.get_exchange(user_id=1)
+        return api_config_service.get_exchange(user_id=user_id)
     except Exception as e:
         logger.error(f"获取交易所实例失败: {e}")
         raise HTTPException(
@@ -25,7 +26,8 @@ def get_okx_exchange() -> OKXExchange:
 
 @router.get("/balance")
 async def get_balance(
-    ccy: Optional[str] = Query(None, description="币种,如 BTC,ETH。支持多个,逗号分隔")
+    ccy: Optional[str] = Query(None, description="币种,如 BTC,ETH。支持多个,逗号分隔"),
+    user_id: int = Depends(require_current_user_id),
 ):
     """
     获取账户余额
@@ -37,7 +39,7 @@ async def get_balance(
         账户余额信息
     """
     try:
-        exchange = get_okx_exchange()
+        exchange = get_okx_exchange(user_id)
         balance = await exchange.get_balance(ccy=ccy)
         await exchange.close()
 
@@ -55,7 +57,8 @@ async def get_balance(
 async def list_positions(
     inst_type: Optional[str] = Query(None, description="产品类型: MARGIN/SWAP/FUTURES/OPTION"),
     inst_id: Optional[str] = Query(None, description="产品ID,如 BTC-USDT-SWAP"),
-    pos_id: Optional[str] = Query(None, description="持仓ID")
+    pos_id: Optional[str] = Query(None, description="持仓ID"),
+    user_id: int = Depends(require_current_user_id),
 ):
     """
     获取持仓列表
@@ -69,7 +72,7 @@ async def list_positions(
         持仓列表
     """
     try:
-        exchange = get_okx_exchange()
+        exchange = get_okx_exchange(user_id)
         positions = await exchange.get_positions(
             inst_type=inst_type,
             inst_id=inst_id,
@@ -96,10 +99,17 @@ async def list_positions(
 
             avg_px = safe_float(pos.get('avgPx', 0))
             mark_px = safe_float(pos.get('markPx', avg_px))
+            last_px = safe_float(pos.get('last', mark_px))
             upl = safe_float(pos.get('upl', 0))
             upl_ratio = safe_float(pos.get('uplRatio', 0))
             margin = safe_float(pos.get('margin', 0))
+            imr = safe_float(pos.get('imr', 0))
+            mmr = safe_float(pos.get('mmr', 0))
+            mgn_ratio = safe_float(pos.get('mgnRatio', 0))
             liq_px = safe_float(pos.get('liqPx', 0))
+            lever = safe_float(pos.get('lever', 0))
+            pos_side = pos.get('posSide') or 'net'
+            side = pos_side if pos_side in ('long', 'short') else ("long" if pos_size > 0 else "short")
             # notionalUsd: OKX 已按合约面值算好的名义价值（USD），SWAP 张数≠币数，
             # 前端必须用此值，否则直接 size×price 会差一个合约面值倍数
             notional_usd = safe_float(pos.get('notionalUsd', 0))
@@ -115,19 +125,28 @@ async def list_positions(
                     return ms_str
 
             result.append({
-                "id": idx + 1,
+                "id": pos.get('posId') or idx + 1,
+                "pos_id": pos.get('posId', ''),
+                "pos_side": pos_side,
+                "mgn_mode": pos.get('mgnMode', ''),
                 "strategy_id": None,
                 "strategy_name": None,
                 "symbol": pos.get('instId', ''),
                 "inst_type": pos.get('instType', 'SWAP'),
-                "side": "long" if pos_size > 0 else "short",
+                "side": side,
                 "size": abs(pos_size),
                 "avg_price": avg_px,
                 "current_price": mark_px,
+                "last_price": last_px,
                 "unrealized_pnl": upl,
                 "unrealized_pnl_pct": upl_ratio * 100,
                 "notional_usd": notional_usd if notional_usd > 0 else None,
                 "margin": margin,
+                "imr": imr,
+                "mmr": mmr,
+                "mgn_ratio": mgn_ratio,
+                "leverage": lever,
+                "adl": safe_float(pos.get('adl', 0)),
                 "liquidation_price": liq_px if liq_px > 0 else None,
                 "created_at": ms_to_iso(pos.get('cTime', '')),
                 "updated_at": ms_to_iso(pos.get('uTime', ''))
@@ -142,7 +161,8 @@ async def list_positions(
 
 @router.get("/account-snapshots")
 async def get_account_snapshots(
-    days: int = Query(7, ge=1, le=30, description="查询天数，最多30天")
+    days: int = Query(7, ge=1, le=30, description="查询天数，最多30天"),
+    user_id: int = Depends(require_current_user_id),
 ):
     """
     获取账户净值历史快照
@@ -162,7 +182,7 @@ async def get_account_snapshots(
         snapshots = (
             db.query(AccountSnapshot)
             .filter(
-                AccountSnapshot.user_id == 1,
+                AccountSnapshot.user_id == user_id,
                 AccountSnapshot.created_at >= start_time,
             )
             .order_by(AccountSnapshot.created_at.asc())
@@ -225,7 +245,9 @@ async def get_account_snapshots(
 
 
 @router.get("/daily-pnl")
-async def get_daily_pnl():
+async def get_daily_pnl(
+    user_id: int = Depends(require_current_user_id),
+):
     """
     获取今日盈亏基线（UTC+8 自然日 0:00 重置）
 
@@ -246,7 +268,7 @@ async def get_daily_pnl():
         baseline = (
             db.query(AccountSnapshot)
             .filter(
-                AccountSnapshot.user_id == 1,
+                AccountSnapshot.user_id == user_id,
                 AccountSnapshot.created_at >= today_start,
             )
             .order_by(AccountSnapshot.created_at.asc())
@@ -258,7 +280,7 @@ async def get_daily_pnl():
             baseline = (
                 db.query(AccountSnapshot)
                 .filter(
-                    AccountSnapshot.user_id == 1,
+                    AccountSnapshot.user_id == user_id,
                     AccountSnapshot.created_at < today_start,
                 )
                 .order_by(AccountSnapshot.created_at.desc())

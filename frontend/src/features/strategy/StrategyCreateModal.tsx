@@ -7,6 +7,7 @@ import { InfoCircleOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { strategyApi, marketApi } from '@/services/api'
 import { API_BASE_URL } from '@/config/api'
+import { extractCoin, getAdaptiveGridTrendPreset } from '@/config/strategyPresets'
 
 const { TextArea } = Input
 
@@ -26,22 +27,21 @@ interface StrategyCreateModalProps {
   } | null
 }
 
+interface APIConfigOption {
+  id: number
+  name: string
+  exchange: string
+  is_simulated: boolean
+  is_active: boolean
+  is_valid: boolean
+}
+
 // 可用实盘策略类型（已通过回测验证）
 const STRATEGY_TYPES: { value: string; label: string; desc: string }[] = [
   {
-    value: 'trend',
-    label: 'EMA趋势跟踪',
-    desc: 'EMA(12,40)双均线金叉做多，RSI<65过滤超买，15m时间周期，经256组参数回测验证',
-  },
-  {
-    value: 'dual_side',
-    label: '双向持仓',
-    desc: 'EMA双均线判断趋势，金叉开多/死叉开空，支持3x-5x杠杆，趋势反转时自动反向开仓',
-  },
-  {
-    value: 'grid',
-    label: '网格交易',
-    desc: '在价格区间内等分网格，低买高卖自动赚取波动差价，适合震荡行情',
+    value: 'adaptive_grid_trend',
+    label: '自适应趋势网格',
+    desc: '趋势过滤后按ATR回撤入场，固定风险仓位，硬止损止盈，不马丁不无限补仓',
   },
 ]
 
@@ -73,11 +73,7 @@ const TYPE_SHORT: Record<string, string> = {
   trend: '趋势跟踪',
   dual_side: '双向持仓',
   grid: '网格交易',
-}
-
-// 从交易对提取币种简称，例如 BTC-USDT-SWAP → BTC
-function extractCoin(symbol: string): string {
-  return symbol?.split('-')[0] ?? symbol
+  adaptive_grid_trend: '自适应趋势网格',
 }
 
 // 生成自动名称，例如 BTC 趋势跟踪
@@ -88,6 +84,13 @@ function buildAutoName(type: string, symbol: string): string {
   return ''
 }
 
+function percentValue(value: any, fallback?: number): number | undefined {
+  if (value == null) return fallback
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return numeric <= 1 ? numeric * 100 : numeric
+}
+
 const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
   open, onCancel, onSuccess, initialType, editStrategyId, backtestData,
 }) => {
@@ -95,6 +98,16 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
   const [loading, setLoading] = useState(false)
   // 记录上一次自动生成的名称，用于判断用户是否手动修改过
   const [lastAutoName, setLastAutoName] = useState('')
+
+  const { data: apiConfigs = [], isLoading: apiConfigsLoading } = useQuery<APIConfigOption[]>({
+    queryKey: ['api-configs'],
+    queryFn: async () => {
+      const response = await fetch('/api/v1/api-configs/list')
+      if (!response.ok) throw new Error('获取API配置失败')
+      return response.json()
+    },
+    staleTime: 30 * 1000,
+  })
 
   // 从OKX动态获取全量交易对（SWAP合约 + SPOT现货），USDT计价
   const { data: availableSymbols, isLoading: symbolsLoading } = useQuery({
@@ -134,34 +147,95 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
     }
   }, [initialType, open, backtestData, form])
 
+  useEffect(() => {
+    if (!open || form.getFieldValue('api_config_id') != null || apiConfigs.length === 0) return
+    const activeConfig = apiConfigs.find(config => config.is_active && config.is_valid)
+    const firstValidConfig = apiConfigs.find(config => config.is_valid)
+    const defaultConfig = activeConfig ?? firstValidConfig
+    if (defaultConfig) {
+      form.setFieldValue('api_config_id', defaultConfig.id)
+    }
+  }, [open, apiConfigs, form])
+
   // 从回测/策略预填数据
   useEffect(() => {
     if (backtestData && open) {
       const params = backtestData.parameters || {}
-      const isEdit = editStrategyId != null
+      const riskFuse = params.risk_fuse || {}
       form.setFieldsValue({
         type: backtestData.strategy_type,
         symbol: backtestData.symbol,
         name: backtestData.name || `${backtestData.symbol} ${backtestData.strategy_type}策略`,
-        // 编辑模式：DB 里存的是小数（0.4/0.01/0.08），需转回百分比供表单使用
-        position_ratio: isEdit && params.position_ratio != null
-          ? Math.round(params.position_ratio * 100)
-          : params.position_ratio,
-        stop_loss: isEdit && params.stop_loss != null
-          ? params.stop_loss * 100
-          : params.stop_loss,
-        take_profit: isEdit && params.take_profit != null
-          ? params.take_profit * 100
-          : params.take_profit,
+        position_ratio: percentValue(params.position_ratio),
+        stop_loss: percentValue(params.stop_loss),
+        take_profit: percentValue(params.take_profit),
         use_rsi_filter: params.use_rsi_filter,
         leverage: params.leverage,
+        use_trailing_stop: params.trailing_stop != null && Number(params.trailing_stop) > 0,
+        trailing_stop: percentValue(params.trailing_stop),
+
+        dual_position_ratio: percentValue(params.position_ratio),
+        dual_leverage: params.leverage,
+        dual_stop_loss: percentValue(params.stop_loss),
+        dual_take_profit: percentValue(params.take_profit),
+        use_dual_trailing_stop: params.trailing_stop != null && Number(params.trailing_stop) > 0,
+        dual_trailing_stop: percentValue(params.trailing_stop),
+        dual_timeframe: params.timeframe,
+
+        grid_price_upper: params.price_upper,
+        grid_price_lower: params.price_lower,
+        grid_count: params.grid_count,
+        grid_total_amount: params.total_amount,
+        grid_leverage: params.leverage,
+        grid_stop_loss: percentValue(params.stop_loss),
+
+        agt_direction: params.direction,
+        agt_timeframe: params.trend_timeframe || params.timeframe,
+        agt_fast_period: params.fast_period,
+        agt_slow_period: params.slow_period,
+        agt_atr_period: params.atr_period,
+        agt_entry_atr_multiple: params.entry_atr_multiple,
+        agt_stop_atr_multiple: params.stop_atr_multiple,
+        agt_take_profit_atr_multiple: params.take_profit_atr_multiple,
+        agt_risk_per_trade: percentValue(params.risk_per_trade),
+        agt_max_position_usd: params.max_position_usd,
+        agt_leverage: params.leverage,
+        agt_margin_mode: params.margin_mode,
+        agt_cooldown_minutes: params.cooldown_seconds != null
+          ? Math.round(Number(params.cooldown_seconds) / 60)
+          : undefined,
+        agt_fuse_enabled: riskFuse.enabled,
+        agt_fuse_max_consecutive_losses: riskFuse.max_consecutive_losses,
+        agt_fuse_daily_loss_pct: percentValue(riskFuse.daily_loss_limit_pct),
+        agt_fuse_max_drawdown_pct: percentValue(riskFuse.max_drawdown_pct),
+        agt_fuse_profit_factor_window: riskFuse.profit_factor_window,
+        agt_fuse_min_trades: riskFuse.min_trades_for_profit_factor,
+        agt_fuse_min_profit_factor: riskFuse.min_profit_factor,
+        agt_fuse_cancel_orders: riskFuse.cancel_orders_on_trigger,
+        agt_fuse_close_position: riskFuse.close_position_on_trigger,
       })
     }
-  }, [backtestData, open, form, editStrategyId])
+  }, [backtestData, open, form])
 
   // 自动命名：监听类型和交易对，只要名称为空或等于上次自动生成的值就覆盖
   const watchedType   = Form.useWatch('type',   form)
   const watchedSymbol = Form.useWatch('symbol', form)
+
+  useEffect(() => {
+    if (!open || backtestData || watchedType !== 'adaptive_grid_trend') return
+    const preset = getAdaptiveGridTrendPreset(watchedSymbol)
+    form.setFieldsValue({
+      agt_fast_period: preset.fast,
+      agt_slow_period: preset.slow,
+      agt_entry_atr_multiple: preset.entry,
+      agt_stop_atr_multiple: preset.stop,
+      agt_take_profit_atr_multiple: preset.takeProfit,
+      agt_cooldown_minutes: preset.cooldownMinutes,
+      agt_risk_per_trade: preset.riskPercent ?? 1,
+      agt_max_position_usd: preset.maxPositionUsd ?? 500,
+    })
+  }, [open, backtestData, watchedType, watchedSymbol, form])
+
   useEffect(() => {
     if (backtestData) return   // 回测模式不覆盖
     const auto = buildAutoName(watchedType, watchedSymbol)
@@ -171,7 +245,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       form.setFieldValue('name', auto)
       setLastAutoName(auto)
     }
-  }, [watchedType, watchedSymbol]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [watchedType, watchedSymbol])
 
   // 弹窗关闭时重置自动名称记录
   useEffect(() => {
@@ -223,7 +297,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       form.setFieldsValue({ grid_price_lower: undefined, grid_price_upper: undefined })
       fetchGridTicker(watchedSymbol)
     }
-  }, [watchedSymbol]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [watchedSymbol])
 
   // 切换到网格类型时，如果已有交易对，自动获取价格
   useEffect(() => {
@@ -235,7 +309,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         fetchGridTicker(watchedSymbol)
       }
     }
-  }, [watchedType]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [watchedType])
 
   // 提交
   const handleSubmit = async () => {
@@ -272,15 +346,42 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         parameters.total_amount  = values.grid_total_amount ?? 100
         parameters.leverage      = values.grid_leverage ?? 1
         parameters.stop_loss     = (values.grid_stop_loss ?? 5) / 100
+      } else if (values.type === 'adaptive_grid_trend') {
+        parameters.direction                = values.agt_direction ?? 'both'
+        parameters.trend_timeframe          = values.agt_timeframe ?? '1H'
+        parameters.fast_period              = values.agt_fast_period ?? 20
+        parameters.slow_period              = values.agt_slow_period ?? 80
+        parameters.atr_period               = values.agt_atr_period ?? 14
+        parameters.entry_atr_multiple       = values.agt_entry_atr_multiple ?? 0.6
+        parameters.stop_atr_multiple        = values.agt_stop_atr_multiple ?? 2.8
+        parameters.take_profit_atr_multiple = values.agt_take_profit_atr_multiple ?? 6.0
+        parameters.risk_per_trade           = (values.agt_risk_per_trade ?? 1) / 100
+        parameters.max_position_usd         = values.agt_max_position_usd ?? 500
+        parameters.leverage                 = values.agt_leverage ?? 3
+        parameters.margin_mode              = values.agt_margin_mode ?? 'isolated'
+        parameters.cooldown_seconds         = (values.agt_cooldown_minutes ?? 60) * 60
+        parameters.risk_fuse                = {
+          enabled: values.agt_fuse_enabled ?? true,
+          max_consecutive_losses: values.agt_fuse_max_consecutive_losses ?? 3,
+          daily_loss_limit_pct: (values.agt_fuse_daily_loss_pct ?? 2) / 100,
+          max_drawdown_pct: (values.agt_fuse_max_drawdown_pct ?? 5) / 100,
+          profit_factor_window: values.agt_fuse_profit_factor_window ?? 10,
+          min_trades_for_profit_factor: values.agt_fuse_min_trades ?? 8,
+          min_profit_factor: values.agt_fuse_min_profit_factor ?? 0.8,
+          cancel_orders_on_trigger: values.agt_fuse_cancel_orders ?? true,
+          close_position_on_trigger: values.agt_fuse_close_position ?? false,
+        }
       }
 
       const payload = {
         name: values.name,
         type: values.type as any,
         symbol: values.symbol,
+        api_config_id: values.api_config_id,
         timeframe: values.type === 'trend' ? '15m'
                  : values.type === 'dual_side' ? (values.dual_timeframe ?? '15m')
                  : values.type === 'grid' ? '1m'
+                 : values.type === 'adaptive_grid_trend' ? (values.agt_timeframe ?? '1H')
                  : (values.timeframe ?? '1H'),
         parameters,
         description: values.description,
@@ -347,8 +448,9 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         form={form}
         layout="vertical"
         initialValues={{
-          type: backtestData?.strategy_type ?? 'trend',
+          type: backtestData?.strategy_type ?? 'adaptive_grid_trend',
           symbol: backtestData?.symbol || 'BTC-USDT-SWAP',
+          api_config_id: undefined,
           timeframe: '15m',
           position_ratio: 40,
           stop_loss: 3,
@@ -362,6 +464,29 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
           grid_total_amount: 100,
           grid_leverage: 1,
           grid_stop_loss: 5,
+          // 自适应趋势网格默认值
+          agt_direction: 'both',
+          agt_timeframe: '1H',
+          agt_fast_period: 20,
+          agt_slow_period: 80,
+          agt_atr_period: 14,
+          agt_entry_atr_multiple: 0.6,
+          agt_stop_atr_multiple: 2.8,
+          agt_take_profit_atr_multiple: 6.0,
+          agt_risk_per_trade: 1,
+          agt_max_position_usd: 500,
+          agt_leverage: 3,
+          agt_margin_mode: 'isolated',
+          agt_cooldown_minutes: 60,
+          agt_fuse_enabled: true,
+          agt_fuse_max_consecutive_losses: 3,
+          agt_fuse_daily_loss_pct: 2,
+          agt_fuse_max_drawdown_pct: 5,
+          agt_fuse_profit_factor_window: 10,
+          agt_fuse_min_trades: 8,
+          agt_fuse_min_profit_factor: 0.8,
+          agt_fuse_cancel_orders: true,
+          agt_fuse_close_position: false,
         }}
       >
         {/* ── 基础信息 ── */}
@@ -378,6 +503,24 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                 placeholder={noTypes ? '暂无可用策略类型' : '选择策略类型'}
                 disabled={noTypes && !backtestData}
                 options={STRATEGY_TYPES.map(t => ({ value: t.value, label: t.label }))}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              name="api_config_id"
+              label="交易账户"
+              rules={[{ required: true, message: '请选择交易账户' }]}
+              style={compactItem}
+            >
+              <Select
+                loading={apiConfigsLoading}
+                placeholder="选择实盘或模拟盘账户"
+                options={apiConfigs.map(config => ({
+                  value: config.id,
+                  label: `${config.name} · ${config.is_simulated ? '模拟盘' : '实盘'}${config.is_valid ? '' : ' · 无效'}`,
+                  disabled: !config.is_valid,
+                }))}
               />
             </Form.Item>
           </Col>
@@ -514,6 +657,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                 </Form.Item>
               </Col>
             </Row>
+
           </>
         )}
 
@@ -595,6 +739,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                 </Form.Item>
               </Col>
             </Row>
+
           </>
         )}
 
@@ -679,6 +824,253 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                   style={compactItem}
                 >
                   <InputNumber min={1} max={50} step={1} suffix="%" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+            </Row>
+          </>
+        )}
+
+        {/* ── 自适应趋势网格参数 ── */}
+        {selectedType === 'adaptive_grid_trend' && (
+          <>
+            <Divider orientation="left" style={compactDivider}>
+              自适应趋势网格参数
+              <Tooltip title="EMA趋势过滤 + ATR回撤入场 + 固定风险仓位，适合先用模拟盘观察">
+                <InfoCircleOutlined style={{ marginLeft: 6, color: '#8c8c8c', fontSize: 12 }} />
+              </Tooltip>
+            </Divider>
+            <Alert
+              message="按账户权益固定比例承担单笔风险，合约会读取 ctVal / lotSz / minSz 后按张数下单，不使用马丁补仓。"
+              type="warning"
+              showIcon
+              style={{ marginBottom: 10, fontSize: 12 }}
+            />
+            <Row gutter={12}>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_direction"
+                  label={<Space size={4}>交易方向<Tooltip title="现货只支持做多；合约可选择多空或只做单边"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <Select
+                    options={[
+                      { label: '多空双向', value: 'both' },
+                      { label: '只做多', value: 'long' },
+                      { label: '只做空', value: 'short' },
+                    ]}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_timeframe"
+                  label={<Space size={4}>趋势周期<Tooltip title="用于计算EMA趋势和ATR波动，周期越大交易越少"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <Select
+                    options={[
+                      { label: '15分钟', value: '15m' },
+                      { label: '1小时', value: '1H' },
+                      { label: '4小时', value: '4H' },
+                    ]}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_margin_mode"
+                  label={<Space size={4}>保证金模式<Tooltip title="合约下单使用，isolated为逐仓，cross为全仓"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <Select
+                    options={[
+                      { label: '逐仓', value: 'isolated' },
+                      { label: '全仓', value: 'cross' },
+                    ]}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_fast_period"
+                  label={<Space size={4}>EMA快线<Tooltip title="趋势快线周期，默认20"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={5} max={80} step={1} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_slow_period"
+                  label={<Space size={4}>EMA慢线<Tooltip title="趋势慢线周期，必须大于快线，默认80"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={20} max={200} step={5} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_atr_period"
+                  label={<Space size={4}>ATR周期<Tooltip title="用于计算波动和止损距离，默认14"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={5} max={50} step={1} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_risk_per_trade"
+                  label={<Space size={4}>单笔风险<Tooltip title="每笔最多亏损账户权益的比例，建议0.3%到1%"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0.1} max={5} step={0.1} suffix="%" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_max_position_usd"
+                  label={<Space size={4}>最大仓位<Tooltip title="单次开仓名义价值上限，单位USDT"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={10} step={10} prefix="$" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_leverage"
+                  label={<Space size={4}>杠杆倍数<Tooltip title="合约启动时自动设置，默认3x"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={1} max={20} step={1} suffix="x" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_entry_atr_multiple"
+                  label={<Space size={4}>入场回撤ATR<Tooltip title="趋势成立后，价格回撤到快线附近多少ATR内才入场"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0} max={2} step={0.05} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_stop_atr_multiple"
+                  label={<Space size={4}>止损ATR<Tooltip title="止损距离 = ATR × 此倍数"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0.5} max={5} step={0.1} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_take_profit_atr_multiple"
+                  label={<Space size={4}>止盈ATR<Tooltip title="止盈距离 = ATR × 此倍数，默认6.0"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0.5} max={8} step={0.1} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_cooldown_minutes"
+                  label={<Space size={4}>冷却时间<Tooltip title="平仓后等待多少分钟才允许下一次开仓"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={1} max={240} step={1} suffix="分钟" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Divider orientation="left" style={compactDivider}>
+              运行熔断
+              <Tooltip title="触发后策略自动暂停，默认撤未成交委托，不主动强平已有持仓">
+                <InfoCircleOutlined style={{ marginLeft: 6, color: '#8c8c8c', fontSize: 12 }} />
+              </Tooltip>
+            </Divider>
+            <Row gutter={12}>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_fuse_enabled"
+                  label={<Space size={4}>熔断保护<Tooltip title="开启后，连续亏损、日亏损、运行回撤或盈亏比恶化会自动暂停策略"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  valuePropName="checked"
+                  style={compactItem}
+                >
+                  <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_fuse_max_consecutive_losses"
+                  label={<Space size={4}>连续亏损<Tooltip title="连续亏损达到该次数后暂停策略"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={1} max={10} step={1} suffix="次" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_fuse_daily_loss_pct"
+                  label={<Space size={4}>日亏损上限<Tooltip title="按风险基准资金计算，默认2%"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0.1} max={20} step={0.1} suffix="%" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_fuse_max_drawdown_pct"
+                  label={<Space size={4}>运行回撤上限<Tooltip title="本次启动后的已实现盈亏曲线最大回撤阈值"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0.5} max={30} step={0.5} suffix="%" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_fuse_min_profit_factor"
+                  label={<Space size={4}>最低盈亏比<Tooltip title="最近窗口内盈亏比低于该值后暂停，默认0.8"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0} max={5} step={0.1} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_fuse_profit_factor_window"
+                  label={<Space size={4}>盈亏比窗口<Tooltip title="计算最近多少笔平仓交易的盈亏比"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={3} max={50} step={1} suffix="笔" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_fuse_min_trades"
+                  label={<Space size={4}>最少统计笔数<Tooltip title="平仓交易数达到该数量后才启用盈亏比熔断"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={3} max={50} step={1} suffix="笔" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_fuse_cancel_orders"
+                  label={<Space size={4}>触发后撤单<Tooltip title="熔断暂停时撤销未成交委托"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  valuePropName="checked"
+                  style={compactItem}
+                >
+                  <Switch checkedChildren="撤单" unCheckedChildren="保留" />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_fuse_close_position"
+                  label={<Space size={4}>触发后平仓<Tooltip title="实盘初期建议关闭；开启后熔断会尝试市价平掉已有持仓"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  valuePropName="checked"
+                  style={compactItem}
+                >
+                  <Switch checkedChildren="平仓" unCheckedChildren="不平" />
                 </Form.Item>
               </Col>
             </Row>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Row, Col, Card, Table, Spin, message, Button, Statistic, Progress, Tag, Tooltip } from 'antd'
+import { Row, Col, Card, Table, Spin, Button, Statistic, Progress, Tag, Tooltip, App } from 'antd'
 import {
   TrendingUp,
   TrendingDown,
@@ -21,6 +21,17 @@ import { formatPrice, formatQuantityDisplay, formatAmount, formatPercent } from 
 // ── 本地缓存（解决路由切换/刷新后数据闪烁：挂载时立即还原上次数据）──
 const CACHE_KEY = 'okk_dashboard_v1'
 const CACHE_TTL = 5 * 60 * 1000 // 5分钟过期
+
+const safeNumber = (value: any, fallback = 0): number => {
+  if (value === undefined || value === null || value === '') return fallback
+  const parsed = typeof value === 'number' ? value : parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+const estimateInitialMargin = (notionalUsd: number, leverage: number, margin: number): number => {
+  if (notionalUsd > 0 && leverage > 0) return notionalUsd / leverage
+  return margin
+}
 
 const readCache = (): Record<string, any> | null => {
   try {
@@ -45,6 +56,7 @@ const writeCache = (data: Record<string, any>) => {
 
 const Dashboard = () => {
   const { t } = useTranslation()
+  const { message } = App.useApp()
 
   // 首次渲染时读缓存，作为所有 state 的初始值（只调用一次）
   const [cache] = useState<Record<string, any> | null>(() => readCache())
@@ -66,6 +78,10 @@ const Dashboard = () => {
 
   // 风险指标（也从缓存初始化）
   const [marginRatio, setMarginRatio] = useState<number>(cache?.marginRatio ?? 0)
+  const [accountImr, setAccountImr] = useState<number>(cache?.accountImr ?? 0)
+  const [accountMmr, setAccountMmr] = useState<number>(cache?.accountMmr ?? 0)
+  const [accountAdjEq, setAccountAdjEq] = useState<number>(cache?.accountAdjEq ?? 0)
+  const [accountNotionalUsd, setAccountNotionalUsd] = useState<number>(cache?.accountNotionalUsd ?? 0)
   const [dailyPnlBaseline, setDailyPnlBaseline] = useState<number | null>(cache?.dailyPnlBaseline ?? null)
   const [maxDrawdown, setMaxDrawdown] = useState<number>(cache?.maxDrawdown ?? 0)
   const [maxDrawdownPct, setMaxDrawdownPct] = useState<number>(cache?.maxDrawdownPct ?? 0)
@@ -106,12 +122,13 @@ const Dashboard = () => {
 
       // ── 计算派生值（在所有 async 工作完成前，不调用任何 setState）──
 
-      // OKX mgnRatio 是小数比率，乘以 100 转为百分比
+      // OKX mgnRatio 是 adjEq / mmr，数值越大越安全，不是风险百分比。
       let newMarginRatio = 0
-      if (balanceData?.mgnRatio) {
-        const mgnRatio = parseFloat(balanceData.mgnRatio)
-        newMarginRatio = isFinite(mgnRatio) ? mgnRatio * 100 : 0
-      }
+      if (balanceData?.mgnRatio) newMarginRatio = safeNumber(balanceData.mgnRatio)
+      const newAccountImr = safeNumber(balanceData?.imr)
+      const newAccountMmr = safeNumber(balanceData?.mmr)
+      const newAccountAdjEq = safeNumber(balanceData?.adjEq)
+      const newAccountNotionalUsd = safeNumber(balanceData?.notionalUsd)
 
       // 今日盈亏基线
       const newDailyPnlBaseline: number | null =
@@ -140,7 +157,7 @@ const Dashboard = () => {
         }
       }
 
-      // 现货 + 合约 ticker 价格并行请求（避免顺序等待）
+      // 现货价格需要 ticker；合约持仓直接使用 OKX positions 返回的 markPx/notionalUsd。
       const posArr = Array.isArray(positionsData) ? positionsData : []
 
       const [spotResults, contractResults] = await Promise.all([
@@ -179,19 +196,23 @@ const Dashboard = () => {
             }
           })
         ),
-        // 合约：并行获取所有 ticker
+        // 合约：使用 positions 返回的标记价，避免逐仓位额外请求 ticker
         Promise.all(
           posArr.map(async (pos: any) => {
             try {
               const posData = pos as any
               const symbol = posData.symbol || posData.instId
-              const ticker = await marketApi.getTicker(symbol)
-              const currentPrice = posData.current_price || parseFloat((ticker as any)?.last || '0')
-              const posSize = posData.size || parseFloat(posData.pos || '0')
+              const currentPrice = safeNumber(posData.current_price || posData.markPx || posData.last_price || posData.last)
+              const posSize = safeNumber(posData.size ?? posData.pos)
+              const posSide = posData.pos_side || posData.posSide || posData.side
+              const value = safeNumber(posData.notional_usd || posData.notionalUsd, posSize * currentPrice)
+              const leverage = safeNumber(posData.leverage || posData.lever)
+              const margin = safeNumber(posData.margin)
+              const imr = safeNumber(posData.imr)
               return {
-                key: `contract-${symbol}`,
+                key: `contract-${posData.pos_id || posData.posId || `${symbol}-${posSide || 'net'}`}`,
                 type: 'SWAP',
-                side: posData.side || (posSize > 0 ? 'long' : 'short'),
+                side: posSide === 'short' ? 'short' : 'long',
                 symbol,
                 amount: posSize,
                 avgPrice: posData.avg_price || parseFloat(posData.avgPx || '0'),
@@ -199,8 +220,15 @@ const Dashboard = () => {
                 profit: posData.unrealized_pnl || parseFloat(posData.upl || '0'),
                 profitPercent: posData.unrealized_pnl_pct || parseFloat(posData.uplRatio || '0') * 100,
                 // 优先用 notional_usd（OKX 准确持仓价值），否则 size*price（张数≠币数时不准）
-                value: posData.notional_usd || posData.notionalUsd || (posSize * currentPrice),
-                margin: posData.margin || 0,
+                value,
+                margin,
+                imr: imr > 0 ? imr : estimateInitialMargin(value, leverage, margin),
+                mmr: safeNumber(posData.mmr),
+                mgnRatio: posData.mgn_ratio || posData.mgnRatio || 0,
+                leverage,
+                posId: posData.pos_id || posData.posId,
+                posSide: posSide,
+                mgnMode: posData.mgn_mode || posData.mgnMode,
               }
             } catch {
               return null
@@ -221,6 +249,10 @@ const Dashboard = () => {
 
         setBalance(balanceData)
         setMarginRatio(newMarginRatio)
+        setAccountImr(newAccountImr)
+        setAccountMmr(newAccountMmr)
+        setAccountAdjEq(newAccountAdjEq)
+        setAccountNotionalUsd(newAccountNotionalUsd)
         setDailyPnlBaseline(newDailyPnlBaseline)
         setMaxDrawdown(newMaxDrawdown)
         setMaxDrawdownPct(newMaxDrawdownPct)
@@ -236,6 +268,10 @@ const Dashboard = () => {
           strategies: running,
           recentOrders: newOrders,
           marginRatio: newMarginRatio,
+          accountImr: newAccountImr,
+          accountMmr: newAccountMmr,
+          accountAdjEq: newAccountAdjEq,
+          accountNotionalUsd: newAccountNotionalUsd,
           dailyPnlBaseline: newDailyPnlBaseline,
           maxDrawdown: newMaxDrawdown,
           maxDrawdownPct: newMaxDrawdownPct,
@@ -315,12 +351,20 @@ const Dashboard = () => {
         totalEq: data.total_equity.toString(),
         availBal: data.available_balance.toString(),
         total_upl: data.unrealized_pnl.toString(),
+        adjEq: data.adjusted_equity?.toString(),
+        imr: data.imr?.toString(),
+        mmr: data.mmr?.toString(),
+        notionalUsd: data.notional_usd?.toString(),
         details: data.details,
       })
-      // 实时更新保证金率：OKX mgnRatio 是小数比率，统一乘以100转为百分比（与REST一致）
+      // OKX mgnRatio 是 adjEq / mmr，数值越大越安全。
       if (data.margin_ratio != null && isFinite(data.margin_ratio)) {
-        setMarginRatio(data.margin_ratio * 100)
+        setMarginRatio(data.margin_ratio)
       }
+      setAccountAdjEq(data.adjusted_equity || 0)
+      setAccountImr(data.imr || 0)
+      setAccountMmr(data.mmr || 0)
+      setAccountNotionalUsd(data.notional_usd || 0)
     })
 
     const unsubscribePositions = wsService.onPositionsUpdate(async (data: PositionsUpdateData) => {
@@ -329,14 +373,14 @@ const Dashboard = () => {
       const contractPositions = await Promise.all(
         data.positions.map(async (pos) => {
           try {
-            const ticker = await marketApi.getTicker(pos.symbol)
-            const currentPrice = pos.current_price || parseFloat((ticker as any)?.last || '0')
+            const currentPrice = pos.current_price || pos.last_price || 0
             // 优先使用OKX返回的notional_usd（持仓美元价值），这是准确的价值
             // 如果没有则回退到 size * currentPrice（可能不准确，因为SWAP合约张数≠币数）
             const positionValue = pos.notional_usd || (pos.size * currentPrice)
+            const imr = pos.imr || estimateInitialMargin(positionValue, pos.leverage || 0, pos.margin || 0)
 
             return {
-              key: `contract-${pos.symbol}`,
+              key: `contract-${pos.pos_id || `${pos.symbol}-${pos.pos_side || pos.side || 'net'}`}`,
               type: pos.inst_type || 'SWAP',
               side: pos.side || (pos.size > 0 ? 'long' : 'short'),
               symbol: pos.symbol,
@@ -347,11 +391,19 @@ const Dashboard = () => {
               profitPercent: pos.unrealized_pnl_pct,
               value: positionValue,
               margin: pos.margin || 0,
+              imr,
+              mmr: pos.mmr || 0,
+              mgnRatio: pos.mgn_ratio || 0,
+              leverage: pos.leverage || 0,
+              posId: pos.pos_id,
+              posSide: pos.pos_side,
+              mgnMode: pos.mgn_mode,
             }
           } catch (error) {
             const positionValue = pos.notional_usd || (pos.size * pos.current_price)
+            const imr = pos.imr || estimateInitialMargin(positionValue, pos.leverage || 0, pos.margin || 0)
             return {
-              key: `contract-${pos.symbol}`,
+              key: `contract-${pos.pos_id || `${pos.symbol}-${pos.pos_side || pos.side || 'net'}`}`,
               type: pos.inst_type || 'SWAP',
               side: pos.side || (pos.size > 0 ? 'long' : 'short'),
               symbol: pos.symbol,
@@ -362,6 +414,13 @@ const Dashboard = () => {
               profitPercent: pos.unrealized_pnl_pct,
               value: positionValue,
               margin: pos.margin || 0,
+              imr,
+              mmr: pos.mmr || 0,
+              mgnRatio: pos.mgn_ratio || 0,
+              leverage: pos.leverage || 0,
+              posId: pos.pos_id,
+              posSide: pos.pos_side,
+              mgnMode: pos.mgn_mode,
             }
           }
         })
@@ -394,33 +453,45 @@ const Dashboard = () => {
   const uplPercent = totalAssets > 0 ? (totalUpl / totalAssets) * 100 : 0
   const totalPositionValue = positionsWithPrice.reduce((sum, pos) => sum + (pos.value || 0), 0)
 
-  // 今日盈亏 = 当前净值 - 今日基线净值
+  // 今日净值变化 = 当前净值 - 今日基线净值。充值/划转也会影响该值。
   const dailyPnl = dailyPnlBaseline != null ? totalAssets - dailyPnlBaseline : null
   const dailyPnlPct = dailyPnlBaseline != null && dailyPnlBaseline > 0
     ? ((totalAssets - dailyPnlBaseline) / dailyPnlBaseline) * 100
     : null
 
-  // 保证金占用比 = 合约持仓占用保证金合计 / 总净值
+  // 保证金占用比 = 初始保证金 / 总净值，优先使用 OKX 账户级 imr。
   const totalMarginUsed = positionsWithPrice
     .filter(p => p.type === 'SWAP')
-    .reduce((sum, pos) => sum + (pos.margin || 0), 0)
-  const marginUsagePct = totalAssets > 0 ? (totalMarginUsed / totalAssets) * 100 : 0
+    .reduce((sum, pos) => {
+      const imr = pos.imr || estimateInitialMargin(pos.value || 0, pos.leverage || 0, pos.margin || 0)
+      return sum + imr
+    }, 0)
+  const effectiveMarginUsed = accountImr || totalMarginUsed
+  const marginUsagePct = totalAssets > 0 ? (effectiveMarginUsed / totalAssets) * 100 : 0
+
+  // 保证金风险率 = 维持保证金 / 有效保证金。OKX mgnRatio = adjEq / mmr，越大越安全。
+  const effectiveAdjEq = accountAdjEq || totalAssets
+  const effectiveMmr = accountMmr || positionsWithPrice
+    .filter(p => p.type === 'SWAP')
+    .reduce((sum, pos) => sum + (pos.mmr || 0), 0)
+  const marginRiskPct = effectiveAdjEq > 0 ? (effectiveMmr / effectiveAdjEq) * 100 : 0
 
   // 账户综合杠杆 = 合约持仓总价值 / 总净值
-  const contractPositionValue = positionsWithPrice
+  const calculatedContractPositionValue = positionsWithPrice
     .filter(p => p.type === 'SWAP')
     .reduce((sum, pos) => sum + (pos.value || 0), 0)
+  const contractPositionValue = accountNotionalUsd || calculatedContractPositionValue
   const accountLeverage = totalAssets > 0 ? contractPositionValue / totalAssets : 0
 
   // 策略总盈亏
   const totalStrategyProfit = runningStrategies.reduce((sum, s) => sum + (s.total_profit || 0), 0)
 
   // 风险健康度 (0–100分)
-  // 扣分规则：保证金率(最多-40)、账户杠杆(最多-30)、最大回撤(最多-30)
+  // 扣分规则：维持保证金风险率(最多-40)、账户杠杆(最多-30)、最大回撤(最多-30)
   const riskHealth = Math.max(0, Math.min(100, (() => {
     let score = 100
-    if (marginRatio > 0) {
-      score -= Math.min(40, (marginRatio / 100) * 40)
+    if (marginRiskPct > 0) {
+      score -= Math.min(40, (marginRiskPct / 100) * 40)
     }
     if (accountLeverage > 1) {
       score -= Math.min(30, ((accountLeverage - 1) / 9) * 30)
@@ -666,11 +737,11 @@ const Dashboard = () => {
           </Card>
         </Col>
 
-        {/* 今日盈亏 */}
+        {/* 今日净值变化 */}
         <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
           <Card variant="borderless" size="small" style={{ height: '100%' }}>
             <div style={{ marginBottom: 8 }}>
-              <div className="pro-card-header">今日盈亏</div>
+              <div className="pro-card-header">今日净值变化</div>
             </div>
             {dailyPnl != null ? (
               <>
@@ -813,7 +884,7 @@ const Dashboard = () => {
 
         {/* 保证金占用比 */}
         <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
-          <Tooltip title="已占用保证金 / 账户总净值。反映资金被锁定的比例，占比越高流动性越低">
+          <Tooltip title="初始保证金 imr / 账户总净值。优先使用 OKX 账户级 imr，全仓和逐仓都能统一反映资金占用">
             <Card variant="borderless" size="small" style={{ height: '100%' }}>
               <div style={{ marginBottom: 8 }}>
                 <div className="pro-card-header" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -839,7 +910,12 @@ const Dashboard = () => {
                   size="small"
                 />
                 <div style={{ fontSize: 11, color: '#737373', marginTop: 4 }}>
-                  已用 ${formatAmount(totalMarginUsed)}
+                  已用 ${formatAmount(effectiveMarginUsed)}
+                  {marginRiskPct > 0 && (
+                    <span style={{ marginLeft: 6 }}>
+                      维持风险 {formatPercent(marginRiskPct)}%
+                    </span>
+                  )}
                 </div>
               </div>
             </Card>
@@ -932,7 +1008,7 @@ const Dashboard = () => {
 
         {/* 风险健康度 */}
         <Col xs={24} sm={12} lg={6} xl={5} xxl={5}>
-          <Tooltip title="综合评分：保证金率(40%) + 账户杠杆(30%) + 最大回撤(30%)。75分以上为健康，50-75分需关注，50分以下为高风险">
+          <Tooltip title="综合评分：维持保证金风险率 mmr/adjEq(40%) + 账户杠杆(30%) + 最大回撤(30%)。OKX mgnRatio 是安全倍数，越大越安全">
             <Card variant="borderless" size="small" style={{ height: '100%' }}>
               <div style={{ marginBottom: 8 }}>
                 <div className="pro-card-header" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -969,6 +1045,11 @@ const Dashboard = () => {
                   }}
                 >
                   {getRiskHealthLabel(riskHealth)}
+                  {marginRatio > 0 && (
+                    <span style={{ color: '#737373', fontWeight: 400, marginLeft: 6 }}>
+                      安全 {formatAmount(marginRatio)}x
+                    </span>
+                  )}
                 </div>
               </div>
             </Card>

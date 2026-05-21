@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Optional
 from app.websocket.manager import broadcast_balance_update, broadcast_positions_update
 from app.services.api_config_service import api_config_service
+from app.services.exchange.okx import OKXExchange
 
 
 def safe_float(value, default=0.0):
@@ -37,11 +38,21 @@ class AccountMonitor:
         # 快照计数器：每360次循环(= 3600秒 = 1小时)保存一次快照
         self._snapshot_counter = 0
         self._snapshot_interval = 360
+        self.user_id = 1
 
     def _get_exchange(self):
         """获取或创建 exchange 实例（复用，不重复创建）"""
         if self._exchange is None:
-            self._exchange = api_config_service.get_exchange(user_id=1)
+            config = api_config_service.get_active_config(self.user_id)
+            if not config or not config.is_valid:
+                return None
+            self._exchange = OKXExchange(
+                api_key=config.api_key,
+                secret_key=config.secret_key,
+                passphrase=config.passphrase,
+                simulated=config.is_simulated,
+                proxy=config.proxy,
+            )
         return self._exchange
 
     async def start(self):
@@ -50,8 +61,11 @@ class AccountMonitor:
             logger.warning("账户监控器已在运行")
             return
 
-        # 预先创建 exchange 实例
-        self._exchange = api_config_service.get_exchange(user_id=1)
+        # 账户监控只使用系统内已激活配置，不回退 .env，避免无效开发 key 持续刷 OKX 私有接口。
+        self._exchange = self._get_exchange()
+        if self._exchange is None:
+            logger.warning("未找到有效且激活的系统内API配置，账户监控器不启动")
+            return
 
         self.is_running = True
         self._task = asyncio.create_task(self._monitor_loop())
@@ -135,7 +149,10 @@ class AccountMonitor:
                     "available_balance": available_balance,
                     "unrealized_pnl": total_upl,
                     "margin_ratio": safe_float(balance_data.get("mgnRatio")),
+                    "adjusted_equity": safe_float(balance_data.get("adjEq")),
                     "imr": imr,
+                    "mmr": safe_float(balance_data.get("mmr")),
+                    "notional_usd": safe_float(balance_data.get("notionalUsd")),
                     "details": details,
                     "timestamp": int(datetime.now().timestamp() * 1000)
                 }
@@ -175,17 +192,27 @@ class AccountMonitor:
                     pos_size = safe_float(pos.get("pos"))
                     if pos_size != 0:  # 只推送有持仓的
                         upl = safe_float(pos.get("upl"))
+                        pos_side = pos.get("posSide") or "net"
+                        side = pos_side if pos_side in ("long", "short") else ("long" if pos_size > 0 else "short")
                         total_unrealized_pnl += upl
 
                         active_positions.append({
+                            "pos_id": pos.get("posId", ""),
+                            "pos_side": pos_side,
+                            "mgn_mode": pos.get("mgnMode", ""),
                             "symbol": pos.get("instId", ""),
-                            "side": "long" if pos_size > 0 else "short",
+                            "side": side,
                             "size": abs(pos_size),
                             "avg_price": safe_float(pos.get("avgPx")),
                             "current_price": safe_float(pos.get("markPx")),
+                            "last_price": safe_float(pos.get("last")),
                             "unrealized_pnl": upl,
                             "unrealized_pnl_pct": safe_float(pos.get("uplRatio")) * 100,
                             "margin": safe_float(pos.get("margin")),
+                            "imr": safe_float(pos.get("imr")),
+                            "mmr": safe_float(pos.get("mmr")),
+                            "mgn_ratio": safe_float(pos.get("mgnRatio")),
+                            "adl": safe_float(pos.get("adl")),
                             "liquidation_price": safe_float(pos.get("liqPx")) if pos.get("liqPx") else None,
                             "leverage": safe_float(pos.get("lever")),
                             "inst_type": pos.get("instType", "SWAP"),

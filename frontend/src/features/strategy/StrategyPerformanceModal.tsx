@@ -1,4 +1,4 @@
-import { Modal, Card, Row, Col, Statistic, Spin, Empty, message, Alert } from 'antd'
+import { Modal, Card, Row, Col, Statistic, Spin, Empty, Alert, App } from 'antd'
 import { TrendingUp, TrendingDown, Info } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import ReactECharts from 'echarts-for-react'
@@ -13,6 +13,7 @@ interface StrategyPerformanceModalProps {
 }
 
 export default function StrategyPerformanceModal({ open, strategy, onCancel }: StrategyPerformanceModalProps) {
+  const { message } = App.useApp()
   const [loading, setLoading] = useState(false)
   const [performance, setPerformance] = useState<StrategyPerformance | null>(null)
 
@@ -251,6 +252,10 @@ export default function StrategyPerformanceModal({ open, strategy, onCancel }: S
     }
   }
 
+  const hasOpenPosition = Boolean(performance?.in_position) || Math.abs(performance?.unrealized_profit ?? 0) > 0
+  const hasClosedTrades = (performance?.total_trades ?? 0) > 0
+  const totalOrders = performance?.total_orders ?? performance?.total_trades ?? 0
+
   return (
     <Modal
       title={`策略性能监控 - ${strategy?.name || ''}`}
@@ -284,7 +289,7 @@ export default function StrategyPerformanceModal({ open, strategy, onCancel }: S
       ) : (
         <div>
           {/* 空状态提示 */}
-          {performance.total_trades === 0 && (
+          {!hasOpenPosition && !hasClosedTrades && (
             <Alert
               message="策略尚未产生交易"
               description={
@@ -292,6 +297,16 @@ export default function StrategyPerformanceModal({ open, strategy, onCancel }: S
                   ? '策略正在运行中,订单成交后将显示实时性能数据'
                   : '启动策略后将开始收集性能数据,包括收益率、胜率、盈亏曲线等'
               }
+              type="info"
+              showIcon
+              icon={<Info size={14} />}
+              style={{ marginBottom: 24 }}
+            />
+          )}
+          {hasOpenPosition && !hasClosedTrades && (
+            <Alert
+              message="策略已开仓，等待平仓统计"
+              description="当前持仓已有未实现盈亏，平仓后将生成胜率、已实现盈亏和收益曲线。"
               type="info"
               showIcon
               icon={<Info size={14} />}
@@ -339,8 +354,8 @@ export default function StrategyPerformanceModal({ open, strategy, onCancel }: S
             <Col span={6}>
               <Card>
                 <Statistic
-                  title="总交易次数"
-                  value={performance.total_trades}
+                  title="订单次数"
+                  value={totalOrders}
                   valueStyle={{ color: '#e5e5e5' }}
                 />
               </Card>
@@ -418,9 +433,13 @@ export default function StrategyPerformanceModal({ open, strategy, onCancel }: S
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={
                   <div style={{ color: '#a3a3a3' }}>
-                    <div style={{ fontSize: 14, marginBottom: 8 }}>暂无交易记录</div>
+                    <div style={{ fontSize: 14, marginBottom: 8 }}>
+                      {hasOpenPosition ? '持仓尚未平仓' : '暂无交易记录'}
+                    </div>
                     <div style={{ fontSize: 12, color: '#666' }}>
-                      {strategy?.status === 'running'
+                      {hasOpenPosition
+                        ? '当前持仓尚未平仓，平仓后将生成收益曲线'
+                        : strategy?.status === 'running'
                         ? '策略正在运行中,请等待订单成交后查看性能数据'
                         : '策略尚未启动或未产生交易,启动策略后将自动生成性能分析'}
                     </div>

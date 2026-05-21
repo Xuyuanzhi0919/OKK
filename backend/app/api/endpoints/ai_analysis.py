@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from app.core.database import get_db
+from app.api.deps import require_current_user_id
 from app.services.exchange.okx import OKXExchange
 from app.services.ai.multi_factor_analyzer import MultiFactorAnalyzer
 from app.models.api_config import APIConfig
@@ -16,11 +17,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_current_user_api_config():
-    """获取当前用户激活的API配置"""
-    # TODO: 从JWT token中获取真实用户ID
-    user_id = 1
-    return user_id
+get_current_user_api_config = require_current_user_id
 
 
 class AnalysisRequest(BaseModel):
@@ -162,4 +159,3 @@ async def analyze_batch(
     except Exception as e:
         logger.error(f"批量分析失败: {e}")
         raise HTTPException(status_code=500, detail=f"批量分析失败: {str(e)}")
-

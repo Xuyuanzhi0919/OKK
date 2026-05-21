@@ -180,7 +180,8 @@ const BacktestDetail = () => {
                 'grid': '网格策略',
                 'grid_mm': '网格做市',
                 'ma_cross': '均线交叉',
-                'dual_ma_cross': '双均线(多空)'
+                'dual_ma_cross': '双均线(多空)',
+                'adaptive_grid_trend': '自适应趋势网格'
               }
               return names[backtest.strategy_type] || backtest.strategy_type
             })()}

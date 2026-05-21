@@ -9,12 +9,12 @@ import {
   InputNumber,
   Button,
   Space,
-  message,
   Divider,
   Alert,
   Row,
   Col,
   Switch,
+  App,
 } from 'antd';
 import {
   ShoppingCart,
@@ -33,6 +33,7 @@ export default function TradingPanelV2({
   defaultSymbol = 'BTC-USDT',
   onOrderCreated,
 }: TradingPanelV2Props) {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'buy' | 'sell'>('buy');

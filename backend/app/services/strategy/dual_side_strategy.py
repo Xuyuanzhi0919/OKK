@@ -91,6 +91,8 @@ class DualSideStrategy(StrategyBase):
         self._lot_sz: float = 1.0    # 下单精度
         self._min_sz: float = 1.0    # 最小下单量
         self._is_swap: bool = symbol.endswith("-SWAP") or symbol.endswith("-FUTURES")
+        self._position_mode: str = "net_mode"
+        self._use_pos_side: bool = False
 
         # 仓位状态
         self._position_side: str = ""      # "long" / "short" / ""
@@ -264,27 +266,48 @@ class DualSideStrategy(StrategyBase):
         except Exception as e:
             logger.warning(f"[{self.symbol}] 获取合约规格失败: {e}")
 
-        # 设置双向持仓模式（开平仓模式）
+        # 设置/检测持仓模式（开平仓模式优先，失败则兼容 net mode）
         try:
-            await self.exchange.set_position_mode("long_short_mode")
+            config = await self.exchange.get_account_config()
+            self._position_mode = config.get("posMode") or "net_mode"
+        except Exception as e:
+            self._position_mode = "net_mode"
+            logger.warning(f"[{self.symbol}] 获取持仓模式失败，按 net_mode 兼容下单: {e}")
+
+        try:
+            if self._position_mode != "long_short_mode":
+                await self.exchange.set_position_mode("long_short_mode")
+                self._position_mode = "long_short_mode"
             logger.info(f"[{self.symbol}] 持仓模式已设置为双向持仓 (long_short_mode)")
         except Exception as e:
-            logger.warning(f"[{self.symbol}] 设置持仓模式失败(可能已是双向模式): {e}")
+            logger.warning(
+                f"[{self.symbol}] 设置双向持仓失败，使用当前 net_mode 下单；"
+                f"如需同时持有多空，请先在 OKX 平掉持仓/挂单后切换: {e}"
+            )
+
+        self._use_pos_side = self._position_mode == "long_short_mode"
 
         # 设置杠杆
         try:
-            await self.exchange.set_leverage(
-                lever=str(self.leverage),
-                mgn_mode=self.margin_mode,
-                inst_id=self.symbol,
-                pos_side="long",
-            )
-            await self.exchange.set_leverage(
-                lever=str(self.leverage),
-                mgn_mode=self.margin_mode,
-                inst_id=self.symbol,
-                pos_side="short",
-            )
+            if self._use_pos_side:
+                await self.exchange.set_leverage(
+                    lever=str(self.leverage),
+                    mgn_mode=self.margin_mode,
+                    inst_id=self.symbol,
+                    pos_side="long",
+                )
+                await self.exchange.set_leverage(
+                    lever=str(self.leverage),
+                    mgn_mode=self.margin_mode,
+                    inst_id=self.symbol,
+                    pos_side="short",
+                )
+            else:
+                await self.exchange.set_leverage(
+                    lever=str(self.leverage),
+                    mgn_mode=self.margin_mode,
+                    inst_id=self.symbol,
+                )
             logger.info(f"[{self.symbol}] 杠杆已设置为 {self.leverage}x ({self.margin_mode})")
         except Exception as e:
             logger.warning(f"[{self.symbol}] 设置杠杆失败: {e}")
@@ -539,6 +562,9 @@ class DualSideStrategy(StrategyBase):
     # 交易执行
     # ═══════════════════════════════════════════════════════════
 
+    def _order_pos_side(self, side: str) -> str:
+        return side if self._use_pos_side else "net"
+
     async def _open_position(self, price: float, side: str):
         """开仓"""
         if not self.is_running:
@@ -568,7 +594,7 @@ class DualSideStrategy(StrategyBase):
 
             # 下单（通过基类方法，自动保存到数据库）
             order_side = "buy" if side == "long" else "sell"
-            pos_side = "long" if side == "long" else "short"
+            pos_side = self._order_pos_side(side)
 
             result = await self.place_order_with_retry(
                 side=order_side,
@@ -628,7 +654,7 @@ class DualSideStrategy(StrategyBase):
 
             # 下单平仓（通过基类方法，自动保存到数据库）
             order_side = "sell" if self._position_side == "long" else "buy"
-            pos_side = self._position_side
+            pos_side = self._order_pos_side(self._position_side)
 
             result = await self.place_order_with_retry(
                 side=order_side,

@@ -190,6 +190,122 @@ docker-compose -f docker-compose.prod.yml up -d --build
 docker-compose -f docker-compose.prod.yml up -d --build backend
 ```
 
+### 本地上传后云端更新
+
+如果服务器不直接拉 Git，可以在本地打包上传并让服务器自动更新 Docker：
+
+```bash
+OKK_DEPLOY_HOST=你的服务器IP \
+OKK_DEPLOY_USER=root \
+OKK_DEPLOY_PATH=/opt/1panel/apps/okk-trading \
+./scripts/deploy-upload.sh
+```
+
+可选参数：
+
+```bash
+# SSH 不是 22 端口时
+OKK_DEPLOY_PORT=2222
+
+# 指定本次要执行的迁移，多个用英文逗号分隔
+OKK_MIGRATIONS="backend/migrations/012_add_strategy_api_config_binding.sql"
+```
+
+这个流程会：
+
+1. 本地打包代码，自动排除 `.env`、`node_modules`、`venv`、日志和构建产物。
+2. 上传到服务器 `/tmp`。
+3. 服务器备份当前代码和数据库。
+4. 保留服务器上的 `.env`、`backend/logs`、`nginx/logs`。
+5. 执行指定数据库迁移。
+6. 重新构建并启动 `backend`、`frontend`、`nginx` 容器。
+7. 检查 `http://127.0.0.1:8000/` 后端健康状态。
+
+服务器需要已安装：
+
+```bash
+docker
+docker compose 或 docker-compose
+rsync
+curl
+```
+
+Ubuntu 可安装缺失工具：
+
+```bash
+apt update
+apt install -y rsync curl
+```
+
+### 镜像仓库发布更新
+
+更标准的生产发布方式是：本地或 CI 构建镜像，推送到 Docker 镜像仓库，服务器只拉取镜像并重启。
+
+支持 Docker Hub、GitHub Container Registry、阿里云 ACR 等仓库。先登录你的镜像仓库：
+
+```bash
+docker login registry.cn-hangzhou.aliyuncs.com
+```
+
+本地构建并推送镜像：
+
+```bash
+OKK_IMAGE_REPO=registry.cn-hangzhou.aliyuncs.com/你的命名空间/okk \
+OKK_IMAGE_TAG=v1 \
+./scripts/docker-publish.sh
+```
+
+上面会推送两个镜像：
+
+```bash
+registry.cn-hangzhou.aliyuncs.com/你的命名空间/okk-backend:v1
+registry.cn-hangzhou.aliyuncs.com/你的命名空间/okk-frontend:v1
+```
+
+服务器 `.env` 里配置当前要运行的镜像：
+
+```bash
+OKK_BACKEND_IMAGE=registry.cn-hangzhou.aliyuncs.com/你的命名空间/okk-backend:v1
+OKK_FRONTEND_IMAGE=registry.cn-hangzhou.aliyuncs.com/你的命名空间/okk-frontend:v1
+```
+
+服务器登录镜像仓库：
+
+```bash
+docker login registry.cn-hangzhou.aliyuncs.com
+```
+
+服务器拉取并更新：
+
+```bash
+cd /opt/1panel/apps/okk-trading
+./scripts/server-pull-update.sh /opt/1panel/apps/okk-trading
+```
+
+如果服务器上没有最新脚本，可以先从本地上传一次 `scripts/server-pull-update.sh`，或者用前面的“本地上传后云端更新”流程把脚本同步过去。
+
+以后发新版本只需要改 tag：
+
+```bash
+OKK_IMAGE_REPO=registry.cn-hangzhou.aliyuncs.com/你的命名空间/okk \
+OKK_IMAGE_TAG=v2 \
+./scripts/docker-publish.sh
+```
+
+然后服务器 `.env` 改成 `v2`，再执行：
+
+```bash
+./scripts/server-pull-update.sh /opt/1panel/apps/okk-trading
+```
+
+如果想永远用同一个标签，也可以用：
+
+```bash
+OKK_IMAGE_TAG=latest
+```
+
+不过实盘系统更建议用 `v1`、`v2`、日期或 Git commit 作为标签，回滚会更稳。
+
 ## 🔒 安全配置
 
 ### 1. 防火墙设置

@@ -134,8 +134,10 @@ CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol);
 
 -- Seed admin user (password: admin123)
 INSERT INTO users (username, email, hashed_password, is_superuser)
-VALUES ('admin', 'admin@okk.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzS3MjJ0G2', TRUE)
-ON CONFLICT (username) DO NOTHING;
+VALUES ('admin', 'admin@okk.com', '$2b$12$XZfL2JOv0K1ytph5pt9fO.bTak9m.H6GN20KFYkd4wKoJSqK4a9ia', TRUE)
+ON CONFLICT (username) DO UPDATE SET
+    hashed_password = EXCLUDED.hashed_password,
+    is_superuser = TRUE;
 
 -- =========================
 -- API configs
@@ -164,6 +166,15 @@ CREATE TABLE IF NOT EXISTS api_configs (
 
 CREATE INDEX IF NOT EXISTS idx_api_configs_user_id ON api_configs(user_id);
 CREATE INDEX IF NOT EXISTS idx_api_configs_is_active ON api_configs(is_active);
+
+ALTER TABLE strategies
+    ADD COLUMN IF NOT EXISTS api_config_id INTEGER;
+ALTER TABLE strategies
+    DROP CONSTRAINT IF EXISTS strategies_api_config_id_fkey;
+ALTER TABLE strategies
+    ADD CONSTRAINT strategies_api_config_id_fkey
+    FOREIGN KEY (api_config_id) REFERENCES api_configs(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_strategies_api_config_id ON strategies(api_config_id);
 
 -- =========================
 -- Alerts

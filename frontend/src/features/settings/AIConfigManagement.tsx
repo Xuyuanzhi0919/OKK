@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Card, Table, Button, Modal, Form, Input, Tag, Space, message, Popconfirm, App, Alert, Tooltip } from 'antd'
+import { Card, Table, Button, Modal, Form, Input, Tag, Space, Popconfirm, App, Alert, Tooltip } from 'antd'
 import { Plus, Edit, Trash2, Check, Brain, Zap, Key } from 'lucide-react'
 import type { ColumnsType } from 'antd/es/table'
 import { aiApi } from '@/services/api'

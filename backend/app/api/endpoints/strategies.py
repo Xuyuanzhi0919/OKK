@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.core.database import get_db
+from app.api.deps import require_current_user_id
 from app.models.strategy import Strategy, StrategyStatus
 from app.models.order import Order, OrderStatus, OrderSide
 from app.schemas.strategy import (
@@ -15,7 +16,6 @@ from app.schemas.strategy import (
     StrategyStatsResponse,
 )
 from app.services.strategy.manager import strategy_manager
-from app.services.exchange.okx import OKXExchange
 from app.services.api_config_service import api_config_service
 from app.core.config import settings
 from typing import List
@@ -27,28 +27,10 @@ from loguru import logger
 router = APIRouter()
 
 
-# 临时：获取当前用户ID（后续需要实现认证）
-def get_current_user_id(db: Session = Depends(get_db)) -> int:
-    """获取当前用户ID（临时实现，自动创建默认用户）"""
-    from app.models.user import User
-    
-    # 检查用户ID=1是否存在
-    user = db.query(User).filter(User.id == 1).first()
-    if not user:
-        # 自动创建默认用户
-        user = User(
-            id=1,
-            username="default",
-            email="default@example.com",
-            hashed_password="$2b$12$dummy_hashed_password_not_for_login",
-            is_active=True,
-            is_superuser=False
-        )
-        db.add(user)
-        db.commit()
-        logger.info("自动创建默认用户 id=1")
-    
-    return 1  # TODO: 实现真实的用户认证
+get_current_user_id = require_current_user_id
+
+
+SUPPORTED_STRATEGY_TYPE = "adaptive_grid_trend"
 
 
 @router.get("/", response_model=StrategyListResponse)
@@ -140,6 +122,7 @@ async def list_strategies(
             strategy_dict = {
                 'id': strategy.id,
                 'user_id': strategy.user_id,
+                'api_config_id': strategy.api_config_id,
                 'name': strategy.name,
                 'type': strategy.type,
                 'symbol': strategy.symbol,
@@ -179,10 +162,6 @@ async def create_strategy(
 ):
     """创建策略"""
     try:
-        # 导入StrategyType用于类型转换
-        from app.models.strategy import StrategyType
-        from decimal import Decimal
-
         # 将strategy_data.type转换为字符串值（小写）
         if isinstance(strategy_data.type, str):
             strategy_type_value = strategy_data.type
@@ -192,76 +171,33 @@ async def create_strategy(
 
         logger.debug(f"策略类型转换: {strategy_data.type} -> {strategy_type_value}")
 
-        # 如果是网格策略，检查余额是否充足
-        if strategy_type_value == 'grid':
-            try:
-                # 获取用户的API配置
-                api_config = api_config_service.get_active_config(user_id, db)
-                if not api_config:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="请先配置API密钥"
-                    )
+        if strategy_type_value != SUPPORTED_STRATEGY_TYPE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="后端当前仅支持自适应趋势网格策略"
+            )
 
-                # 创建交易所实例
-                exchange = OKXExchange(
-                    api_key=api_config.api_key,
-                    secret_key=api_config.secret_key,
-                    passphrase=api_config.passphrase,
-                    simulated=api_config.is_simulated,
-                    proxy=api_config.proxy or settings.OKX_PROXY
+        bound_api_config = None
+        if strategy_data.api_config_id is not None:
+            bound_api_config = api_config_service.get_config(
+                user_id=user_id,
+                config_id=strategy_data.api_config_id,
+                db=db,
+            )
+            if not bound_api_config:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="绑定的API配置不存在"
                 )
-
-                # 获取USDT余额
-                balance_data = await exchange.get_balance(ccy="USDT")
-                # OKX API返回的数据结构: data[0]包含details数组,需要从中找到USDT币种
-                details = balance_data.get("details", [])
-                usdt_detail = next((d for d in details if d.get("ccy") == "USDT"), None)
-                if not usdt_detail:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="无法获取USDT余额信息"
-                    )
-                available_balance = Decimal(str(usdt_detail.get("availBal", "0")))
-
-                # 计算网格策略所需资金
-                params = strategy_data.parameters
-                grid_count = params.get("grid_num", 10)
-                price_upper = Decimal(str(params.get("price_upper", 0)))
-                price_lower = Decimal(str(params.get("price_lower", 0)))
-                total_investment = Decimal(str(params.get("total_amount", 0)))
-
-                # 验证参数
-                if total_investment <= 0:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="总投入金额必须大于0"
-                    )
-
-                # 检查余额是否充足
-                # 模拟盘不需要缓冲，实盘预留2%缓冲
-                if api_config.is_simulated:
-                    required_balance = total_investment
-                    logger.info(f"余额检查(模拟盘): 可用={available_balance} USDT, 需要={required_balance} USDT")
-                else:
-                    required_balance = total_investment * Decimal("1.02")
-                    logger.info(f"余额检查(实盘): 可用={available_balance} USDT, 需要={required_balance} USDT (含2%缓冲)")
-
-                if available_balance < required_balance:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"账户USDT余额不足。可用余额: {available_balance} USDT，策略需要: {total_investment} USDT。请充值账户或减小策略参数。"
-                    )
-
-            except HTTPException:
-                # 重新抛出HTTPException
-                raise
-            except Exception as balance_error:
-                logger.warning(f"余额检查失败（将继续创建策略）: {balance_error}")
-                # 余额检查失败不应阻止策略创建，只是警告
+            if not bound_api_config.is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"绑定的API配置无效: {bound_api_config.error_message or '请先验证配置'}"
+                )
 
         db_strategy = Strategy(
             user_id=user_id,
+            api_config_id=strategy_data.api_config_id,
             name=strategy_data.name,
             type=strategy_type_value,
             symbol=strategy_data.symbol,
@@ -411,8 +347,11 @@ async def delete_strategy(
         if pending_orders:
             logger.info(f"删除策略前撤销 {len(pending_orders)} 个未成交订单")
 
-            # 获取交易所实例
-            exchange = api_config_service.get_exchange(user_id=user_id)
+            # 获取策略绑定的交易所实例；旧策略未绑定时回退到当前激活配置
+            exchange = api_config_service.get_exchange(
+                user_id=user_id,
+                config_id=strategy.api_config_id,
+            )
 
             for order in pending_orders:
                 try:
@@ -475,9 +414,19 @@ async def start_strategy(
                 detail="策略已在运行中"
             )
 
+        strategy_type_value = strategy.type.value if hasattr(strategy.type, 'value') else str(strategy.type)
+        if strategy_type_value != SUPPORTED_STRATEGY_TYPE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="后端当前仅支持启动自适应趋势网格策略"
+            )
+
         # 获取交易所实例（优先使用数据库配置，否则使用.env配置）
         try:
-            exchange = api_config_service.get_exchange(user_id=user_id)
+            exchange = api_config_service.get_exchange(
+                user_id=user_id,
+                config_id=strategy.api_config_id,
+            )
             logger.info(f"策略使用数据库API配置启动")
         except Exception as e:
             logger.warning(f"获取数据库API配置失败，使用.env配置: {e}")
@@ -716,54 +665,6 @@ async def get_strategy_orders(
         )
 
 
-@router.post("/grid/recommend-params")
-async def recommend_grid_params(
-    symbol: str,
-    total_amount: float,
-    user_id: int = Depends(get_current_user_id)
-):
-    """
-    智能推荐网格策略参数
-
-    Args:
-        symbol: 交易对,如 BTC-USDT
-        total_amount: 总投资金额(USDT)
-
-    Returns:
-        推荐的网格策略参数
-    """
-    try:
-        from app.services.strategy.grid_recommender import GridRecommender
-
-        # 获取公共交易所实例
-        from app.api.endpoints.market import get_public_okx_exchange
-        exchange = get_public_okx_exchange()
-
-        # 初始化推荐器
-        recommender = GridRecommender(exchange)
-
-        # 获取推荐参数
-        params = await recommender.recommend_params(
-            symbol=symbol,
-            total_amount=total_amount
-        )
-
-        await exchange.close()
-
-        return {
-            "code": 0,
-            "msg": "success",
-            "data": params
-        }
-
-    except Exception as e:
-        logger.error(f"推荐网格参数失败: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"推荐参数失败: {str(e)}"
-        )
-
-
 @router.get("/{strategy_id}/performance")
 async def get_strategy_performance(
     strategy_id: int,
@@ -800,17 +701,25 @@ async def get_strategy_performance(
             total_fee = pnl_data.get("total_fee", 0.0)
             buy_count = pnl_data.get("buy_count", 0)
             sell_count = pnl_data.get("sell_count", 0)
+            in_position = bool(pnl_data.get("in_position", False))
+            position_side = pnl_data.get("position_side", "")
 
             # 计算总交易次数和收益率
-            total_trades = buy_count + sell_count
+            total_trades = int(pnl_data.get("total_trades", buy_count + sell_count))
+            total_orders = int(pnl_data.get("total_orders", buy_count + sell_count))
             if strategy.parameters:
-                initial_amount = Decimal(str(strategy.parameters.get("initial_amount", 0)))
-                total_profit_rate = (Decimal(str(total_profit)) / initial_amount * 100) if initial_amount > 0 else Decimal('0')
+                base_amount = Decimal(str(
+                    strategy.parameters.get("initial_amount")
+                    or strategy.parameters.get("risk_base_usd")
+                    or strategy.parameters.get("max_position_usd")
+                    or 0
+                ))
+                total_profit_rate = (Decimal(str(total_profit)) / base_amount * 100) if base_amount > 0 else Decimal('0')
             else:
                 total_profit_rate = Decimal('0')
 
             # 简化胜率计算
-            win_rate = 100.0 if realized_profit > 0 else 0.0 if total_trades > 0 else 0.0
+            win_rate = float(pnl_data.get("win_rate", 100.0 if realized_profit > 0 else 0.0 if total_trades > 0 else 0.0))
 
             logger.info(f"使用策略实例计算性能: total_pnl={total_profit}, realized={realized_profit}, unrealized={unrealized_profit}")
 
@@ -824,6 +733,9 @@ async def get_strategy_performance(
                     "realized_profit": float(realized_profit),
                     "unrealized_profit": float(unrealized_profit),
                     "total_trades": total_trades,
+                    "total_orders": total_orders,
+                    "in_position": in_position,
+                    "position_side": position_side,
                     "successful_trades": buy_count if realized_profit > 0 else 0,
                     "failed_trades": 0,
                     "win_rate": win_rate,

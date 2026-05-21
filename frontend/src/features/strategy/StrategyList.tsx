@@ -1,4 +1,4 @@
-import { Card, Table, Button, Tag, Space, App, Modal, Input, Select, Row, Col, Dropdown, Radio } from 'antd'
+import { Card, Table, Button, Tag, Space, App, Input, Select, Row, Col, Dropdown, Radio } from 'antd'
 import {
   Play,
   Pause,
@@ -46,15 +46,14 @@ const STRATEGY_TYPE_LABELS: Record<string, string> = {
   martin: '马丁格尔',
   trend: '趋势跟踪',
   dual_side: '双向持仓',
+  adaptive_grid_trend: '自适应趋势网格',
   arbitrage: '套利',
   custom: '自定义',
 }
 
 // 可用实盘策略过滤选项
 const STRATEGY_TYPE_OPTIONS: { label: string; value: string }[] = [
-  { label: 'EMA趋势跟踪', value: 'trend' },
-  { label: '双向持仓', value: 'dual_side' },
-  { label: '网格交易', value: 'grid' },
+  { label: '自适应趋势网格', value: 'adaptive_grid_trend' },
 ]
 
 // 状态选项
@@ -67,9 +66,7 @@ const STATUS_OPTIONS = [
 
 // 创建策略下拉菜单（与 STRATEGY_TYPES 保持一致）
 const CREATE_MENU_ITEMS = [
-  { key: 'trend', label: 'EMA 趋势跟踪' },
-  { key: 'dual_side', label: '双向持仓' },
-  { key: 'grid', label: '网格交易' },
+  { key: 'adaptive_grid_trend', label: '自适应趋势网格' },
 ]
 
 const StrategyList = () => {
@@ -552,6 +549,7 @@ const StrategyList = () => {
           name: isCopyMode ? `${editingStrategy.name} (副本)` : editingStrategy.name,
         } : null}
       />
+
     </div>
   )
 }

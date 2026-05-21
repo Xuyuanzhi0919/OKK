@@ -9,9 +9,9 @@ import {
   Row,
   Col,
   Statistic,
-  message,
   Popconfirm,
   Typography,
+  App,
 } from 'antd'
 import {
   Bell,
@@ -28,6 +28,7 @@ const { Option } = Select
 const { Text } = Typography
 
 const AlertHistory = () => {
+  const { message } = App.useApp()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)

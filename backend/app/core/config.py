@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    API_ACCESS_TOKEN: Optional[str] = None
 
     # OKX API
     OKX_API_KEY: Optional[str] = None

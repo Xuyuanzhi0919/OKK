@@ -37,6 +37,7 @@ export enum OrderStatus {
 // 策略接口
 export interface Strategy {
   id: number
+  api_config_id?: number
   name: string
   type: string
   status: StrategyStatus
@@ -181,6 +182,9 @@ export interface StrategyPerformance {
   realized_profit: number       // 已实现盈亏
   unrealized_profit: number     // 未实现盈亏
   total_trades: number          // 总交易次数
+  total_orders?: number         // 总订单次数
+  in_position?: boolean         // 是否当前持仓中
+  position_side?: string        // 当前持仓方向
   successful_trades: number     // 成功交易次数
   failed_trades: number         // 失败交易次数
   win_rate: number              // 胜率(%)

@@ -44,6 +44,7 @@ services:
 
   # 后端API服务
   backend:
+    image: ${OKK_BACKEND_IMAGE:-okk-backend:latest}
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -58,6 +59,7 @@ services:
       - REDIS_PORT=6379
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - API_ACCESS_TOKEN=${API_ACCESS_TOKEN}
       - CORS_ORIGINS=["https://${DOMAIN}", "https://www.${DOMAIN}"]
     volumes:
       - ./backend/logs:/app/logs
@@ -78,6 +80,7 @@ services:
 
   # 前端应用
   frontend:
+    image: ${OKK_FRONTEND_IMAGE:-okk-frontend:latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.services.exchange.okx import OKXExchange
 from app.services.api_config_service import api_config_service
 from app.core.database import get_db
+from app.api.deps import require_current_user_id
 from app.models.order import Order as OrderModel
 from app.models.strategy import Strategy
 from loguru import logger
@@ -18,10 +19,10 @@ import asyncio
 router = APIRouter()
 
 
-def get_okx_exchange() -> OKXExchange:
+def get_okx_exchange(user_id: int) -> OKXExchange:
     """获取OKX交易所实例 (优先使用数据库配置)"""
     try:
-        return api_config_service.get_exchange(user_id=1)
+        return api_config_service.get_exchange(user_id=user_id)
     except Exception as e:
         logger.error(f"获取交易所实例失败: {e}")
         raise HTTPException(
@@ -59,7 +60,10 @@ class GetOrderRequest(BaseModel):
 
 
 @router.post("/create")
-async def create_order(request: CreateOrderRequest):
+async def create_order(
+    request: CreateOrderRequest,
+    user_id: int = Depends(require_current_user_id),
+):
     """
     创建订单
 
@@ -69,8 +73,9 @@ async def create_order(request: CreateOrderRequest):
     Returns:
         订单创建结果
     """
+    exchange = None
     try:
-        exchange = get_okx_exchange()
+        exchange = get_okx_exchange(user_id)
         result = await exchange.create_order(
             symbol=request.symbol,
             side=request.side,
@@ -83,8 +88,6 @@ async def create_order(request: CreateOrderRequest):
             reduce_only=request.reduce_only,
             tgt_ccy=request.tgt_ccy
         )
-        await exchange.close()
-
         return {
             "code": 0,
             "msg": "success",
@@ -96,10 +99,16 @@ async def create_order(request: CreateOrderRequest):
     except Exception as e:
         logger.error(f"下单失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if exchange is not None:
+            await exchange.close()
 
 
 @router.post("/cancel")
-async def cancel_order(request: CancelOrderRequest):
+async def cancel_order(
+    request: CancelOrderRequest,
+    user_id: int = Depends(require_current_user_id),
+):
     """
     撤销订单
 
@@ -109,15 +118,14 @@ async def cancel_order(request: CancelOrderRequest):
     Returns:
         撤单结果
     """
+    exchange = None
     try:
-        exchange = get_okx_exchange()
+        exchange = get_okx_exchange(user_id)
         result = await exchange.cancel_order(
             symbol=request.symbol,
             order_id=request.order_id,
             cl_ord_id=request.cl_ord_id
         )
-        await exchange.close()
-
         return {
             "code": 0,
             "msg": "success",
@@ -129,10 +137,16 @@ async def cancel_order(request: CancelOrderRequest):
     except Exception as e:
         logger.error(f"撤单失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if exchange is not None:
+            await exchange.close()
 
 
 @router.post("/detail")
-async def get_order(request: GetOrderRequest):
+async def get_order(
+    request: GetOrderRequest,
+    user_id: int = Depends(require_current_user_id),
+):
     """
     获取订单详情
 
@@ -142,15 +156,14 @@ async def get_order(request: GetOrderRequest):
     Returns:
         订单详细信息
     """
+    exchange = None
     try:
-        exchange = get_okx_exchange()
+        exchange = get_okx_exchange(user_id)
         result = await exchange.get_order(
             symbol=request.symbol,
             order_id=request.order_id,
             cl_ord_id=request.cl_ord_id
         )
-        await exchange.close()
-
         return {
             "code": 0,
             "msg": "success",
@@ -162,6 +175,9 @@ async def get_order(request: GetOrderRequest):
     except Exception as e:
         logger.error(f"查询订单失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if exchange is not None:
+            await exchange.close()
 
 
 @router.get("/list")
@@ -171,7 +187,8 @@ async def list_orders(
     side: Optional[str] = Query(None, description="买卖方向: buy/sell"),
     strategy_id: Optional[int] = Query(None, description="策略ID"),
     limit: int = Query(100, description="返回数量,最大100"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(require_current_user_id),
 ):
     """
     获取订单列表
@@ -196,7 +213,7 @@ async def list_orders(
         # 如果指定了strategy_id，只查该策略；否则查所有策略订单
         query = db.query(OrderModel, Strategy.name).outerjoin(
             Strategy, OrderModel.strategy_id == Strategy.id
-        )
+        ).filter(OrderModel.user_id == user_id)
 
         # 如果指定了strategy_id，只查该策略
         if strategy_id is not None:
@@ -263,45 +280,46 @@ async def list_orders(
         # 如果没有指定strategy_id，还要查询OKX API（手动交易订单）
         if strategy_id is None:
             logger.info("同时从OKX API查询手动交易订单（SPOT + SWAP）")
-            exchange = get_okx_exchange()
+            exchange = get_okx_exchange(user_id)
             all_orders = []
 
-            # OKX instType 枚举：orders-history 接口 instType 为必填
-            # 需要分别查询 SPOT 和 SWAP，再合并
-            inst_types = ["SPOT", "SWAP"]
+            try:
+                # OKX instType 枚举：orders-history 接口 instType 为必填
+                # 需要分别查询 SPOT 和 SWAP，再合并
+                inst_types = ["SPOT", "SWAP"]
 
-            if status == "pending" or status is None:
-                # orders-pending 的 instType 非必填，但传入可加速
-                pending_tasks = [
-                    exchange.get_orders_pending(inst_type=it, inst_id=symbol)
-                    for it in inst_types
-                ]
-                pending_results = await asyncio.gather(*pending_tasks, return_exceptions=True)
-                for r in pending_results:
-                    if isinstance(r, list):
-                        all_orders.extend(r)
-                    else:
-                        logger.warning(f"查询未完成订单部分失败: {r}")
+                if status == "pending" or status is None:
+                    # orders-pending 的 instType 非必填，但传入可加速
+                    pending_tasks = [
+                        exchange.get_orders_pending(inst_type=it, inst_id=symbol)
+                        for it in inst_types
+                    ]
+                    pending_results = await asyncio.gather(*pending_tasks, return_exceptions=True)
+                    for r in pending_results:
+                        if isinstance(r, list):
+                            all_orders.extend(r)
+                        else:
+                            logger.warning(f"查询未完成订单部分失败: {r}")
 
-            if status in ["filled", "canceled"] or status is None:
-                # 并发查 SPOT 和 SWAP 历史订单
-                history_tasks = [
-                    exchange.get_orders_history(
-                        inst_type=it,
-                        inst_id=symbol,
-                        state=status,
-                        limit=limit
-                    )
-                    for it in inst_types
-                ]
-                history_results = await asyncio.gather(*history_tasks, return_exceptions=True)
-                for r in history_results:
-                    if isinstance(r, list):
-                        all_orders.extend(r)
-                    else:
-                        logger.warning(f"查询历史订单部分失败: {r}")
-
-            await exchange.close()
+                if status in ["filled", "canceled"] or status is None:
+                    # 并发查 SPOT 和 SWAP 历史订单
+                    history_tasks = [
+                        exchange.get_orders_history(
+                            inst_type=it,
+                            inst_id=symbol,
+                            state=status,
+                            limit=limit
+                        )
+                        for it in inst_types
+                    ]
+                    history_results = await asyncio.gather(*history_tasks, return_exceptions=True)
+                    for r in history_results:
+                        if isinstance(r, list):
+                            all_orders.extend(r)
+                        else:
+                            logger.warning(f"查询历史订单部分失败: {r}")
+            finally:
+                await exchange.close()
 
             # 转换OKX订单为前端格式（跳过已经在数据库结果中的订单）
             for order in all_orders:
@@ -366,7 +384,11 @@ async def list_orders(
 
 
 @router.post("/{order_id}/cancel")
-async def cancel_order_by_id(order_id: str, symbol: str = Body(..., embed=True)):
+async def cancel_order_by_id(
+    order_id: str,
+    symbol: str = Body(..., embed=True),
+    user_id: int = Depends(require_current_user_id),
+):
     """
     通过订单ID撤销订单(用于前端按钮操作)
 
@@ -377,14 +399,13 @@ async def cancel_order_by_id(order_id: str, symbol: str = Body(..., embed=True))
     Returns:
         撤单结果
     """
+    exchange = None
     try:
-        exchange = get_okx_exchange()
+        exchange = get_okx_exchange(user_id)
         result = await exchange.cancel_order(
             symbol=symbol,
             order_id=order_id
         )
-        await exchange.close()
-
         return {
             "code": 0,
             "msg": "success",
@@ -396,3 +417,6 @@ async def cancel_order_by_id(order_id: str, symbol: str = Body(..., embed=True))
     except Exception as e:
         logger.error(f"撤单失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if exchange is not None:
+            await exchange.close()

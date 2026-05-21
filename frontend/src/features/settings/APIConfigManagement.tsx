@@ -9,9 +9,9 @@ import {
   Switch,
   Space,
   Tag,
-  message,
   Popconfirm,
-  Typography
+  Typography,
+  App as AntApp
 } from 'antd';
 import {
   Plus,
@@ -52,7 +52,16 @@ const API_CONFIGS_API = {
   getActive: '/api/v1/api-configs/active',
 };
 
+const authHeaders = (extra?: HeadersInit): HeadersInit => {
+  const token = localStorage.getItem('token');
+  return {
+    ...(extra || {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+};
+
 const APIConfigManagement: React.FC = () => {
+  const { message } = AntApp.useApp();
   const [form] = Form.useForm();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const queryClient = useQueryClient();
@@ -61,7 +70,9 @@ const APIConfigManagement: React.FC = () => {
   const { data: configs = [], isLoading } = useQuery<APIConfig[]>({
     queryKey: ['api-configs'],
     queryFn: async () => {
-      const response = await fetch(API_CONFIGS_API.list);
+      const response = await fetch(API_CONFIGS_API.list, {
+        headers: authHeaders(),
+      });
       if (!response.ok) throw new Error('获取配置列表失败');
       return response.json();
     },
@@ -73,7 +84,7 @@ const APIConfigManagement: React.FC = () => {
     mutationFn: async (values: any) => {
       const response = await fetch(API_CONFIGS_API.create, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(values),
       });
       if (!response.ok) {
@@ -98,6 +109,7 @@ const APIConfigManagement: React.FC = () => {
     mutationFn: async (id: number) => {
       const response = await fetch(API_CONFIGS_API.activate(id), {
         method: 'POST',
+        headers: authHeaders(),
       });
       if (!response.ok) {
         const error = await response.json();
@@ -107,9 +119,8 @@ const APIConfigManagement: React.FC = () => {
     },
     onSuccess: (data) => {
       message.success(data.msg);
+      localStorage.removeItem('okk_dashboard_v1');
       queryClient.invalidateQueries({ queryKey: ['api-configs'] });
-      // 刷新页面以应用新配置
-      setTimeout(() => window.location.reload(), 1000);
     },
     onError: (error: Error) => {
       message.error(`切换失败: ${error.message}`);
@@ -121,6 +132,7 @@ const APIConfigManagement: React.FC = () => {
     mutationFn: async (id: number) => {
       const response = await fetch(API_CONFIGS_API.delete(id), {
         method: 'DELETE',
+        headers: authHeaders(),
       });
       if (!response.ok) {
         const error = await response.json();
@@ -142,6 +154,7 @@ const APIConfigManagement: React.FC = () => {
     mutationFn: async (id: number) => {
       const response = await fetch(API_CONFIGS_API.verify(id), {
         method: 'POST',
+        headers: authHeaders(),
       });
       if (!response.ok) throw new Error('验证失败');
       return response.json();
@@ -315,7 +328,7 @@ const APIConfigManagement: React.FC = () => {
           initialValues={{
             exchange: 'OKX',
             is_simulated: false,
-            proxy: 'http://127.0.0.1:7897',
+            proxy: undefined,
           }}
         >
           <Form.Item
@@ -369,7 +382,7 @@ const APIConfigManagement: React.FC = () => {
             label="代理地址"
             name="proxy"
           >
-            <Input placeholder="http://127.0.0.1:7897" />
+            <Input placeholder="可选，例如: http://127.0.0.1:7897" allowClear />
           </Form.Item>
         </Form>
       </Modal>

@@ -147,8 +147,8 @@ class BacktestMetrics:
         if not trades:
             return 0.0
 
-        # 只统计卖出交易的盈亏
-        sell_trades = [t for t in trades if t['side'] == 'sell']
+        # 只统计已平仓交易；多单平仓通常是 sell，空单平仓通常是 buy。
+        sell_trades = [t for t in trades if t.get('pnl', 0) != 0]
 
         if not sell_trades:
             return 0.0
@@ -171,8 +171,8 @@ class BacktestMetrics:
         if not trades:
             return 0.0
 
-        # 只统计卖出交易
-        sell_trades = [t for t in trades if t['side'] == 'sell']
+        # 只统计已平仓交易；多空策略里空单平仓是 buy，不能只看 sell。
+        sell_trades = [t for t in trades if t.get('pnl', 0) != 0]
 
         if not sell_trades:
             return 0.0

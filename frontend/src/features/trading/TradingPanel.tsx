@@ -8,10 +8,10 @@ import {
   Select,
   Radio,
   Space,
-  message,
   Row,
   Col,
   Divider,
+  App,
 } from 'antd'
 import { DollarSign, Tag } from 'lucide-react'
 import { orderApi } from '@/services/api'
@@ -30,6 +30,7 @@ export default function TradingPanel({
   onOrderCreated,
 }: TradingPanelProps) {
   const { t } = useTranslation()
+  const { message } = App.useApp()
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [side, setSide] = useState<'buy' | 'sell'>('buy')

@@ -7,7 +7,7 @@ from decimal import Decimal
 from app.services.exchange.base import ExchangeBase
 import asyncio
 from loguru import logger
-from datetime import datetime
+from datetime import date, datetime
 
 
 class InsufficientBalanceError(Exception):
@@ -43,10 +43,15 @@ class StrategyBase(ABC):
         self.user_id = user_id
         self.is_running = False
 
-        # 连续亏损追踪
+        # 运行期交易质量追踪
         self.consecutive_losses: int = 0         # 当前连续亏损次数
         self.max_consecutive_losses: int = 0     # 历史最大连续亏损次数
-        self.trade_pnl_history: list = []        # 最近5笔平仓交易盈亏（最新在末尾）
+        self.trade_pnl_history: list = []        # 最近平仓交易盈亏（最新在末尾）
+        self.runtime_realized_pnl: float = 0.0    # 本次运行累计已实现盈亏
+        self.runtime_equity_peak: float = 0.0     # 本次运行已实现盈亏曲线峰值
+        self.max_runtime_drawdown: float = 0.0    # 本次运行最大回撤（绝对金额）
+        self.daily_realized_pnl: float = 0.0      # 当日已实现盈亏
+        self._daily_pnl_date: date = datetime.now().date()
 
     def record_trade_result(self, pnl: float) -> None:
         """
@@ -56,8 +61,21 @@ class StrategyBase(ABC):
         Args:
             pnl: 本次平仓的已实现盈亏（正盈负亏）
         """
+        today = datetime.now().date()
+        if today != self._daily_pnl_date:
+            self._daily_pnl_date = today
+            self.daily_realized_pnl = 0.0
+
+        self.runtime_realized_pnl += pnl
+        self.daily_realized_pnl += pnl
+        self.runtime_equity_peak = max(self.runtime_equity_peak, self.runtime_realized_pnl)
+        self.max_runtime_drawdown = max(
+            self.max_runtime_drawdown,
+            self.runtime_equity_peak - self.runtime_realized_pnl
+        )
+
         self.trade_pnl_history.append(round(pnl, 4))
-        if len(self.trade_pnl_history) > 5:
+        if len(self.trade_pnl_history) > 50:
             self.trade_pnl_history.pop(0)
 
         if pnl < 0:
@@ -69,8 +87,22 @@ class StrategyBase(ABC):
 
         logger.debug(
             f"策略 {self.strategy_id} 交易结果记录: pnl={pnl:.4f}, "
-            f"consecutive_losses={self.consecutive_losses}, max={self.max_consecutive_losses}"
+            f"runtime_pnl={self.runtime_realized_pnl:.4f}, daily_pnl={self.daily_realized_pnl:.4f}, "
+            f"drawdown={self.max_runtime_drawdown:.4f}, consecutive_losses={self.consecutive_losses}, "
+            f"max={self.max_consecutive_losses}"
         )
+
+    def runtime_profit_factor(self, window: int = 10) -> Optional[float]:
+        """计算最近若干笔平仓交易的盈亏比。"""
+        recent_trades = self.trade_pnl_history[-window:] if window > 0 else self.trade_pnl_history
+        if not recent_trades:
+            return None
+
+        gross_profit = sum(pnl for pnl in recent_trades if pnl > 0)
+        gross_loss = abs(sum(pnl for pnl in recent_trades if pnl < 0))
+        if gross_loss == 0:
+            return float("inf") if gross_profit > 0 else None
+        return gross_profit / gross_loss
 
     @abstractmethod
     async def on_tick(self, ticker: Dict):

@@ -42,7 +42,33 @@ class APIConfigService:
                 db.close()
 
     @staticmethod
-    def get_exchange(user_id: int = 1) -> OKXExchange:
+    def get_config(
+        user_id: int = 1,
+        config_id: Optional[int] = None,
+        db: Optional[Session] = None
+    ) -> Optional[APIConfig]:
+        """
+        获取指定API配置；config_id为空时回退到当前激活配置。
+        """
+        if config_id is None:
+            return APIConfigService.get_active_config(user_id=user_id, db=db)
+
+        should_close = False
+        if db is None:
+            db = SessionLocal()
+            should_close = True
+
+        try:
+            return db.query(APIConfig).filter(
+                APIConfig.user_id == user_id,
+                APIConfig.id == config_id
+            ).first()
+        finally:
+            if should_close:
+                db.close()
+
+    @staticmethod
+    def get_exchange(user_id: int = 1, config_id: Optional[int] = None) -> OKXExchange:
         """
         获取OKX交易所实例 (优先使用数据库配置,否则使用.env配置)
 
@@ -52,8 +78,14 @@ class APIConfigService:
         Returns:
             OKXExchange实例
         """
-        # 尝试从数据库获取激活配置
-        config = APIConfigService.get_active_config(user_id)
+        # 尝试从数据库获取绑定配置；未绑定则使用激活配置
+        config = APIConfigService.get_config(user_id=user_id, config_id=config_id)
+
+        if config_id is not None and not config:
+            raise Exception(f"API配置不存在或不属于用户: {config_id}")
+
+        if config_id is not None and config and not config.is_valid:
+            raise Exception(f"API配置无效: {config.name} - {config.error_message or '请先验证配置'}")
 
         if config and config.is_valid:
             logger.info(f"使用数据库API配置: {config.name} ({'模拟盘' if config.is_simulated else '实盘'})")

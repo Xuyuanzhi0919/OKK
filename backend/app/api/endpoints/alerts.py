@@ -8,15 +8,13 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.core.database import get_db
+from app.api.deps import require_current_user_id
 from app.models.alert import Alert
 
 router = APIRouter()
 
 
-# 临时：获取当前用户ID（后续需要实现认证）
-def get_current_user_id() -> int:
-    """获取当前用户ID（临时实现）"""
-    return 1
+get_current_user_id = require_current_user_id
 
 
 @router.get("/list")

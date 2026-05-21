@@ -10,6 +10,8 @@ import hashlib
 from datetime import datetime, timezone
 import asyncio
 import aiohttp
+import socket
+from urllib.parse import urlparse
 from loguru import logger
 from .base import ExchangeBase
 
@@ -37,7 +39,9 @@ class OKXExchange(ExchangeBase):
         # 实盘和模拟盘URL
         self.base_url = "https://www.okx.com"
         self.simulated = simulated
-        self.proxy = proxy
+        self.proxy = proxy.strip() if proxy and proxy.strip() else None
+        self._proxy_checked = False
+        self._instrument_cache: Dict[str, Dict] = {}
 
         # WebSocket URLs
         if simulated:
@@ -57,7 +61,98 @@ class OKXExchange(ExchangeBase):
         # 注意: 模拟盘不使用MockOrderManager，而是直接调用OKX模拟盘API
         # 通过 x-simulated-trading 请求头区分模拟盘和实盘
 
-        logger.info(f"初始化OKX交易所 - 模式: {'模拟盘' if simulated else '实盘'}, 代理: {proxy or '未设置'}")
+        logger.info(f"初始化OKX交易所 - 模式: {'模拟盘' if simulated else '实盘'}, 代理: {self.proxy or '未设置'}")
+
+    def _check_proxy_available(self) -> None:
+        """Fail fast when a local proxy is configured but not listening."""
+        if not self.proxy or self._proxy_checked:
+            return
+
+        parsed = urlparse(self.proxy)
+        host = parsed.hostname
+        port = parsed.port
+        if not host or not port:
+            raise ValueError(f"代理地址格式无效: {self.proxy}")
+
+        if host in {"127.0.0.1", "localhost", "::1"}:
+            try:
+                with socket.create_connection((host, port), timeout=0.5):
+                    pass
+            except OSError as exc:
+                raise ConnectionError(
+                    f"本地代理不可用: {self.proxy}。请启动代理或在 API 配置中改成可用端口。"
+                ) from exc
+
+        self._proxy_checked = True
+
+    @staticmethod
+    def _plain_decimal(value) -> str:
+        if isinstance(value, (Decimal, float)):
+            return format(value, 'f')
+        return str(value)
+
+    @staticmethod
+    def _decimal(value) -> Decimal:
+        return Decimal(str(value))
+
+    @classmethod
+    def _is_multiple(cls, value: Decimal, step: str) -> bool:
+        step_decimal = cls._decimal(step)
+        if step_decimal <= 0:
+            return True
+        return value.remainder_near(step_decimal) == 0
+
+    @classmethod
+    def _validate_order_precision(
+        cls,
+        instrument: Dict,
+        amount: Decimal,
+        price: Optional[Decimal],
+        order_type: str
+    ) -> None:
+        min_sz = instrument.get("minSz")
+        lot_sz = instrument.get("lotSz")
+        tick_sz = instrument.get("tickSz")
+        amount_decimal = cls._decimal(amount)
+
+        if min_sz and amount_decimal < cls._decimal(min_sz):
+            raise ValueError(f"下单数量 {amount_decimal} 小于最小下单量 minSz={min_sz}")
+        if lot_sz and not cls._is_multiple(amount_decimal, lot_sz):
+            raise ValueError(f"下单数量 {amount_decimal} 不符合数量步长 lotSz={lot_sz}")
+
+        if order_type in {"limit", "post_only", "fok", "ioc"} and price is not None and tick_sz:
+            price_decimal = cls._decimal(price)
+            if not cls._is_multiple(price_decimal, tick_sz):
+                raise ValueError(f"委托价格 {price_decimal} 不符合价格步长 tickSz={tick_sz}")
+
+    @staticmethod
+    def _infer_inst_type(symbol: str) -> str:
+        parts = symbol.upper().split("-")
+        if len(parts) >= 5 and parts[-1] in {"C", "P"}:
+            return "OPTION"
+        if len(parts) >= 3 and parts[-1] == "SWAP":
+            return "SWAP"
+        if len(parts) >= 3 and parts[-1].isdigit():
+            return "FUTURES"
+        return "SPOT"
+
+    async def get_instrument(self, symbol: str) -> Dict:
+        """Fetch and cache OKX instrument metadata for exact symbol."""
+        if symbol in self._instrument_cache:
+            return self._instrument_cache[symbol]
+
+        inst_type = self._infer_inst_type(symbol)
+        instruments = await self.get_instruments(inst_type=inst_type, inst_id=symbol)
+        if not instruments:
+            raise ValueError(f"未找到交易产品: {symbol}")
+
+        instrument = instruments[0]
+        state = instrument.get("state")
+        if state and state != "live":
+            raise ValueError(f"交易产品 {symbol} 当前不可交易，状态: {state}")
+
+        self._instrument_cache[symbol] = instrument
+        return instrument
 
     async def get_ticker(self, symbol: str) -> Dict:
         """
@@ -171,6 +266,58 @@ class OKXExchange(ExchangeBase):
         # 转换为字典格式方便使用
         result = []
         for candle in raw_data:
+            result.append({
+                'ts': candle[0],
+                'o': candle[1],
+                'h': candle[2],
+                'l': candle[3],
+                'c': candle[4],
+                'vol': candle[5],
+                'volCcy': candle[6],
+                'volCcyQuote': candle[7],
+                'confirm': candle[8]
+            })
+
+        return result
+
+    async def get_history_kline(
+        self,
+        symbol: str,
+        timeframe: str = "1m",
+        limit: int = 100,
+        after: Optional[str] = None,
+        before: Optional[str] = None
+    ) -> List[Dict]:
+        """
+        获取历史K线数据。
+
+        OKX /market/candles 只覆盖较近数据；更长时间跨度回测应使用
+        /market/history-candles。
+        """
+        endpoint = "/api/v5/market/history-candles"
+        params = {
+            "instId": symbol,
+            "bar": timeframe,
+            "limit": str(limit)
+        }
+
+        if after:
+            params["after"] = after
+        if before:
+            params["before"] = before
+
+        response = await self._request(
+            method="GET",
+            endpoint=endpoint,
+            params=params,
+            auth_required=False
+        )
+
+        if response.get("code") != "0":
+            raise Exception(f"获取历史K线失败: {response.get('msg')}")
+
+        result = []
+        for candle in response.get("data", []):
             result.append({
                 'ts': candle[0],
                 'o': candle[1],
@@ -491,6 +638,28 @@ class OKXExchange(ExchangeBase):
         data = response.get("data", [{}])
         return data[0] if data else {}
 
+    async def get_account_config(self) -> Dict:
+        """
+        获取账户配置，包含当前持仓模式 posMode。
+
+        posMode:
+            - long_short_mode: 开平仓模式（双向持仓）
+            - net_mode: 买卖模式（单向净持仓）
+        """
+        response = await self._request(
+            method="GET",
+            endpoint="/api/v5/account/config",
+            auth_required=True
+        )
+
+        if response.get("code") != "0":
+            raise Exception(f"获取账户配置失败: {response.get('msg')}")
+
+        data = response.get("data", [])
+        if not data:
+            raise Exception("账户配置返回数据为空")
+        return data[0]
+
     async def create_order(
         self,
         symbol: str,
@@ -552,14 +721,46 @@ class OKXExchange(ExchangeBase):
         # 模拟盘通过 x-simulated-trading 请求头标识
         endpoint = "/api/v5/trade/order"
 
-        # 构建请求数据
-        from decimal import Decimal
+        side = side.lower()
+        order_type = order_type.lower()
+        td_mode = td_mode.lower()
+        if side not in {"buy", "sell"}:
+            raise ValueError("订单方向必须是 buy 或 sell")
+        if order_type not in {"market", "limit", "post_only", "fok", "ioc"}:
+            raise ValueError("订单类型必须是 market/limit/post_only/fok/ioc")
+        if td_mode not in {"cash", "cross", "isolated"}:
+            raise ValueError("交易模式必须是 cash/cross/isolated")
+
+        instrument = await self.get_instrument(symbol)
+        inst_type = instrument.get("instType", self._infer_inst_type(symbol))
+        is_derivative = inst_type in {"SWAP", "FUTURES", "OPTION"}
+        self._validate_order_precision(instrument, amount, price, order_type)
+
+        if is_derivative and td_mode == "cash":
+            raise ValueError(f"{symbol} 是 {inst_type} 产品，td_mode 不能为 cash，请使用 cross 或 isolated")
+        if is_derivative:
+            ct_val = instrument.get("ctVal")
+            if not ct_val:
+                raise ValueError(f"无法获取 {symbol} 的合约面值 ctVal，拒绝下单")
+            if tgt_ccy:
+                raise ValueError(
+                    f"{symbol} 是 {inst_type} 产品，当前接口的 amount 必须是合约张数。"
+                    "如需按 USDT 名义价值或保证金金额下单，需要先换算并确认张数。"
+                )
+            logger.info(
+                f"合约下单预检: instId={symbol}, instType={inst_type}, ctVal={ct_val}, "
+                f"ctValCcy={instrument.get('ctValCcy')}, sz={amount}, tgtCcy={tgt_ccy or 'contracts'}"
+            )
+            if symbol.upper().endswith("-USD-SWAP"):
+                logger.warning(f"{symbol} 是币本位反向合约，保证金和盈亏通常按币结算，不是 USDT")
+        elif tgt_ccy and tgt_ccy not in {"base_ccy", "quote_ccy"}:
+            raise ValueError("现货市价单 tgt_ccy 只能是 base_ccy 或 quote_ccy")
+
+        if order_type != "market" and tgt_ccy:
+            raise ValueError("tgt_ccy 仅适用于市价单")
 
         # 确保数量使用普通十进制格式，避免科学计数法
-        if isinstance(amount, (Decimal, float)):
-            amount_str = format(amount, 'f')
-        else:
-            amount_str = str(amount)
+        amount_str = self._plain_decimal(amount)
 
         data = {
             "instId": symbol,
@@ -574,12 +775,7 @@ class OKXExchange(ExchangeBase):
             if price is None:
                 raise ValueError(f"订单类型 {order_type} 必须指定价格")
             # 确保价格使用普通十进制格式，避免科学计数法
-            from decimal import Decimal
-            if isinstance(price, (Decimal, float)):
-                # 对于float和Decimal，使用format避免科学计数法
-                data["px"] = format(price, 'f')
-            else:
-                data["px"] = str(price)
+            data["px"] = self._plain_decimal(price)
 
         # 可选参数
         if cl_ord_id:
@@ -619,6 +815,12 @@ class OKXExchange(ExchangeBase):
             error_code = order_result.get("sCode", "")
             error_msg = order_result.get("sMsg", "")
             raise Exception(f"下单执行失败 [{error_code}]: {error_msg}")
+
+        if is_derivative:
+            order_result["instType"] = inst_type
+            order_result["ctVal"] = instrument.get("ctVal")
+            order_result["ctValCcy"] = instrument.get("ctValCcy")
+            order_result["sizeUnit"] = "contracts"
 
         return order_result
 
@@ -1052,6 +1254,7 @@ class OKXExchange(ExchangeBase):
             API响应数据
         """
         session = await self._get_session()
+        self._check_proxy_available()
 
         # 构建完整URL
         url = self.base_url + endpoint

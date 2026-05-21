@@ -23,7 +23,10 @@ async def recover_strategy_28():
         logger.info(f"当前状态: {strategy.status}")
 
         # 获取API配置
-        exchange = api_config_service.get_exchange(user_id=strategy.user_id, db=db)
+        exchange = api_config_service.get_exchange(
+            user_id=strategy.user_id,
+            config_id=strategy.api_config_id,
+        )
 
         if not exchange:
             logger.error("无法获取API配置")

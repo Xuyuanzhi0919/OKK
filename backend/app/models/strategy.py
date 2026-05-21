@@ -27,6 +27,7 @@ class StrategyType(str, enum.Enum):
     ARBITRAGE = "arbitrage"  # 套利
     ORDER_BOOK_IMBALANCE = "order_book_imbalance"  # 订单簿不平衡高频策略
     DUAL_SIDE = "dual_side"  # 双向持仓策略（多空双向）
+    ADAPTIVE_GRID_TREND = "adaptive_grid_trend"  # 自适应趋势网格
     CUSTOM = "custom"  # 自定义
 
 
@@ -37,6 +38,7 @@ class Strategy(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, comment="用户ID")
+    api_config_id = Column(Integer, ForeignKey("api_configs.id", ondelete="SET NULL"), nullable=True, comment="绑定的API配置ID")
     name = Column(String(100), nullable=False, comment="策略名称")
     type = Column(Enum(StrategyType, name='strategy_type', create_type=False, values_callable=lambda x: [e.value for e in x]), nullable=False, comment="策略类型")
     status = Column(Enum(StrategyStatus, name='strategy_status', create_type=False, values_callable=lambda x: [e.value for e in x]), default=StrategyStatus.STOPPED, comment="策略状态")

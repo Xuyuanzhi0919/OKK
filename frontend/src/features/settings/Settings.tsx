@@ -9,8 +9,8 @@ import {
   Col,
   Radio,
   Space,
-  message,
   Divider,
+  App,
 } from 'antd'
 import {
   Save,
@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 
 const Settings = () => {
   const { t } = useTranslation()
+  const { message } = App.useApp()
   const [apiForm] = Form.useForm()
   const [riskForm] = Form.useForm()
   const [testing, setTesting] = useState(false)

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from app.core.database import get_db
+from app.api.deps import require_current_user_id
 from app.models.ai_config import AIConfig
 
 router = APIRouter()
@@ -35,10 +36,7 @@ class AIConfigResponse(BaseModel):
     updated_at: Optional[str] = None
 
 
-def get_current_user_id():
-    """获取当前用户ID"""
-    # TODO: 从JWT token中获取真实用户ID
-    return 1
+get_current_user_id = require_current_user_id
 
 
 @router.get("/list", response_model=list[AIConfigResponse])

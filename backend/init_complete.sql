@@ -52,9 +52,26 @@ END $$;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'strategy_type') THEN
-        CREATE TYPE strategy_type AS ENUM ('grid', 'martin', 'trend', 'arbitrage', 'custom');
+        CREATE TYPE strategy_type AS ENUM (
+            'grid',
+            'swing_long',
+            'swing_short',
+            'ai_swing_long',
+            'martin',
+            'trend',
+            'arbitrage',
+            'order_book_imbalance',
+            'dual_side',
+            'custom'
+        );
     END IF;
 END $$;
+
+ALTER TYPE strategy_type ADD VALUE IF NOT EXISTS 'swing_long';
+ALTER TYPE strategy_type ADD VALUE IF NOT EXISTS 'swing_short';
+ALTER TYPE strategy_type ADD VALUE IF NOT EXISTS 'ai_swing_long';
+ALTER TYPE strategy_type ADD VALUE IF NOT EXISTS 'order_book_imbalance';
+ALTER TYPE strategy_type ADD VALUE IF NOT EXISTS 'dual_side';
 
 -- 订单方向
 DO $$
@@ -68,9 +85,12 @@ END $$;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_type') THEN
-        CREATE TYPE order_type AS ENUM ('limit', 'market', 'stop_limit', 'stop_market');
+        CREATE TYPE order_type AS ENUM ('limit', 'market', 'ioc', 'post_only', 'stop_limit', 'stop_market');
     END IF;
 END $$;
+
+ALTER TYPE order_type ADD VALUE IF NOT EXISTS 'ioc';
+ALTER TYPE order_type ADD VALUE IF NOT EXISTS 'post_only';
 
 -- 订单状态
 DO $$
@@ -121,6 +141,13 @@ CREATE TABLE IF NOT EXISTS strategies (
     total_profit NUMERIC DEFAULT 0.0,
     total_trades INTEGER DEFAULT 0,
     win_rate NUMERIC DEFAULT 0.0,
+    position_in_position BOOLEAN DEFAULT FALSE,
+    position_side VARCHAR(10) DEFAULT '',
+    position_entry_price NUMERIC DEFAULT 0.0,
+    position_qty NUMERIC DEFAULT 0.0,
+    position_open_time NUMERIC DEFAULT 0.0,
+    position_highest_price NUMERIC DEFAULT 0.0,
+    position_trail_stop_px NUMERIC DEFAULT 0.0,
     description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE,
@@ -185,6 +212,21 @@ COMMENT ON COLUMN positions.frozen_amount IS '冻结数量';
 COMMENT ON COLUMN positions.unrealized_pnl IS '未实现盈亏';
 COMMENT ON COLUMN positions.realized_pnl IS '已实现盈亏';
 
+-- 账户净值快照表
+CREATE TABLE IF NOT EXISTS account_snapshots (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL DEFAULT 1,
+    total_equity NUMERIC NOT NULL,
+    available_balance NUMERIC DEFAULT 0.0,
+    unrealized_pnl NUMERIC DEFAULT 0.0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS ix_account_snapshots_user_id ON account_snapshots(user_id);
+CREATE INDEX IF NOT EXISTS ix_account_snapshots_created_at ON account_snapshots(created_at);
+
+COMMENT ON TABLE account_snapshots IS '账户净值历史快照表';
+
 -- =============================================================================
 -- 3. API 配置表
 -- =============================================================================
@@ -219,6 +261,23 @@ COMMENT ON TABLE api_configs IS 'API配置表 - 存储用户的交易所API密�
 COMMENT ON COLUMN api_configs.name IS '配置名称,如"实盘配置"/"模拟盘配置"';
 COMMENT ON COLUMN api_configs.is_simulated IS '是否为模拟盘';
 COMMENT ON COLUMN api_configs.is_active IS '是否为当前激活配置';
+
+-- AI 配置表
+CREATE TABLE IF NOT EXISTS ai_configs (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    provider VARCHAR(50) DEFAULT 'deepseek',
+    api_key VARCHAR(255) NOT NULL,
+    model VARCHAR(100) DEFAULT 'deepseek-chat',
+    is_active BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS ix_ai_configs_user_id ON ai_configs(user_id);
+
+COMMENT ON TABLE ai_configs IS 'AI服务配置表';
 
 -- =============================================================================
 -- 4. 告警系统表
@@ -428,6 +487,15 @@ CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol);
 CREATE INDEX IF NOT EXISTS idx_api_configs_user_id ON api_configs(user_id);
 CREATE INDEX IF NOT EXISTS idx_api_configs_is_active ON api_configs(is_active);
 
+ALTER TABLE strategies
+    ADD COLUMN IF NOT EXISTS api_config_id INTEGER;
+ALTER TABLE strategies
+    DROP CONSTRAINT IF EXISTS strategies_api_config_id_fkey;
+ALTER TABLE strategies
+    ADD CONSTRAINT strategies_api_config_id_fkey
+    FOREIGN KEY (api_config_id) REFERENCES api_configs(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_strategies_api_config_id ON strategies(api_config_id);
+
 -- 告警系统索引
 CREATE INDEX IF NOT EXISTS idx_alerts_user_id ON alerts(user_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_strategy_id ON alerts(strategy_id);
@@ -468,8 +536,10 @@ CREATE INDEX IF NOT EXISTS idx_backtest_trades_timestamp ON backtest_trades(time
 
 -- 创建默认管理员账户 (用户名: admin, 密码: admin123)
 INSERT INTO users (username, email, hashed_password, is_superuser)
-VALUES ('admin', 'admin@okk.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzS3MjJ0G2', TRUE)
-ON CONFLICT (username) DO NOTHING;
+VALUES ('admin', 'admin@okk.com', '$2b$12$XZfL2JOv0K1ytph5pt9fO.bTak9m.H6GN20KFYkd4wKoJSqK4a9ia', TRUE)
+ON CONFLICT (username) DO UPDATE SET
+    hashed_password = EXCLUDED.hashed_password,
+    is_superuser = TRUE;
 
 -- 为所有用户创建默认全局风控规则 (默认禁用)
 INSERT INTO risk_controls (

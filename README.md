@@ -155,7 +155,7 @@ cp .env.example .env
 ```bash
 python -m app.main
 # 或使用uvicorn
-uvicorn app.main:app --reload
+uvicorn app.main:socket_app --reload
 ```
 
 #### 前端

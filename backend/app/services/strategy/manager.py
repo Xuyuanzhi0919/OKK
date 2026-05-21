@@ -5,10 +5,13 @@ from typing import Dict, Optional
 from loguru import logger
 from .base import StrategyBase
 from app.services.exchange.okx import OKXExchange
-from app.models.strategy import StrategyType, Strategy
+from app.models.strategy import StrategyType, Strategy, StrategyStatus
 from app.core.database import SessionLocal
 from app.websocket.manager import broadcast_strategy_stats, broadcast_strategy_update, broadcast_notification
 import asyncio
+from datetime import datetime
+import inspect
+import math
 import time
 
 
@@ -74,56 +77,17 @@ class StrategyManager:
         else:
             strategy_type_enum = strategy_type
 
-        if strategy_type_enum == StrategyType.TREND:
-            from app.services.strategy.trend_follow import TrendFollowStrategy
-            return TrendFollowStrategy(
+        if strategy_type_enum == StrategyType.ADAPTIVE_GRID_TREND:
+            from app.services.strategy.adaptive_grid_trend import AdaptiveGridTrendStrategy
+            return AdaptiveGridTrendStrategy(
                 strategy_id=strategy_id,
                 exchange=exchange,
                 symbol=symbol,
                 parameters=parameters,
                 user_id=user_id,
             )
-        elif strategy_type_enum == StrategyType.ORDER_BOOK_IMBALANCE:
-            from app.services.strategy.order_book_imbalance import OrderBookImbalanceStrategy
-            return OrderBookImbalanceStrategy(
-                strategy_id=strategy_id,
-                exchange=exchange,
-                symbol=symbol,
-                parameters=parameters,
-                user_id=user_id,
-            )
-        elif strategy_type_enum == StrategyType.GRID:
-            from app.services.strategy.grid_strategy import GridStrategy
-            return GridStrategy(
-                strategy_id=strategy_id,
-                exchange=exchange,
-                symbol=symbol,
-                parameters=parameters,
-                user_id=user_id,
-            )
-        elif strategy_type_enum == StrategyType.SWING_LONG:
-            raise NotImplementedError("波段做多策略已移除")
-        elif strategy_type_enum == StrategyType.AI_SWING_LONG:
-            raise NotImplementedError("AI波段做多策略已移除")
-        elif strategy_type_enum == StrategyType.SWING_SHORT:
-            raise NotImplementedError("波段做空策略已移除")
-        elif strategy_type_enum == StrategyType.DUAL_SIDE:
-            from app.services.strategy.dual_side_strategy import DualSideStrategy
-            return DualSideStrategy(
-                strategy_id=strategy_id,
-                exchange=exchange,
-                symbol=symbol,
-                parameters=parameters,
-                user_id=user_id,
-            )
-        elif strategy_type_enum == StrategyType.MARTIN:
-            raise NotImplementedError("马丁格尔策略尚未实现")
-        elif strategy_type_enum == StrategyType.ARBITRAGE:
-            raise NotImplementedError("套利策略尚未实现")
-        elif strategy_type_enum == StrategyType.CUSTOM:
-            raise NotImplementedError("自定义策略尚未实现")
-        else:
-            raise ValueError(f"不支持的策略类型: {strategy_type_enum}")
+
+        raise ValueError("后端当前仅支持自适应趋势网格策略")
 
     async def _persist_strategy_state(self, strategy_id: int, strategy: StrategyBase):
         """持久化策略状态到数据库"""
@@ -191,6 +155,124 @@ class StrategyManager:
         finally:
             db.close()
 
+    async def _pause_strategy_for_fuse(self, strategy_id: int, strategy: StrategyBase, reason: str):
+        """运行期风控触发后暂停策略。"""
+        logger.warning(f"策略 {strategy_id} 触发运行期风控熔断: {reason}")
+
+        risk_fuse = strategy.parameters.get("risk_fuse", {}) if isinstance(strategy.parameters, dict) else {}
+        if not isinstance(risk_fuse, dict):
+            risk_fuse = {}
+        close_position = bool(risk_fuse.get("close_position_on_trigger", False))
+        cancel_orders = bool(risk_fuse.get("cancel_orders_on_trigger", True))
+
+        try:
+            stop_sig = inspect.signature(strategy.stop)
+            kwargs = {}
+            if 'cancel_orders' in stop_sig.parameters:
+                kwargs['cancel_orders'] = cancel_orders
+            if 'close_position' in stop_sig.parameters:
+                kwargs['close_position'] = close_position
+            await strategy.stop(**kwargs)
+        except Exception as exc:
+            logger.error(f"策略 {strategy_id} 熔断暂停时 stop() 失败: {exc}")
+            strategy.is_running = False
+
+        db = SessionLocal()
+        try:
+            db_strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
+            if db_strategy:
+                db_strategy.status = StrategyStatus.PAUSED
+                db_strategy.stopped_at = datetime.now()
+                db.commit()
+        except Exception as exc:
+            db.rollback()
+            logger.error(f"策略 {strategy_id} 熔断状态写入数据库失败: {exc}")
+        finally:
+            db.close()
+
+        try:
+            await broadcast_notification({
+                "type": "warning",
+                "title": "策略已自动暂停",
+                "message": f"策略 {strategy.symbol} 触发运行期风控: {reason}",
+                "strategy_id": strategy_id,
+                "timestamp": time.time()
+            })
+            await broadcast_strategy_update(strategy_id, {
+                "strategy_id": strategy_id,
+                "status": StrategyStatus.PAUSED.value,
+                "fuse_reason": reason,
+                "timestamp": time.time()
+            })
+        except Exception as ws_err:
+            logger.error(f"广播策略熔断状态失败: {ws_err}")
+
+    def _check_runtime_fuse(self, strategy: StrategyBase) -> Optional[str]:
+        """检查策略运行期风控熔断条件。"""
+        if not isinstance(strategy.parameters, dict):
+            return None
+
+        risk_fuse = strategy.parameters.get("risk_fuse")
+        if risk_fuse is None:
+            risk_fuse = {}
+        if not isinstance(risk_fuse, dict):
+            return None
+        if not risk_fuse.get("enabled", True):
+            return None
+
+        max_losses = int(risk_fuse.get("max_consecutive_losses", 3))
+        if max_losses > 0 and strategy.consecutive_losses >= max_losses:
+            return f"连续亏损 {strategy.consecutive_losses} 次，达到阈值 {max_losses} 次"
+
+        max_position_usd = float(strategy.parameters.get("max_position_usd", 0) or 0)
+        risk_base_usd = float(
+            risk_fuse.get("risk_base_usd")
+            or strategy.parameters.get("risk_base_usd")
+            or strategy.parameters.get("initial_capital")
+            or max(max_position_usd * 2, 1000)
+        )
+
+        daily_loss_pct = risk_fuse.get("daily_loss_limit_pct", 0.02)
+        if daily_loss_pct is not None and risk_base_usd > 0:
+            daily_limit = risk_base_usd * float(daily_loss_pct)
+            if daily_limit > 0 and strategy.daily_realized_pnl <= -daily_limit:
+                return (
+                    f"当日已实现亏损 {strategy.daily_realized_pnl:.4f} USDT，"
+                    f"达到日亏损上限 {daily_limit:.4f} USDT"
+                )
+
+        daily_loss_usd = risk_fuse.get("daily_loss_limit_usd")
+        if daily_loss_usd is not None:
+            daily_limit = float(daily_loss_usd)
+            if daily_limit > 0 and strategy.daily_realized_pnl <= -daily_limit:
+                return (
+                    f"当日已实现亏损 {strategy.daily_realized_pnl:.4f} USDT，"
+                    f"达到日亏损上限 {daily_limit:.4f} USDT"
+                )
+
+        max_drawdown_pct = risk_fuse.get("max_drawdown_pct", 0.05)
+        if max_drawdown_pct is not None and risk_base_usd > 0:
+            drawdown_limit = risk_base_usd * float(max_drawdown_pct)
+            if drawdown_limit > 0 and strategy.max_runtime_drawdown >= drawdown_limit:
+                return (
+                    f"运行期回撤 {strategy.max_runtime_drawdown:.4f} USDT，"
+                    f"达到回撤上限 {drawdown_limit:.4f} USDT"
+                )
+
+        pf_window = int(risk_fuse.get("profit_factor_window", 10))
+        min_pf_trades = int(risk_fuse.get("min_trades_for_profit_factor", 8))
+        min_profit_factor = float(risk_fuse.get("min_profit_factor", 0.8))
+        recent_count = len(strategy.trade_pnl_history[-pf_window:]) if pf_window > 0 else len(strategy.trade_pnl_history)
+        if min_profit_factor > 0 and recent_count >= min_pf_trades:
+            profit_factor = strategy.runtime_profit_factor(pf_window)
+            if profit_factor is not None and profit_factor < min_profit_factor:
+                return (
+                    f"最近 {recent_count} 笔盈亏比 {profit_factor:.2f}，"
+                    f"低于阈值 {min_profit_factor:.2f}"
+                )
+
+        return None
+
     async def _run_strategy_loop(self, strategy_id: int, strategy: StrategyBase):
         """策略运行时监控循环"""
         logger.info(f"启动策略监控循环: strategy_id={strategy_id}")
@@ -204,6 +286,11 @@ class StrategyManager:
                     # 1. 获取最新ticker并调用 on_tick
                     ticker = await strategy.exchange.get_ticker(strategy.symbol)
                     await strategy.on_tick(ticker)
+
+                    fuse_reason = self._check_runtime_fuse(strategy)
+                    if fuse_reason:
+                        await self._pause_strategy_for_fuse(strategy_id, strategy, fuse_reason)
+                        break
 
                     # 2. 定期持久化策略状态到数据库
                     persist_counter += 1
@@ -247,6 +334,11 @@ class StrategyManager:
         except Exception as e:
             logger.error(f"策略监控循环异常退出: {e}")
         finally:
+            current_task = asyncio.current_task()
+            if self.strategy_tasks.get(strategy_id) is current_task:
+                self.strategy_tasks.pop(strategy_id, None)
+            if self.strategies.get(strategy_id) is strategy:
+                self.strategies.pop(strategy_id, None)
             logger.info(f"策略监控循环结束: strategy_id={strategy_id}")
 
     async def start_strategy(
@@ -304,7 +396,6 @@ class StrategyManager:
                 return False
 
             # 停止策略（兼容有无 cancel_orders/close_position 参数的实现）
-            import inspect
             stop_sig = inspect.signature(strategy.stop)
             kwargs = {}
             if 'cancel_orders' in stop_sig.parameters:
@@ -323,9 +414,8 @@ class StrategyManager:
                     pass
 
             # 移除策略实例
-            del self.strategies[strategy_id]
-            if strategy_id in self.strategy_tasks:
-                del self.strategy_tasks[strategy_id]
+            self.strategies.pop(strategy_id, None)
+            self.strategy_tasks.pop(strategy_id, None)
 
             logger.info(f"策略 {strategy_id} 已停止")
             return True
@@ -354,6 +444,79 @@ class StrategyManager:
 
         realized = strategy.realized_pnl if hasattr(strategy, 'realized_pnl') else 0
         unrealized = getattr(strategy, '_unrealized_pnl', 0)
+        runtime_profit_factor = strategy.runtime_profit_factor()
+        if runtime_profit_factor is not None and not math.isfinite(runtime_profit_factor):
+            runtime_profit_factor = None
+        signal_status = None
+        if hasattr(strategy, "get_signal_status"):
+            try:
+                signal_status = strategy.get_signal_status()
+            except Exception as exc:
+                logger.debug(f"获取策略 {strategy_id} 信号状态失败: {exc}")
+
+        current_price = None
+        if isinstance(signal_status, dict):
+            current_price = signal_status.get("current_price")
+
+        position_side = getattr(strategy, "_position_side", "")
+        entry_price = float(getattr(strategy, "_entry_price", 0) or 0)
+        position_qty = float(getattr(strategy, "_position_qty", 0) or 0)
+        stop_px = float(getattr(strategy, "_stop_px", 0) or 0)
+        take_profit_px = float(getattr(strategy, "_take_profit_px", 0) or 0)
+        position_status = {
+            "in_position": bool(position_side),
+            "side": position_side,
+            "entry_price": entry_price,
+            "qty": position_qty,
+            "stop_px": stop_px,
+            "take_profit_px": take_profit_px,
+            "current_price": current_price,
+        }
+        if current_price and stop_px > 0 and take_profit_px > 0:
+            current_price = float(current_price)
+            if position_side == "long":
+                position_status["distance_to_stop_pct"] = (current_price - stop_px) / current_price * 100
+                position_status["distance_to_take_profit_pct"] = (take_profit_px - current_price) / current_price * 100
+            elif position_side == "short":
+                position_status["distance_to_stop_pct"] = (stop_px - current_price) / current_price * 100
+                position_status["distance_to_take_profit_pct"] = (current_price - take_profit_px) / current_price * 100
+
+        risk_fuse = strategy.parameters.get("risk_fuse", {}) if isinstance(strategy.parameters, dict) else {}
+        if not isinstance(risk_fuse, dict):
+            risk_fuse = {}
+        max_position_usd = float(strategy.parameters.get("max_position_usd", 0) or 0) if isinstance(strategy.parameters, dict) else 0
+        risk_base_usd = float(
+            risk_fuse.get("risk_base_usd")
+            or (strategy.parameters.get("risk_base_usd") if isinstance(strategy.parameters, dict) else 0)
+            or (strategy.parameters.get("initial_capital") if isinstance(strategy.parameters, dict) else 0)
+            or max(max_position_usd * 2, 1000)
+        )
+        daily_loss_limit_pct = risk_fuse.get("daily_loss_limit_pct", 0.02)
+        max_drawdown_pct = risk_fuse.get("max_drawdown_pct", 0.05)
+        max_consecutive_losses_limit = int(risk_fuse.get("max_consecutive_losses", 3))
+        profit_factor_window = int(risk_fuse.get("profit_factor_window", 10))
+        min_profit_factor = risk_fuse.get("min_profit_factor", 0.8)
+        daily_loss_limit_usd = (
+            float(risk_fuse.get("daily_loss_limit_usd"))
+            if risk_fuse.get("daily_loss_limit_usd") is not None
+            else risk_base_usd * float(daily_loss_limit_pct or 0)
+        )
+        max_drawdown_limit_usd = risk_base_usd * float(max_drawdown_pct or 0)
+        risk_status = {
+            "enabled": bool(risk_fuse.get("enabled", True)),
+            "risk_base_usd": round(risk_base_usd, 4),
+            "daily_realized_pnl": round(strategy.daily_realized_pnl, 4),
+            "daily_loss_limit_usd": round(daily_loss_limit_usd, 4),
+            "daily_loss_limit_pct": float(daily_loss_limit_pct or 0) * 100,
+            "max_runtime_drawdown": round(strategy.max_runtime_drawdown, 4),
+            "max_drawdown_limit_usd": round(max_drawdown_limit_usd, 4),
+            "max_drawdown_pct": float(max_drawdown_pct or 0) * 100,
+            "consecutive_losses": strategy.consecutive_losses,
+            "max_consecutive_losses": max_consecutive_losses_limit,
+            "runtime_profit_factor": runtime_profit_factor,
+            "min_profit_factor": float(min_profit_factor) if min_profit_factor is not None else None,
+            "profit_factor_window": profit_factor_window,
+        }
 
         # 返回通用策略状态信息
         return {
@@ -369,6 +532,13 @@ class StrategyManager:
             "consecutive_losses": strategy.consecutive_losses,
             "max_consecutive_losses": strategy.max_consecutive_losses,
             "trade_pnl_history": strategy.trade_pnl_history,
+            "runtime_realized_pnl": round(strategy.runtime_realized_pnl, 4),
+            "daily_realized_pnl": round(strategy.daily_realized_pnl, 4),
+            "max_runtime_drawdown": round(strategy.max_runtime_drawdown, 4),
+            "runtime_profit_factor": runtime_profit_factor,
+            "signal_status": signal_status,
+            "position_status": position_status,
+            "risk_status": risk_status,
         }
 
     async def stop_all_strategies(self):

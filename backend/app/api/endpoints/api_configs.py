@@ -9,6 +9,7 @@ from datetime import datetime
 from loguru import logger
 
 from app.core.database import get_db
+from app.api.deps import ensure_default_user
 from app.models.api_config import APIConfig
 from app.services.exchange.okx import OKXExchange
 
@@ -55,15 +56,14 @@ class APIConfigResponse(BaseModel):
         from_attributes = True
 
 
-def get_current_user_id() -> int:
-    """获取当前用户ID (简化版,实际应该从JWT token获取)"""
-    # TODO: 从JWT token中获取真实用户ID
-    return 1
+def get_management_user_id(db: Session = Depends(get_db)) -> int:
+    """Management UI currently runs without login; use the legacy local user."""
+    return ensure_default_user(db)
 
 
 @router.get("/list", response_model=List[APIConfigResponse])
 async def list_configs(
-    user_id: int = Depends(get_current_user_id),
+    user_id: int = Depends(get_management_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -107,7 +107,7 @@ async def list_configs(
 @router.post("/create", response_model=APIConfigResponse)
 async def create_config(
     request: APIConfigCreate,
-    user_id: int = Depends(get_current_user_id),
+    user_id: int = Depends(get_management_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -168,7 +168,7 @@ async def create_config(
 @router.post("/{config_id}/activate")
 async def activate_config(
     config_id: int,
-    user_id: int = Depends(get_current_user_id),
+    user_id: int = Depends(get_management_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -219,7 +219,7 @@ async def activate_config(
 
 @router.get("/active")
 async def get_active_config(
-    user_id: int = Depends(get_current_user_id),
+    user_id: int = Depends(get_management_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -259,7 +259,7 @@ async def get_active_config(
 @router.delete("/{config_id}")
 async def delete_config(
     config_id: int,
-    user_id: int = Depends(get_current_user_id),
+    user_id: int = Depends(get_management_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -299,7 +299,7 @@ async def delete_config(
 @router.post("/{config_id}/verify")
 async def verify_config(
     config_id: int,
-    user_id: int = Depends(get_current_user_id),
+    user_id: int = Depends(get_management_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -361,18 +361,17 @@ async def verify_api_config(
     Returns:
         (is_valid, error_message)
     """
-    try:
-        exchange = OKXExchange(
-            api_key=api_key,
-            secret_key=secret_key,
-            passphrase=passphrase,
-            simulated=is_simulated,
-            proxy=proxy
-        )
+    exchange = OKXExchange(
+        api_key=api_key,
+        secret_key=secret_key,
+        passphrase=passphrase,
+        simulated=is_simulated,
+        proxy=proxy
+    )
 
+    try:
         # 尝试获取账户余额来验证
         await exchange.get_balance()
-        await exchange.close()
 
         return True, None
 
@@ -380,3 +379,5 @@ async def verify_api_config(
         error_msg = str(e)
         logger.warning(f"API配置验证失败: {error_msg}")
         return False, error_msg
+    finally:
+        await exchange.close()

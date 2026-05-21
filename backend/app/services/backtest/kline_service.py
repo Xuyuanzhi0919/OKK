@@ -68,9 +68,10 @@ class KlineService:
             try:
                 batch_num += 1
 
-                # 使用after参数获取K线数据（OKX返回从新到旧）
-                # after参数：获取大于此时间戳的数据（更新的数据）
-                klines = await self.exchange.get_kline(
+                # 使用历史K线接口向过去翻页。OKX /market/candles 只覆盖较近数据，
+                # 长周期回测需要 /market/history-candles。
+                get_klines = getattr(self.exchange, "get_history_kline", self.exchange.get_kline)
+                klines = await get_klines(
                     symbol=symbol,
                     timeframe=interval,
                     limit=min(batch_size, 100),

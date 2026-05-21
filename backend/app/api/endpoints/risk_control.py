@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from loguru import logger
 
 from app.core.database import get_db
+from app.api.deps import require_current_user_id
 from app.models import RiskControl, RiskAction, Strategy
 from app.services.risk import RiskManager
 from app.services.exchange.okx import OKXExchange
@@ -108,7 +109,8 @@ class EmergencyStopResponse(BaseModel):
 @router.post("/rules", response_model=RiskControlResponse, status_code=status.HTTP_201_CREATED)
 async def create_risk_rule(
     rule_data: RiskControlCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(require_current_user_id),
 ):
     """
     创建风控规则
@@ -118,9 +120,6 @@ async def create_risk_rule(
     - **action_on_trigger**: warn(警告), limit(限制), pause(暂停), close(平仓)
     """
     try:
-        # TODO: 从认证中获取user_id，这里暂时硬编码
-        user_id = 1
-
         # 创建风控规则
         risk_rule = RiskControl(
             user_id=user_id,
@@ -150,7 +149,8 @@ async def list_risk_rules(
     level: Optional[str] = None,
     risk_type: Optional[str] = None,
     is_enabled: Optional[bool] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(require_current_user_id),
 ):
     """
     查询风控规则列表
@@ -161,9 +161,6 @@ async def list_risk_rules(
     - **is_enabled**: 按启用状态筛选
     """
     try:
-        # TODO: 从认证中获取user_id
-        user_id = 1
-
         query = db.query(RiskControl).filter(RiskControl.user_id == user_id)
 
         if strategy_id is not None:
@@ -190,13 +187,11 @@ async def list_risk_rules(
 @router.get("/rules/{rule_id}", response_model=RiskControlResponse)
 async def get_risk_rule(
     rule_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(require_current_user_id),
 ):
     """获取单个风控规则详情"""
     try:
-        # TODO: 从认证中获取user_id
-        user_id = 1
-
         rule = db.query(RiskControl).filter(
             RiskControl.id == rule_id,
             RiskControl.user_id == user_id
@@ -224,13 +219,11 @@ async def get_risk_rule(
 async def update_risk_rule(
     rule_id: int,
     rule_data: RiskControlUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(require_current_user_id),
 ):
     """更新风控规则"""
     try:
-        # TODO: 从认证中获取user_id
-        user_id = 1
-
         rule = db.query(RiskControl).filter(
             RiskControl.id == rule_id,
             RiskControl.user_id == user_id
@@ -268,13 +261,11 @@ async def update_risk_rule(
 @router.delete("/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_risk_rule(
     rule_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(require_current_user_id),
 ):
     """删除风控规则"""
     try:
-        # TODO: 从认证中获取user_id
-        user_id = 1
-
         rule = db.query(RiskControl).filter(
             RiskControl.id == rule_id,
             RiskControl.user_id == user_id
@@ -307,7 +298,8 @@ async def delete_risk_rule(
 @router.get("/check/{strategy_id}")
 async def check_strategy_risk(
     strategy_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(require_current_user_id),
 ):
     """
     检查策略风控状态
@@ -315,9 +307,6 @@ async def check_strategy_risk(
     返回当前策略触发的所有风控规则
     """
     try:
-        # TODO: 从认证中获取user_id
-        user_id = 1
-
         # 创建风控管理器
         risk_manager = RiskManager(db, user_id)
 
@@ -345,7 +334,8 @@ async def check_strategy_risk(
 @router.post("/emergency-stop", response_model=EmergencyStopResponse)
 async def emergency_stop(
     request: EmergencyStopRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(require_current_user_id),
 ):
     """
     紧急停止
@@ -354,9 +344,6 @@ async def emergency_stop(
     - **close_all**: 平仓所有策略（市价卖出所有持仓并暂停策略）
     """
     try:
-        # TODO: 从认证中获取user_id
-        user_id = 1
-
         # 获取目标策略
         query = db.query(Strategy).filter(Strategy.user_id == user_id)
 
@@ -452,7 +439,8 @@ async def list_risk_actions(
     strategy_id: Optional[int] = None,
     action_type: Optional[str] = None,
     limit: int = 50,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(require_current_user_id),
 ):
     """
     查询风控动作日志
@@ -462,9 +450,6 @@ async def list_risk_actions(
     - **limit**: 返回数量限制
     """
     try:
-        # TODO: 从认证中获取user_id
-        user_id = 1
-
         query = db.query(RiskAction).filter(RiskAction.user_id == user_id)
 
         if strategy_id:

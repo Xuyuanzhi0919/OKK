@@ -9,6 +9,7 @@ from datetime import datetime
 
 from app.core.database import get_db, SessionLocal
 from app.core.config import settings
+from app.api.deps import require_current_user_id
 from loguru import logger
 from app.services.exchange.okx import OKXExchange
 from app.services.backtest import KlineService
@@ -181,7 +182,8 @@ async def get_strategy_types():
         'grid': '网格策略',
         'grid_mm': '网格做市',
         'ma_cross': '均线交叉',
-        'dual_ma_cross': '双均线(多空)'
+        'dual_ma_cross': '双均线(多空)',
+        'adaptive_grid_trend': '自适应趋势网格'
     }
     
     return [
@@ -435,7 +437,7 @@ async def create_and_run_backtest(
     request: CreateBacktestRequest,
     background_tasks: BackgroundTasks,
     backtest_service: BacktestService = Depends(get_backtest_service),
-    user_id: int = 1  # TODO: 从认证获取真实用户ID
+    user_id: int = Depends(require_current_user_id),
 ):
     """
     创建并运行回测
@@ -482,8 +484,8 @@ async def create_and_run_backtest(
 async def list_backtests(
     skip: int = Query(0, description="跳过记录数"),
     limit: int = Query(100, description="返回记录数"),
-    user_id: int = 1,  # TODO: 从认证获取
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(require_current_user_id),
 ):
     """
     获取回测列表

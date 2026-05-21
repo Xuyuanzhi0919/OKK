@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import { BACKTEST_API, API_BASE_URL } from '@/config/api'
+import { getAdaptiveGridTrendPresetForBacktest } from '@/config/strategyPresets'
 import { formatAmount, formatPercent } from '@/utils/format'
 
 const { RangePicker } = DatePicker
@@ -60,6 +61,16 @@ interface CreateBacktestFormData {
   enable_short?: boolean
   stop_loss?: number
   take_profit?: number
+  trailing_stop?: number
+  // 自适应趋势网格参数
+  direction?: string
+  atr_period?: number
+  entry_atr_multiple?: number
+  stop_atr_multiple?: number
+  take_profit_atr_multiple?: number
+  risk_per_trade?: number
+  max_position_usd?: number
+  cooldown_seconds?: number
 }
 
 const BacktestList = () => {
@@ -91,6 +102,8 @@ const BacktestList = () => {
 
   // 分步表单当前步骤
   const [currentStep, setCurrentStep] = useState(0)
+  const watchedStrategyType = Form.useWatch('strategy_type', form)
+  const watchedSymbol = Form.useWatch('symbol', form)
 
   // 批量选择状态
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
@@ -104,6 +117,21 @@ const BacktestList = () => {
   const [editingBacktest, setEditingBacktest] = useState<Backtest | null>(null)
   const [editDescriptionForm] = Form.useForm<{ description: string }>()
 
+  useEffect(() => {
+    if (!createModalOpen || watchedStrategyType !== 'adaptive_grid_trend') return
+    const preset = getAdaptiveGridTrendPresetForBacktest(watchedSymbol)
+    form.setFieldsValue({
+      fast_period: preset.fast,
+      slow_period: preset.slow,
+      entry_atr_multiple: preset.entry,
+      stop_atr_multiple: preset.stop,
+      take_profit_atr_multiple: preset.takeProfit,
+      cooldown_seconds: preset.cooldownSeconds,
+      risk_per_trade: preset.riskPerTrade,
+      max_position_usd: preset.maxPositionUsd,
+    })
+  }, [createModalOpen, watchedStrategyType, watchedSymbol, form])
+
   // 自动生成回测名称
   const generateBacktestName = () => {
     const values = form.getFieldsValue()
@@ -111,7 +139,14 @@ const BacktestList = () => {
 
     if (!symbol || !time_range) return
 
-    const strategyName = strategy_type === 'grid' ? '网格策略' : '网格做市'
+    const strategyLabels: Record<string, string> = {
+      grid: '网格策略',
+      grid_mm: '网格做市',
+      ma_cross: '均线交叉',
+      dual_ma_cross: '双均线',
+      adaptive_grid_trend: '自适应趋势网格',
+    }
+    const strategyName = strategyLabels[strategy_type] || strategy_type
     const startDate = time_range[0]?.format('MM-DD')
     const endDate = time_range[1]?.format('MM-DD')
 
@@ -285,6 +320,34 @@ const BacktestList = () => {
     mutationFn: async (values: CreateBacktestFormData) => {
       const [startTime, endTime] = values.time_range
 
+      const parameters = {
+        grid_lower: values.grid_lower,
+        grid_upper: values.grid_upper,
+        grid_num: values.grid_num,
+        grid_spread: values.grid_spread,
+        grid_levels: values.grid_levels,
+        amount_per_grid: values.amount_per_grid,
+        fee_rate: values.fee_rate,
+        fast_period: values.fast_period,
+        slow_period: values.slow_period,
+        ma_type: values.ma_type,
+        amount_per_trade: values.amount_per_trade,
+        position_ratio: values.position_ratio,
+        leverage: values.leverage,
+        enable_short: values.enable_short,
+        stop_loss: values.stop_loss,
+        take_profit: values.take_profit,
+        trailing_stop: values.trailing_stop,
+        direction: values.direction,
+        atr_period: values.atr_period,
+        entry_atr_multiple: values.entry_atr_multiple,
+        stop_atr_multiple: values.stop_atr_multiple,
+        take_profit_atr_multiple: values.take_profit_atr_multiple,
+        risk_per_trade: values.risk_per_trade,
+        max_position_usd: values.max_position_usd,
+        cooldown_seconds: values.cooldown_seconds,
+      }
+
       const payload = {
         name: values.name,
         strategy_type: values.strategy_type,
@@ -293,13 +356,7 @@ const BacktestList = () => {
         start_time: startTime.valueOf(),
         end_time: endTime.valueOf(),
         initial_capital: values.initial_capital,
-        parameters: {
-          grid_lower: values.grid_lower,
-          grid_upper: values.grid_upper,
-          grid_num: values.grid_num,
-          amount_per_grid: values.amount_per_grid,
-          fee_rate: values.fee_rate,
-        },
+        parameters,
         description: values.description,
       }
 
@@ -511,6 +568,9 @@ const BacktestList = () => {
         const labels: Record<string, string> = {
           grid: '网格策略',
           grid_mm: '网格做市',
+          ma_cross: '均线交叉',
+          dual_ma_cross: '双均线(多空)',
+          adaptive_grid_trend: '自适应趋势网格',
         }
         return <Tag color="blue">{labels[type] || type}</Tag>
       },
@@ -713,6 +773,8 @@ const BacktestList = () => {
             await form.validateFields(['grid_lower', 'grid_upper', 'grid_num', 'amount_per_grid', 'fee_rate'])
           } else if (strategyType === 'grid_mm') {
             await form.validateFields(['grid_spread', 'grid_levels', 'amount_per_grid', 'fee_rate'])
+          } else if (strategyType === 'adaptive_grid_trend') {
+            await form.validateFields(['fast_period', 'slow_period', 'atr_period', 'risk_per_trade', 'max_position_usd', 'leverage', 'fee_rate'])
           }
         }
         if (step === 2) {
@@ -942,6 +1004,9 @@ const BacktestList = () => {
             options={[
               { label: '网格策略', value: 'grid' },
               { label: '网格做市', value: 'grid_mm' },
+              { label: '自适应趋势网格', value: 'adaptive_grid_trend' },
+              { label: '均线交叉', value: 'ma_cross' },
+              { label: '双均线(多空)', value: 'dual_ma_cross' },
             ]}
           />
 
@@ -1114,6 +1179,17 @@ const BacktestList = () => {
               // 通用默认值
               amount_per_grid: 0.001,
               fee_rate: 0.001,
+              direction: 'both',
+              fast_period: 20,
+              slow_period: 80,
+              atr_period: 14,
+              entry_atr_multiple: 0.6,
+              stop_atr_multiple: 2.8,
+              take_profit_atr_multiple: 6.0,
+              risk_per_trade: 0.01,
+              max_position_usd: 500,
+              leverage: 3,
+              cooldown_seconds: 3600,
             }}
           >
             {/* 第一步: 基础信息 */}
@@ -1151,6 +1227,7 @@ const BacktestList = () => {
                     <Select.Option value="grid_mm">网格做市</Select.Option>
                   </Select.OptGroup>
                   <Select.OptGroup label="趋势策略">
+                    <Select.Option value="adaptive_grid_trend">自适应趋势网格</Select.Option>
                     <Select.Option value="dual_side">双向持仓(推荐)</Select.Option>
                     <Select.Option value="ma_cross">均线交叉</Select.Option>
                     <Select.Option value="dual_ma_cross">双均线(多空)</Select.Option>
@@ -1456,6 +1533,97 @@ const BacktestList = () => {
                 </>
               )}
 
+              {/* ── 自适应趋势网格 ── */}
+              {strategyType === 'adaptive_grid_trend' && (
+                <>
+                  <Alert
+                    message="自适应趋势网格"
+                    description="EMA趋势过滤后按ATR回撤入场，使用固定单笔风险和ATR止损止盈。不做马丁补仓，适合先用多周期回测筛参数。"
+                    type="warning" showIcon style={{ marginBottom: 12 }}
+                  />
+
+                  <Row gutter={12}>
+                    <Col span={8}>
+                      <Form.Item name="direction" label="交易方向" initialValue="both">
+                        <Select>
+                          <Select.Option value="both">多空双向</Select.Option>
+                          <Select.Option value="long">只做多</Select.Option>
+                          <Select.Option value="short">只做空</Select.Option>
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="fast_period" label="EMA快线" rules={[{ required: true }]} initialValue={20}>
+                        <InputNumber min={5} max={80} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="slow_period" label="EMA慢线" rules={[{ required: true }]} initialValue={80}>
+                        <InputNumber min={20} max={200} step={5} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={12}>
+                    <Col span={8}>
+                      <Form.Item name="atr_period" label="ATR周期" rules={[{ required: true }]} initialValue={14}>
+                        <InputNumber min={5} max={50} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="entry_atr_multiple" label="入场回撤ATR" initialValue={0.6}>
+                        <InputNumber min={0} max={2} step={0.05} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="cooldown_seconds" label="冷却时间(秒)" initialValue={3600}>
+                        <InputNumber min={60} max={86400} step={60} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={12}>
+                    <Col span={8}>
+                      <Form.Item name="stop_atr_multiple" label="止损ATR" initialValue={2.8}>
+                        <InputNumber min={0.5} max={5} step={0.1} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="take_profit_atr_multiple" label="止盈ATR" initialValue={6.0}>
+                        <InputNumber min={0.5} max={8} step={0.1} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="fee_rate" label="手续费率" rules={[{ required: true }]} initialValue={0.0005}>
+                        <InputNumber min={0} max={0.01} step={0.0001} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={12}>
+                    <Col span={8}>
+                      <Form.Item name="risk_per_trade" label="单笔风险" rules={[{ required: true }]} initialValue={0.01}>
+                        <InputNumber min={0.001} max={0.05} step={0.001} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="max_position_usd" label="最大仓位(USDT)" rules={[{ required: true }]} initialValue={500}>
+                        <InputNumber min={10} step={10} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="leverage" label="杠杆倍数" rules={[{ required: true }]} initialValue={3}>
+                        <InputNumber min={1} max={20} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Form.Item name="description" label="描述">
+                    <TextArea rows={2} placeholder="回测描述(可选)" />
+                  </Form.Item>
+                </>
+              )}
+
               {/* ── 双向持仓策略 ── */}
               {strategyType === 'dual_side' && (
                 <>
@@ -1469,7 +1637,7 @@ const BacktestList = () => {
                     <Col span={12}>
                       <Form.Item
                         name="fast_period"
-                        label={<span>EMA快线周期 <Tooltip title="默认12，回测验证最优值"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
+                        label={<span>EMA快线周期 <Tooltip title="默认20，最近样本外BTC更优"><HelpCircle size={14} style={{ color: '#8c8c8c' }} /></Tooltip></span>}
                         initialValue={12}
                       >
                         <InputNumber min={1} max={50} style={{ width: '100%' }} />
@@ -1719,7 +1887,8 @@ const BacktestList = () => {
                     'grid': '网格策略',
                     'grid_mm': '网格做市',
                     'ma_cross': '均线交叉',
-                    'dual_ma_cross': '双均线(多空)'
+                    'dual_ma_cross': '双均线(多空)',
+                    'adaptive_grid_trend': '自适应趋势网格'
                   }
                   return names[type] || type
                 }

@@ -14,7 +14,6 @@ import {
   Select,
   InputNumber,
   Switch,
-  message,
   Popconfirm,
   Tooltip,
   Alert,
@@ -22,7 +21,8 @@ import {
   Divider,
   Row,
   Col,
-  Statistic
+  Statistic,
+  App
 } from 'antd'
 import {
   Plus,
@@ -46,6 +46,7 @@ import { strategyApi } from '@/services/api'
 import type { Strategy } from '@/types'
 
 const RiskControlPage = () => {
+  const { message, modal } = App.useApp()
   const [rules, setRules] = useState<RiskRule[]>([])
   const [strategies, setStrategies] = useState<Strategy[]>([])
   const [loading, setLoading] = useState(false)
@@ -154,7 +155,7 @@ const RiskControlPage = () => {
 
   // 紧急停止
   const handleEmergencyStop = async () => {
-    Modal.confirm({
+    modal.confirm({
       title: '紧急停止确认',
       icon: <AlertTriangle style={{ color: '#ff4d4f' }} />,
       content: '确定要暂停所有策略吗？此操作将立即停止所有运行中的策略！',
@@ -223,8 +224,8 @@ const RiskControlPage = () => {
       if (rule.min_available_balance) configs.push(`最小可用: ${rule.min_available_balance} USDT`)
       if (rule.max_position_value) configs.push(`最大持仓: ${rule.max_position_value} USDT`)
     } else if (rule.risk_type === 'position') {
-      if (rule.max_position_size) configs.push(`最大数量: ${rule.max_position_size}`)
-      if (rule.max_single_order_size) configs.push(`单笔限额: ${rule.max_single_order_size}`)
+      if (rule.max_position_per_symbol) configs.push(`单币种上限: ${rule.max_position_per_symbol}`)
+      if (rule.max_concentration_ratio) configs.push(`集中度: ${(rule.max_concentration_ratio * 100).toFixed(1)}%`)
     } else if (rule.risk_type === 'loss') {
       if (rule.daily_loss_limit) configs.push(`日亏损: ${rule.daily_loss_limit} USDT`)
       if (rule.total_loss_limit) configs.push(`总亏损: ${rule.total_loss_limit} USDT`)
@@ -232,8 +233,8 @@ const RiskControlPage = () => {
     } else if (rule.risk_type === 'drawdown') {
       if (rule.max_drawdown_percent) configs.push(`回撤: ${(rule.max_drawdown_percent * 100).toFixed(1)}%`)
     } else if (rule.risk_type === 'frequency') {
-      if (rule.max_orders_per_minute) configs.push(`每分钟: ${rule.max_orders_per_minute} 单`)
-      if (rule.max_daily_orders) configs.push(`每日: ${rule.max_daily_orders} 单`)
+      if (rule.max_trades_per_period) configs.push(`周期内: ${rule.max_trades_per_period} 单`)
+      if (rule.period_seconds) configs.push(`周期: ${rule.period_seconds} 秒`)
     }
 
     return configs.join(' | ') || '未配置'
@@ -455,7 +456,7 @@ const RiskControlPage = () => {
         width={700}
         okText="保存"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           {/* 基本信息 */}

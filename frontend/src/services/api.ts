@@ -2,12 +2,20 @@
  * API服务
  */
 import axios from 'axios'
-import type { Strategy, Order, Position, Ticker, Kline, Instrument, GridParamsRecommendation, StrategyPerformance } from '@/types'
+import type { AxiosInstance, AxiosRequestConfig } from 'axios'
+import type { Strategy, Order, Position, Ticker, Kline, Instrument, StrategyPerformance, User } from '@/types'
+
+type ApiClient = Omit<AxiosInstance, 'get' | 'post' | 'put' | 'delete'> & {
+  get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>
+  post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>
+  put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>
+  delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>
+}
 
 const api = axios.create({
   baseURL: '/api/v1',
   timeout: 10000,
-})
+}) as ApiClient
 
 // 请求拦截器
 api.interceptors.request.use(
@@ -38,10 +46,10 @@ api.interceptors.response.use(
 // 认证API
 export const authApi = {
   login: (username: string, password: string) =>
-    api.post('/auth/login', { username, password }),
+    api.post<{ access_token: string; token_type: string; user: User }>('/auth/login', { username, password }),
   register: (username: string, email: string, password: string) =>
-    api.post('/auth/register', { username, email, password }),
-  getCurrentUser: () => api.get('/auth/me'),
+    api.post<User>('/auth/register', { username, email, password }),
+  getCurrentUser: () => api.get<User>('/auth/me'),
 }
 
 // 策略API
@@ -60,12 +68,6 @@ export const strategyApi = {
     api.get<{ code: number; msg: string; data: { total: number; items: Order[] } }>(
       `/strategies/${id}/orders`,
       { params: { skip, limit } }
-    ).then(res => (res as any).data),
-  recommendGridParams: (symbol: string, totalAmount: number) =>
-    api.post<{ code: number; msg: string; data: GridParamsRecommendation }>(
-      '/strategies/grid/recommend-params',
-      null,
-      { params: { symbol, total_amount: totalAmount } }
     ).then(res => (res as any).data),
   getPerformance: (id: number) =>
     api.get<{ code: number; msg: string; data: StrategyPerformance }>(

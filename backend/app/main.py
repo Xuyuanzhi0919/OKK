@@ -69,6 +69,9 @@ async def startup_event():
     from app.services.notification import notification_service
     import app.websocket as websocket_module
 
+    if not settings.DEBUG and settings.SECRET_KEY == "your-secret-key-change-in-production-please":
+        raise RuntimeError("生产环境必须修改 SECRET_KEY")
+
     # 注入WebSocket管理器到通知服务
     notification_service.set_websocket_manager(ws_manager)
     logger.info("✅ WebSocket管理器已注入到通知服务")
@@ -117,8 +120,11 @@ async def startup_event():
 
     # 启动账户监控器(定期推送余额和持仓)
     from app.services.account_monitor import account_monitor
-    await account_monitor.start()
-    logger.info("📊 账户监控器已启动")
+    try:
+        await account_monitor.start()
+        logger.info("📊 账户监控器已启动")
+    except Exception as e:
+        logger.error(f"账户监控器启动失败，已跳过: {e}")
 
     # 自动恢复运行中的策略
     try:
@@ -144,7 +150,10 @@ async def startup_event():
                     from app.services.api_config_service import APIConfigService
                     import json
 
-                    exchange = APIConfigService.get_exchange(strategy.user_id)
+                    exchange = APIConfigService.get_exchange(
+                        user_id=strategy.user_id,
+                        config_id=strategy.api_config_id,
+                    )
                     if not exchange:
                         raise Exception(f"用户 {strategy.user_id} 没有有效的API配置")
 
@@ -231,7 +240,8 @@ async def shutdown_event():
         logger.error(f"关闭交易所连接时出错: {e}")
 
     # 关闭OKX WebSocket客户端
-    await okx_ws_client.disconnect()
+    import app.websocket as websocket_module
+    await websocket_module.okx_ws_client.disconnect()
 
 
 # 创建Socket.IO ASGI应用 - 必须在所有路由定义之后

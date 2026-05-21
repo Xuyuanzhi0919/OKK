@@ -1,9 +1,9 @@
 /**
  * 风控管理API服务
  */
-import axios from 'axios'
+import api from './api'
 
-const BASE_URL = '/api/v1/risk-control'
+const BASE_URL = '/risk-control'
 
 export interface RiskRule {
   id?: number
@@ -51,31 +51,27 @@ export const getRiskRules = async (params?: {
   risk_type?: string
   is_enabled?: boolean
 }) => {
-  const response = await axios.get(BASE_URL + '/rules', { params })
-  return response.data
+  return api.get(BASE_URL + '/rules', { params })
 }
 
 // 创建风控规则
 export const createRiskRule = async (data: RiskRule) => {
-  const response = await axios.post(BASE_URL + '/rules', data)
-  return response.data
+  return api.post(BASE_URL + '/rules', data)
 }
 
 // 更新风控规则
 export const updateRiskRule = async (id: number, data: Partial<RiskRule>) => {
-  const response = await axios.put(`${BASE_URL}/rules/${id}`, data)
-  return response.data
+  return api.put(`${BASE_URL}/rules/${id}`, data)
 }
 
 // 删除风控规则
 export const deleteRiskRule = async (id: number) => {
-  await axios.delete(`${BASE_URL}/rules/${id}`)
+  await api.delete(`${BASE_URL}/rules/${id}`)
 }
 
 // 检查策略风控状态
 export const checkStrategyRisk = async (strategyId: number) => {
-  const response = await axios.get(`${BASE_URL}/check/${strategyId}`)
-  return response.data
+  return api.get(`${BASE_URL}/check/${strategyId}`)
 }
 
 // 紧急停止
@@ -83,8 +79,7 @@ export const emergencyStop = async (data: {
   action: 'pause_all' | 'close_all'
   strategy_ids?: number[]
 }) => {
-  const response = await axios.post(`${BASE_URL}/emergency-stop`, data)
-  return response.data
+  return api.post(`${BASE_URL}/emergency-stop`, data)
 }
 
 // 获取风控动作日志
@@ -93,6 +88,5 @@ export const getRiskActions = async (params?: {
   action_type?: string
   limit?: number
 }) => {
-  const response = await axios.get(BASE_URL + '/actions', { params })
-  return response.data
+  return api.get(BASE_URL + '/actions', { params })
 }

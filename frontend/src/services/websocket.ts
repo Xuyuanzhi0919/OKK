@@ -112,20 +112,32 @@ export interface BalanceUpdateData {
   available_balance: number
   unrealized_pnl: number
   margin_ratio: number
+  adjusted_equity?: number
+  imr?: number
+  mmr?: number
+  notional_usd?: number
   details: any[]
   timestamp: number
 }
 
 export interface PositionsUpdateData {
   positions: Array<{
+    pos_id?: string
+    pos_side?: 'long' | 'short' | 'net'
+    mgn_mode?: string
     symbol: string
     side: 'long' | 'short'
     size: number
     avg_price: number
     current_price: number
+    last_price?: number
     unrealized_pnl: number
     unrealized_pnl_pct: number
     margin: number
+    imr?: number
+    mmr?: number
+    mgn_ratio?: number
+    adl?: number
     liquidation_price?: number
     leverage: number
     inst_type: string

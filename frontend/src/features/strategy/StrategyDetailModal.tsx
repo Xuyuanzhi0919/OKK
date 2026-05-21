@@ -1,4 +1,4 @@
-import { Modal, Descriptions, Statistic, Row, Col, Card, Table, Tag, Space, Spin, Tabs } from 'antd'
+import { Modal, Descriptions, Statistic, Row, Col, Card, Table, Tag, Space, Spin, Tabs, Progress } from 'antd'
 import { TrendingUp, TrendingDown, List, BarChart3 } from 'lucide-react'
 import type { ColumnsType } from 'antd/es/table'
 import { Strategy, Order } from '@/types'
@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { strategyApi } from '@/services/api'
 import { wsService, StrategyStatsData, StrategyUpdateData, OrderUpdateData } from '@/services/websocket'
-import { formatPrice, formatQuantityDisplay, formatPercent } from '@/utils/format'
+import { formatAmount, formatPrice, formatQuantityDisplay, formatPercent } from '@/utils/format'
 import StrategyOrderHistory from './StrategyOrderHistory'
 
 interface StrategyDetailModalProps {
@@ -135,6 +135,37 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
   const total_trades = buy_count + sell_count
   const total_buy_amount = pnlData?.total_buy_amount ?? displayData.total_buy_volume ?? 0
   const total_sell_amount = pnlData?.total_sell_amount ?? displayData.total_sell_volume ?? 0
+  const signalStatus = displayData.signal_status
+  const positionStatus = displayData.position_status
+  const riskStatus = displayData.risk_status
+
+  const trendLabel: Record<string, string> = {
+    bull: '多头趋势',
+    bear: '空头趋势',
+    flat: '震荡',
+    position: '持仓中',
+    cooldown: '冷却中',
+    unknown: '初始化',
+  }
+
+  const waitingLabel: Record<string, string> = {
+    long: '等回撤做多',
+    short: '等反弹做空',
+    exit: '等止盈/止损',
+    cooldown: '冷却中',
+    kline_data: '等K线数据',
+    atr: '等ATR数据',
+    flat: '等趋势',
+    tick: '等行情',
+  }
+
+  const pctText = (value?: number | null) => (
+    value == null || Number.isNaN(Number(value)) ? '-' : `${Number(value).toFixed(2)}%`
+  )
+
+  const moneyText = (value?: number | null) => (
+    value == null || Number.isNaN(Number(value)) ? '-' : `${formatAmount(value)} USDT`
+  )
 
 
   // Tab标签页配置
@@ -252,6 +283,173 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
               </Col>
             </Row>
           </Card>
+
+          {signalStatus && (
+            <Card title="当前信号" variant="borderless" size="small" style={{ marginBottom: 16 }}>
+              <Descriptions column={3} size="small">
+                <Descriptions.Item label="趋势">
+                  <Tag color={
+                    signalStatus.trend === 'bull' ? 'green'
+                      : signalStatus.trend === 'bear' ? 'red'
+                        : signalStatus.trend === 'position' ? 'blue'
+                          : 'default'
+                  }>
+                    {trendLabel[signalStatus.trend] || signalStatus.trend || '-'}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="等待方向">
+                  <Tag color={
+                    signalStatus.waiting_for === 'long' ? 'green'
+                      : signalStatus.waiting_for === 'short' ? 'red'
+                        : 'default'
+                  }>
+                    {waitingLabel[signalStatus.waiting_for] || signalStatus.waiting_for || '-'}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="距离触发">
+                  {signalStatus.distance_pct != null ? `${Number(signalStatus.distance_pct).toFixed(2)}%` : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="当前价">
+                  {signalStatus.current_price != null ? formatPrice(signalStatus.current_price) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="触发价">
+                  {signalStatus.trigger_price != null ? formatPrice(signalStatus.trigger_price) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="ATR">
+                  {signalStatus.atr != null ? formatPrice(signalStatus.atr) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="EMA快线">
+                  {signalStatus.ema_fast != null ? formatPrice(signalStatus.ema_fast) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="EMA慢线">
+                  {signalStatus.ema_slow != null ? formatPrice(signalStatus.ema_slow) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="原因" span={3}>
+                  {signalStatus.message || '-'}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+          )}
+
+          {positionStatus && (
+            <Card title="持仓止盈止损" variant="borderless" size="small" style={{ marginBottom: 16 }}>
+              <Descriptions column={3} size="small">
+                <Descriptions.Item label="状态">
+                  <Tag color={positionStatus.in_position ? 'blue' : 'default'}>
+                    {positionStatus.in_position ? '持仓中' : '空仓'}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="方向">
+                  <Tag color={
+                    positionStatus.side === 'long' ? 'green'
+                      : positionStatus.side === 'short' ? 'red'
+                        : 'default'
+                  }>
+                    {positionStatus.side || '-'}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="数量">
+                  {positionStatus.qty ? formatQuantityDisplay(positionStatus.qty) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="开仓价">
+                  {positionStatus.entry_price ? formatPrice(positionStatus.entry_price) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="当前价">
+                  {positionStatus.current_price ? formatPrice(positionStatus.current_price) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="浮动盈亏">
+                  <span style={{ color: unrealized_pnl >= 0 ? '#22c55e' : '#ef4444', fontWeight: 600 }}>
+                    {moneyText(unrealized_pnl)}
+                  </span>
+                </Descriptions.Item>
+                <Descriptions.Item label="止损价">
+                  <span style={{ color: '#ef4444', fontWeight: 600 }}>
+                    {positionStatus.stop_px ? formatPrice(positionStatus.stop_px) : '-'}
+                  </span>
+                </Descriptions.Item>
+                <Descriptions.Item label="距离止损">
+                  {pctText(positionStatus.distance_to_stop_pct)}
+                </Descriptions.Item>
+                <Descriptions.Item label="止盈价">
+                  <span style={{ color: '#22c55e', fontWeight: 600 }}>
+                    {positionStatus.take_profit_px ? formatPrice(positionStatus.take_profit_px) : '-'}
+                  </span>
+                </Descriptions.Item>
+                <Descriptions.Item label="距离止盈">
+                  {pctText(positionStatus.distance_to_take_profit_pct)}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+          )}
+
+          {riskStatus && (
+            <Card title="运行风控" variant="borderless" size="small" style={{ marginBottom: 16 }}>
+              <Descriptions column={3} size="small">
+                <Descriptions.Item label="熔断状态">
+                  <Tag color={riskStatus.enabled ? 'green' : 'default'}>
+                    {riskStatus.enabled ? '已启用' : '未启用'}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="风控基准">
+                  {moneyText(riskStatus.risk_base_usd)}
+                </Descriptions.Item>
+                <Descriptions.Item label="利润因子窗口">
+                  最近 {riskStatus.profit_factor_window ?? '-'} 笔
+                </Descriptions.Item>
+                <Descriptions.Item label="连续亏损">
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <span>{riskStatus.consecutive_losses ?? 0} / {riskStatus.max_consecutive_losses ?? '-'}</span>
+                    <Progress
+                      percent={
+                        riskStatus.max_consecutive_losses
+                          ? Math.min(100, (Number(riskStatus.consecutive_losses || 0) / Number(riskStatus.max_consecutive_losses)) * 100)
+                          : 0
+                      }
+                      size="small"
+                      showInfo={false}
+                      strokeColor="#f59e0b"
+                    />
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="今日亏损">
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <span>
+                      {moneyText(Math.min(0, Number(riskStatus.daily_realized_pnl || 0)))} / -{moneyText(riskStatus.daily_loss_limit_usd)}
+                    </span>
+                    <Progress
+                      percent={
+                        riskStatus.daily_loss_limit_usd
+                          ? Math.min(100, Math.abs(Math.min(0, Number(riskStatus.daily_realized_pnl || 0))) / Number(riskStatus.daily_loss_limit_usd) * 100)
+                          : 0
+                      }
+                      size="small"
+                      showInfo={false}
+                      strokeColor="#ef4444"
+                    />
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="运行回撤">
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <span>{moneyText(riskStatus.max_runtime_drawdown)} / {moneyText(riskStatus.max_drawdown_limit_usd)}</span>
+                    <Progress
+                      percent={
+                        riskStatus.max_drawdown_limit_usd
+                          ? Math.min(100, Number(riskStatus.max_runtime_drawdown || 0) / Number(riskStatus.max_drawdown_limit_usd) * 100)
+                          : 0
+                      }
+                      size="small"
+                      showInfo={false}
+                      strokeColor="#ef4444"
+                    />
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="利润因子">
+                  {riskStatus.runtime_profit_factor == null ? '-' : Number(riskStatus.runtime_profit_factor).toFixed(2)}
+                  {riskStatus.min_profit_factor != null ? ` / ${Number(riskStatus.min_profit_factor).toFixed(2)}` : ''}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+          )}
 
           {/* 持仓信息 */}
           <Card title={t('strategy.positionInfo')} variant="borderless" size="small" style={{ marginBottom: 16 }}>
