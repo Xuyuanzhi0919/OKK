@@ -2,7 +2,7 @@
 数据库模型导出
 """
 from .user import User
-from .strategy import Strategy, StrategyStatus, StrategyType
+from .strategy import Strategy, StrategyEvent, StrategyStatus, StrategyType
 from .order import Order, OrderSide, OrderType, OrderStatus
 from .position import Position
 from .kline import Kline
@@ -15,6 +15,7 @@ from .account_snapshot import AccountSnapshot
 __all__ = [
     "User",
     "Strategy",
+    "StrategyEvent",
     "StrategyStatus",
     "StrategyType",
     "Order",

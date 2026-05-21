@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.core.database import get_db
 from app.api.deps import require_current_user_id
-from app.models.strategy import Strategy, StrategyStatus
+from app.models.strategy import Strategy, StrategyEvent, StrategyStatus
 from app.models.order import Order, OrderStatus, OrderSide
 from app.schemas.strategy import (
     StrategyCreate,
@@ -663,6 +663,59 @@ async def get_strategy_orders(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"获取策略交易历史失败: {str(e)}"
         )
+
+
+@router.get("/{strategy_id}/events")
+async def get_strategy_events(
+    strategy_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)
+):
+    """获取策略运行事件时间线"""
+    strategy = (
+        db.query(Strategy)
+        .filter(Strategy.id == strategy_id, Strategy.user_id == user_id)
+        .first()
+    )
+    if not strategy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"策略 {strategy_id} 不存在"
+        )
+
+    total = db.query(StrategyEvent).filter(StrategyEvent.strategy_id == strategy_id).count()
+    events = (
+        db.query(StrategyEvent)
+        .filter(StrategyEvent.strategy_id == strategy_id)
+        .order_by(desc(StrategyEvent.created_at))
+        .offset(skip)
+        .limit(min(limit, 300))
+        .all()
+    )
+
+    return {
+        "code": 0,
+        "msg": "success",
+        "data": {
+            "total": total,
+            "items": [
+                {
+                    "id": event.id,
+                    "strategy_id": event.strategy_id,
+                    "event_type": event.event_type,
+                    "level": event.level,
+                    "title": event.title,
+                    "message": event.message,
+                    "data": event.data or {},
+                    "parameter_snapshot": event.parameter_snapshot or {},
+                    "created_at": event.created_at.isoformat() if event.created_at else None,
+                }
+                for event in events
+            ]
+        }
+    }
 
 
 @router.get("/{strategy_id}/performance")

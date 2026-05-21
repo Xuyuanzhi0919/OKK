@@ -108,6 +108,23 @@ CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_positions_user_id ON positions(user_id);
 CREATE INDEX idx_positions_symbol ON positions(symbol);
 
+CREATE TABLE IF NOT EXISTS strategy_events (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    strategy_id INTEGER NOT NULL REFERENCES strategies(id) ON DELETE CASCADE,
+    event_type VARCHAR(50) NOT NULL,
+    level VARCHAR(20) NOT NULL DEFAULT 'info',
+    title VARCHAR(200) NOT NULL,
+    message TEXT,
+    data JSONB,
+    parameter_snapshot JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_strategy_events_user_id ON strategy_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_strategy_events_strategy_id_created_at ON strategy_events(strategy_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_strategy_events_event_type ON strategy_events(event_type);
+
 -- 插入测试用户（密码: admin123）
 INSERT INTO users (username, email, hashed_password, is_superuser)
 VALUES ('admin', 'admin@okk.com', '$2b$12$XZfL2JOv0K1ytph5pt9fO.bTak9m.H6GN20KFYkd4wKoJSqK4a9ia', TRUE)

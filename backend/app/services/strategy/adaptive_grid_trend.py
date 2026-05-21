@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 from loguru import logger
 
 from app.core.database import SessionLocal
-from app.models.strategy import Strategy as DBStrategy
+from app.models.strategy import Strategy as DBStrategy, StrategyEvent
 from app.services.strategy.base import StrategyBase
 
 
@@ -58,6 +58,8 @@ class AdaptiveGridTrendStrategy(StrategyBase):
         self._last_trade_time = 0.0
         self._unrealized_pnl = 0.0
         self._signal_status: Dict = {}
+        self._last_event_key = ""
+        self._last_event_time = 0.0
 
         self.realized_pnl = 0.0
         self.total_trades = 0
@@ -103,6 +105,7 @@ class AdaptiveGridTrendStrategy(StrategyBase):
                 "position_side": self._position_side,
                 "message": f"已有{self._position_side}持仓，等待止盈/止损",
             }
+            self._log_signal_event(self._signal_status)
             await self._manage_position(price)
             return
 
@@ -115,6 +118,7 @@ class AdaptiveGridTrendStrategy(StrategyBase):
                 "cooldown_remaining_seconds": round(remaining),
                 "message": f"冷却中，剩余约 {round(remaining / 60)} 分钟",
             }
+            self._log_signal_event(self._signal_status)
             return
 
         metrics = await self._get_metrics()
@@ -125,6 +129,7 @@ class AdaptiveGridTrendStrategy(StrategyBase):
                 "current_price": round(price, 8),
                 "message": "K线数据不足，等待指标初始化",
             }
+            self._log_signal_event(self._signal_status)
             return
 
         trend = metrics["trend"]
@@ -140,6 +145,7 @@ class AdaptiveGridTrendStrategy(StrategyBase):
                 "atr": round(atr, 8),
                 "message": "ATR无效，等待波动数据",
             }
+            self._log_signal_event(self._signal_status)
             return
 
         long_trigger = ema_fast + atr * self.entry_atr_multiple
@@ -185,6 +191,7 @@ class AdaptiveGridTrendStrategy(StrategyBase):
             self._signal_status = self._build_signal_status(
                 trend, waiting_for, price, trigger_price, distance_pct, metrics, message
             )
+            self._log_signal_event(self._signal_status)
 
     async def on_kline(self, kline: Dict):
         return None
@@ -220,6 +227,47 @@ class AdaptiveGridTrendStrategy(StrategyBase):
             "waiting_for": "tick",
             "message": "等待下一次行情检查",
         }
+
+    def _log_event(
+        self,
+        event_type: str,
+        title: str,
+        message: str,
+        level: str = "info",
+        data: Optional[Dict] = None,
+    ) -> None:
+        db = SessionLocal()
+        try:
+            db.add(StrategyEvent(
+                strategy_id=self.strategy_id,
+                user_id=self.user_id,
+                event_type=event_type,
+                level=level,
+                title=title,
+                message=message,
+                data=data or {},
+                parameter_snapshot=self.parameters if isinstance(self.parameters, dict) else None,
+            ))
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            logger.debug(f"[{self.symbol}] 写入策略事件失败: {exc}")
+        finally:
+            db.close()
+
+    def _log_signal_event(self, status: Dict) -> None:
+        key = f"{status.get('trend')}|{status.get('waiting_for')}|{status.get('message')}"
+        now = time.time()
+        if key == self._last_event_key and now - self._last_event_time < 15 * 60:
+            return
+        self._last_event_key = key
+        self._last_event_time = now
+        self._log_event(
+            event_type="signal",
+            title="策略信号更新",
+            message=status.get("message") or "",
+            data=status,
+        )
 
     async def _restore_position_state(self):
         db = SessionLocal()
@@ -410,6 +458,22 @@ class AdaptiveGridTrendStrategy(StrategyBase):
             f"[{self.symbol}] 开{side}: qty={qty} entry={fill_price:.6f} "
             f"stop={self._stop_px:.6f} tp={self._take_profit_px:.6f}"
         )
+        self._log_event(
+            event_type="open_position",
+            level="success",
+            title=f"开{side}仓成功",
+            message=f"开仓价 {fill_price:.6f}，止损 {self._stop_px:.6f}，止盈 {self._take_profit_px:.6f}",
+            data={
+                "symbol": self.symbol,
+                "side": side,
+                "qty": qty,
+                "entry_price": fill_price,
+                "stop_px": self._stop_px,
+                "take_profit_px": self._take_profit_px,
+                "atr": atr,
+                "order_id": order_detail.get("ordId"),
+            },
+        )
 
     async def _manage_position(self, price: float):
         if self._stop_px <= 0 or self._take_profit_px <= 0:
@@ -492,6 +556,22 @@ class AdaptiveGridTrendStrategy(StrategyBase):
         self.record_trade_result(pnl)
 
         logger.info(f"[{self.symbol}] 平仓({reason}): exit={exit_price:.6f} pnl={pnl:.4f}")
+        self._log_event(
+            event_type="close_position",
+            level="success" if pnl >= 0 else "warning",
+            title="平仓完成",
+            message=f"{reason}: 平仓价 {exit_price:.6f}，盈亏 {pnl:.4f} USDT",
+            data={
+                "symbol": self.symbol,
+                "reason": reason,
+                "side": self._position_side,
+                "entry_price": self._entry_price,
+                "exit_price": exit_price,
+                "qty": self._position_qty,
+                "pnl": pnl,
+                "order_id": order_detail.get("ordId"),
+            },
+        )
 
         self._position_side = ""
         self._entry_price = 0.0

@@ -3,7 +3,7 @@
  */
 import axios from 'axios'
 import type { AxiosInstance, AxiosRequestConfig } from 'axios'
-import type { Strategy, Order, Position, Ticker, Kline, Instrument, StrategyPerformance, User } from '@/types'
+import type { Strategy, StrategyEvent, Order, Position, Ticker, Kline, Instrument, StrategyPerformance, User } from '@/types'
 
 type ApiClient = Omit<AxiosInstance, 'get' | 'post' | 'put' | 'delete'> & {
   get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>
@@ -67,6 +67,11 @@ export const strategyApi = {
   getOrders: (id: number, skip?: number, limit?: number) =>
     api.get<{ code: number; msg: string; data: { total: number; items: Order[] } }>(
       `/strategies/${id}/orders`,
+      { params: { skip, limit } }
+    ).then(res => (res as any).data),
+  getEvents: (id: number, skip?: number, limit?: number) =>
+    api.get<{ code: number; msg: string; data: { total: number; items: StrategyEvent[] } }>(
+      `/strategies/${id}/events`,
       { params: { skip, limit } }
     ).then(res => (res as any).data),
   getPerformance: (id: number) =>

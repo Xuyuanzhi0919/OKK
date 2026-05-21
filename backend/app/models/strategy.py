@@ -79,3 +79,20 @@ class Strategy(Base):
 
     # 关联
     # user = relationship("User", back_populates="strategies")
+
+
+class StrategyEvent(Base):
+    """策略运行事件表，用于策略解释和复盘。"""
+
+    __tablename__ = "strategy_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True, comment="用户ID")
+    strategy_id = Column(Integer, ForeignKey("strategies.id", ondelete="CASCADE"), nullable=False, index=True, comment="策略ID")
+    event_type = Column(String(50), nullable=False, index=True, comment="事件类型")
+    level = Column(String(20), nullable=False, default="info", comment="级别: info/warning/error/success")
+    title = Column(String(200), nullable=False, comment="事件标题")
+    message = Column(Text, comment="事件说明")
+    data = Column(JSON, comment="事件结构化数据")
+    parameter_snapshot = Column(JSON, comment="策略参数快照")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True, comment="创建时间")

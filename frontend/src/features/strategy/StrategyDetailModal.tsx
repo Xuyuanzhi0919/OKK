@@ -1,7 +1,6 @@
-import { Modal, Descriptions, Statistic, Row, Col, Card, Table, Tag, Space, Spin, Tabs, Progress } from 'antd'
-import { TrendingUp, TrendingDown, List, BarChart3 } from 'lucide-react'
-import type { ColumnsType } from 'antd/es/table'
-import { Strategy, Order } from '@/types'
+import { Modal, Descriptions, Statistic, Row, Col, Card, Tag, Space, Spin, Tabs, Progress, Timeline, Empty } from 'antd'
+import { TrendingUp, TrendingDown, List, BarChart3, ScrollText } from 'lucide-react'
+import { Strategy, StrategyEvent } from '@/types'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { strategyApi } from '@/services/api'
@@ -20,6 +19,7 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
   const [loading, setLoading] = useState(false)
   const [strategyDetail, setStrategyDetail] = useState<any>(null)
   const [pnlData, setPnlData] = useState<any>(null)
+  const [events, setEvents] = useState<StrategyEvent[]>([])
 
   // 获取策略实时统计数据
   const fetchStrategyStats = async () => {
@@ -48,12 +48,24 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
     }
   }
 
+  const fetchEvents = async () => {
+    if (!strategy) return
+
+    try {
+      const data = await strategyApi.getEvents(strategy.id, 0, 100)
+      setEvents(data.items || [])
+    } catch (error) {
+      // 事件流是辅助信息，失败时不打断详情页
+    }
+  }
+
   // 当Modal打开时获取初始数据并订阅WebSocket实时更新
   useEffect(() => {
     if (open && strategy) {
       // 初始数据加载
       fetchStrategyStats()
       fetchPnlData()
+      fetchEvents()
 
       // 订阅该策略的实时更新
       wsService.subscribeStrategy(strategy.id)
@@ -81,12 +93,14 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
         (orderData: OrderUpdateData) => {
           // 订单状态变化，立即刷新盈亏数据
           fetchPnlData()
+          fetchEvents()
         }
       )
 
       // 定时刷新盈亏数据（每30秒一次）
       const pnlInterval = setInterval(() => {
         fetchPnlData()
+        fetchEvents()
       }, 30000)
 
       return () => {
@@ -166,6 +180,29 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
   const moneyText = (value?: number | null) => (
     value == null || Number.isNaN(Number(value)) ? '-' : `${formatAmount(value)} USDT`
   )
+
+  const eventTypeLabel: Record<string, string> = {
+    start: '启动',
+    signal: '信号',
+    open_position: '开仓',
+    close_position: '平仓',
+    risk_pause: '风控',
+    stop: '停止',
+    error: '异常',
+  }
+
+  const eventColor = (event: StrategyEvent) => {
+    if (event.level === 'success') return 'green'
+    if (event.level === 'warning') return 'orange'
+    if (event.level === 'error') return 'red'
+    if (event.event_type === 'signal') return 'blue'
+    return 'gray'
+  }
+
+  const formatEventTime = (value?: string) => {
+    if (!value) return '-'
+    return new Date(value).toLocaleString()
+  }
 
 
   // Tab标签页配置
@@ -531,6 +568,74 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
         </span>
       ),
       children: <StrategyOrderHistory strategyId={strategy.id} />,
+    },
+    {
+      key: 'events',
+      label: (
+        <span>
+          <ScrollText size={14} />
+          运行日志
+        </span>
+      ),
+      children: (
+        <Card variant="borderless">
+          {events.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无运行日志，策略启动后会自动记录信号、开仓、平仓和风控事件"
+            />
+          ) : (
+            <Timeline
+              mode="left"
+              items={events.map(event => ({
+                color: eventColor(event),
+                label: (
+                  <span style={{ color: '#737373', fontSize: 12 }}>
+                    {formatEventTime(event.created_at)}
+                  </span>
+                ),
+                children: (
+                  <div>
+                    <Space size={8} wrap>
+                      <Tag color={eventColor(event)}>
+                        {eventTypeLabel[event.event_type] || event.event_type}
+                      </Tag>
+                      <span style={{ fontWeight: 600 }}>{event.title}</span>
+                    </Space>
+                    {event.message && (
+                      <div style={{ marginTop: 6, color: '#a3a3a3' }}>
+                        {event.message}
+                      </div>
+                    )}
+                    {event.parameter_snapshot && Object.keys(event.parameter_snapshot).length > 0 && event.event_type === 'start' && (
+                      <Descriptions column={3} size="small" style={{ marginTop: 8 }}>
+                        <Descriptions.Item label="周期">
+                          {event.parameter_snapshot.trend_timeframe || event.parameter_snapshot.timeframe || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="杠杆">
+                          {event.parameter_snapshot.leverage ? `${event.parameter_snapshot.leverage}x` : '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="方向">
+                          {event.parameter_snapshot.direction || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="EMA">
+                          {event.parameter_snapshot.fast_period || '-'} / {event.parameter_snapshot.slow_period || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="止损/止盈">
+                          {event.parameter_snapshot.stop_atr_multiple || '-'} / {event.parameter_snapshot.take_profit_atr_multiple || '-'} ATR
+                        </Descriptions.Item>
+                        <Descriptions.Item label="最大仓位">
+                          {event.parameter_snapshot.max_position_usd ? `${formatAmount(event.parameter_snapshot.max_position_usd)} USDT` : '-'}
+                        </Descriptions.Item>
+                      </Descriptions>
+                    )}
+                  </div>
+                ),
+              }))}
+            />
+          )}
+        </Card>
+      ),
     },
   ]
 

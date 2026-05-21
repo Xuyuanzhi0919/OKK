@@ -194,6 +194,18 @@ export interface StrategyPerformance {
   daily_profits: DailyProfit[]  // 每日盈亏
 }
 
+export interface StrategyEvent {
+  id: number
+  strategy_id: number
+  event_type: string
+  level: 'info' | 'warning' | 'error' | 'success' | string
+  title: string
+  message?: string
+  data?: Record<string, any>
+  parameter_snapshot?: Record<string, any>
+  created_at?: string
+}
+
 export interface ProfitHistoryItem {
   timestamp: string
   profit: number

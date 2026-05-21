@@ -5,7 +5,7 @@ from typing import Dict, Optional
 from loguru import logger
 from .base import StrategyBase
 from app.services.exchange.okx import OKXExchange
-from app.models.strategy import StrategyType, Strategy, StrategyStatus
+from app.models.strategy import StrategyType, Strategy, StrategyEvent, StrategyStatus
 from app.core.database import SessionLocal
 from app.websocket.manager import broadcast_strategy_stats, broadcast_strategy_update, broadcast_notification
 import asyncio
@@ -56,6 +56,42 @@ class StrategyManager:
             logger.info(f"创建新的交易所实例: {cache_key}")
 
         return self.exchanges[cache_key]
+
+    def log_strategy_event(
+        self,
+        strategy_id: int,
+        event_type: str,
+        title: str,
+        message: str = "",
+        level: str = "info",
+        data: Optional[dict] = None,
+        parameter_snapshot: Optional[dict] = None,
+        user_id: Optional[int] = None,
+    ) -> None:
+        """写入策略运行事件。失败时只记 debug，不能影响交易主流程。"""
+        db = SessionLocal()
+        try:
+            db_strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
+            resolved_user_id = user_id or (db_strategy.user_id if db_strategy else None)
+            if resolved_user_id is None:
+                return
+
+            db.add(StrategyEvent(
+                strategy_id=strategy_id,
+                user_id=resolved_user_id,
+                event_type=event_type,
+                level=level,
+                title=title,
+                message=message,
+                data=data or {},
+                parameter_snapshot=parameter_snapshot,
+            ))
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            logger.debug(f"写入策略事件失败 strategy_id={strategy_id}: {exc}")
+        finally:
+            db.close()
 
     def create_strategy(
         self,
@@ -158,6 +194,22 @@ class StrategyManager:
     async def _pause_strategy_for_fuse(self, strategy_id: int, strategy: StrategyBase, reason: str):
         """运行期风控触发后暂停策略。"""
         logger.warning(f"策略 {strategy_id} 触发运行期风控熔断: {reason}")
+        self.log_strategy_event(
+            strategy_id=strategy_id,
+            event_type="risk_pause",
+            level="warning",
+            title="策略触发风控暂停",
+            message=reason,
+            data={
+                "symbol": strategy.symbol,
+                "daily_realized_pnl": strategy.daily_realized_pnl,
+                "max_runtime_drawdown": strategy.max_runtime_drawdown,
+                "consecutive_losses": strategy.consecutive_losses,
+                "recent_trade_pnl": strategy.trade_pnl_history[-10:],
+            },
+            parameter_snapshot=strategy.parameters if isinstance(strategy.parameters, dict) else None,
+            user_id=strategy.user_id,
+        )
 
         risk_fuse = strategy.parameters.get("risk_fuse", {}) if isinstance(strategy.parameters, dict) else {}
         if not isinstance(risk_fuse, dict):
@@ -369,6 +421,19 @@ class StrategyManager:
 
             # 启动策略
             await strategy.start()
+            self.log_strategy_event(
+                strategy_id=strategy_id,
+                event_type="start",
+                level="success",
+                title="策略启动",
+                message=f"{symbol} 策略已启动",
+                data={
+                    "symbol": symbol,
+                    "strategy_type": strategy_type.value if hasattr(strategy_type, "value") else str(strategy_type),
+                },
+                parameter_snapshot=parameters,
+                user_id=user_id,
+            )
 
             # 保存策略实例
             self.strategies[strategy_id] = strategy
@@ -403,6 +468,22 @@ class StrategyManager:
             if 'close_position' in stop_sig.parameters:
                 kwargs['close_position'] = close_position
             await strategy.stop(**kwargs)
+            self.log_strategy_event(
+                strategy_id=strategy_id,
+                event_type="stop",
+                level="info",
+                title="策略停止",
+                message=f"{strategy.symbol} 策略已停止",
+                data={
+                    "cancel_orders": cancel_orders,
+                    "close_position": close_position,
+                    "realized_pnl": getattr(strategy, "realized_pnl", 0),
+                    "unrealized_pnl": getattr(strategy, "_unrealized_pnl", 0),
+                    "total_trades": getattr(strategy, "total_trades", 0),
+                },
+                parameter_snapshot=strategy.parameters if isinstance(strategy.parameters, dict) else None,
+                user_id=strategy.user_id,
+            )
 
             # 取消监控任务
             task = self.strategy_tasks.get(strategy_id)
