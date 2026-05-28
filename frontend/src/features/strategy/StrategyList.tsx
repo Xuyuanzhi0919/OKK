@@ -17,7 +17,7 @@ import { useState, useEffect, useMemo } from 'react'
 import StrategyDetailModal from './StrategyDetailModal'
 import StrategyPerformanceModal from './StrategyPerformanceModal'
 import StrategyCreateModal from './StrategyCreateModal'
-import { strategyApi } from '@/services/api'
+import { safetyApi, strategyApi } from '@/services/api'
 import { useTranslation } from 'react-i18next'
 import { wsService, StrategyUpdateData } from '@/services/websocket'
 import { formatPrice, formatPercent } from '@/utils/format'
@@ -78,6 +78,7 @@ const StrategyList = () => {
   const [performanceModalOpen, setPerformanceModalOpen] = useState(false)
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null)
   const [actionLoading, setActionLoading] = useState<{ [key: number]: boolean }>({})
+  const [emergencyLoading, setEmergencyLoading] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [selectedCreateType, setSelectedCreateType] = useState<string>('')
   
@@ -144,6 +145,71 @@ const StrategyList = () => {
   const handleStartStrategy = async (id: number) => {
     try {
       setActionLoading({ ...actionLoading, [id]: true })
+      const preflight = await strategyApi.startPreflight(id)
+      const warnings = preflight?.warnings || []
+      const blockers = preflight?.blockers || []
+      const checks = preflight?.checks || {}
+
+      if (blockers.length > 0 || warnings.length > 0) {
+        setActionLoading({ ...actionLoading, [id]: false })
+        modal.confirm({
+          title: blockers.length > 0 ? '启动前检查未通过' : '启动前安全确认',
+          icon: <AlertCircle size={24} className={blockers.length > 0 ? 'text-red-500' : 'text-yellow-500'} />,
+          width: 680,
+          content: (
+            <div>
+              {checks.api_config && (
+                <p>
+                  API配置：
+                  <Tag color={checks.api_config.is_simulated ? 'blue' : 'red'} style={{ marginLeft: 8 }}>
+                    {checks.api_config.is_simulated ? '模拟盘' : '实盘'}
+                  </Tag>
+                  {checks.api_config.name}
+                </p>
+              )}
+              {checks.account && <p>账户权益：{Number(checks.account.total_equity || 0).toFixed(2)} USDT</p>}
+              {warnings.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <strong>风险提醒</strong>
+                  <ul style={{ paddingLeft: 18 }}>
+                    {warnings.map((item: string, idx: number) => <li key={idx}>{item}</li>)}
+                  </ul>
+                </div>
+              )}
+              {blockers.length > 0 && (
+                <div style={{ marginTop: 8, color: '#ff4d4f' }}>
+                  <strong>阻断项</strong>
+                  <ul style={{ paddingLeft: 18 }}>
+                    {blockers.map((item: string, idx: number) => <li key={idx}>{item}</li>)}
+                  </ul>
+                </div>
+              )}
+              {checks.existing_positions?.length > 0 && (
+                <p style={{ color: '#faad14' }}>
+                  检测到已有持仓，确认启动代表允许策略接管该交易对。
+                </p>
+              )}
+            </div>
+          ),
+          okText: blockers.length > 0 ? '知道了' : '确认启动',
+          cancelText: '取消',
+          okType: blockers.length > 0 ? 'default' : 'danger',
+          onOk: async () => {
+            if (blockers.length > 0) return
+            try {
+              setActionLoading({ ...actionLoading, [id]: true })
+              await strategyApi.start(id, true)
+              await fetchStrategies(true)
+            } catch (error) {
+              message.error((error as any)?.response?.data?.message || t('strategy.startStrategyFailed'))
+            } finally {
+              setActionLoading({ ...actionLoading, [id]: false })
+            }
+          },
+        })
+        return
+      }
+
       await strategyApi.start(id)
       await fetchStrategies(true)
     } catch (error) {
@@ -151,6 +217,47 @@ const StrategyList = () => {
     } finally {
       setActionLoading({ ...actionLoading, [id]: false })
     }
+  }
+
+  const handleEmergencyStop = () => {
+    let closePositions = false
+    modal.confirm({
+      title: '一键急停',
+      icon: <AlertCircle size={24} className="text-red-500" />,
+      width: 620,
+      content: (
+        <div>
+          <p>急停会立即暂停所有运行中的策略，并撤销相关未成交订单。</p>
+          <Radio.Group
+            defaultValue={false}
+            onChange={e => { closePositions = e.target.value }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+          >
+            <Radio value={false}>仅暂停策略并撤单，保留当前持仓</Radio>
+            <Radio value={true}>暂停策略、撤单并市价平仓</Radio>
+          </Radio.Group>
+        </div>
+      ),
+      okText: '执行急停',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          setEmergencyLoading(true)
+          const result: any = await safetyApi.emergencyStop({
+            action: closePositions ? 'close_all' : 'pause_all',
+            cancel_orders: true,
+            close_positions: closePositions,
+          })
+          message.success(result?.message || '急停执行完成')
+          await fetchStrategies(true)
+        } catch (error) {
+          message.error((error as any)?.response?.data?.detail || '急停失败')
+        } finally {
+          setEmergencyLoading(false)
+        }
+      },
+    })
   }
 
   // 停止策略
@@ -426,6 +533,9 @@ const StrategyList = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>{t('strategy.strategyList')}</span>
             <Space>
+              <Button danger icon={<AlertCircle size={14} />} loading={emergencyLoading} onClick={handleEmergencyStop}>
+                一键急停
+              </Button>
               <Button onClick={() => fetchStrategies()}>
                 {t('common.refresh')}
               </Button>

@@ -389,6 +389,7 @@ async def delete_strategy(
 @router.post("/{strategy_id}/start", response_model=StrategyResponse)
 async def start_strategy(
     strategy_id: int,
+    force_start: bool = False,
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id)
 ):
@@ -419,6 +420,17 @@ async def start_strategy(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="后端当前仅支持启动自适应趋势网格策略"
+            )
+
+        preflight = await build_strategy_start_preflight(strategy, user_id, db)
+        if preflight["blockers"] or (preflight["warnings"] and not force_start):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "message": "策略启动前检查未通过，请确认风险后重试",
+                    "preflight": preflight,
+                    "require_force_start": True,
+                }
             )
 
         # 获取交易所实例（优先使用数据库配置，否则使用.env配置）
@@ -471,6 +483,141 @@ async def start_strategy(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"启动策略失败: {str(e)}"
         )
+
+
+@router.get("/{strategy_id}/start-preflight")
+async def start_strategy_preflight(
+    strategy_id: int,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)
+):
+    """策略启动前安全检查。"""
+    strategy = (
+        db.query(Strategy)
+        .filter(Strategy.id == strategy_id, Strategy.user_id == user_id)
+        .first()
+    )
+    if not strategy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"策略 {strategy_id} 不存在"
+        )
+
+    return {
+        "code": 0,
+        "msg": "success",
+        "data": await build_strategy_start_preflight(strategy, user_id, db)
+    }
+
+
+async def build_strategy_start_preflight(strategy: Strategy, user_id: int, db: Session) -> dict:
+    """构建策略启动前安全检查报告。"""
+    warnings = []
+    blockers = []
+    checks = {}
+
+    strategy_type_value = strategy.type.value if hasattr(strategy.type, 'value') else str(strategy.type)
+    if strategy_type_value != SUPPORTED_STRATEGY_TYPE:
+        blockers.append("后端当前仅支持自适应趋势网格策略")
+
+    api_config = api_config_service.get_config(user_id=user_id, config_id=strategy.api_config_id, db=db)
+    if not api_config:
+        blockers.append("未找到策略绑定的 API 配置")
+    else:
+        checks["api_config"] = {
+            "id": api_config.id,
+            "name": api_config.name,
+            "is_simulated": api_config.is_simulated,
+            "is_valid": api_config.is_valid,
+        }
+        if not api_config.is_valid:
+            blockers.append(f"API 配置无效: {api_config.error_message or '请先验证配置'}")
+        if not api_config.is_simulated:
+            warnings.append(f"当前策略绑定实盘 API: {api_config.name}")
+
+    same_symbol_running = (
+        db.query(Strategy)
+        .filter(
+            Strategy.user_id == user_id,
+            Strategy.id != strategy.id,
+            Strategy.symbol == strategy.symbol,
+            Strategy.status == StrategyStatus.RUNNING,
+        )
+        .all()
+    )
+    if same_symbol_running:
+        warnings.append(f"{strategy.symbol} 已有 {len(same_symbol_running)} 个运行中策略")
+    checks["same_symbol_running_strategy_ids"] = [s.id for s in same_symbol_running]
+
+    params = strategy.parameters or {}
+    checks["parameters"] = {
+        "symbol": strategy.symbol,
+        "timeframe": params.get("trend_timeframe") or strategy.timeframe,
+        "leverage": params.get("leverage"),
+        "max_position_usd": params.get("max_position_usd"),
+        "risk_per_trade": params.get("risk_per_trade"),
+        "direction": params.get("direction"),
+    }
+
+    if api_config and api_config.is_valid:
+        exchange = None
+        try:
+            exchange = api_config_service.get_exchange(user_id=user_id, config_id=strategy.api_config_id)
+
+            balance = await exchange.get_balance()
+            total_eq = float(balance.get("totalEq") or 0)
+            checks["account"] = {"total_equity": total_eq}
+
+            positions = await exchange.get_positions(inst_id=strategy.symbol)
+            active_positions = []
+            for pos in positions:
+                try:
+                    size = float(pos.get("pos") or 0)
+                except (TypeError, ValueError):
+                    size = 0
+                if size != 0:
+                    active_positions.append({
+                        "inst_id": pos.get("instId"),
+                        "pos_side": pos.get("posSide"),
+                        "size": size,
+                        "avg_price": pos.get("avgPx"),
+                        "upl": pos.get("upl"),
+                        "notional_usd": pos.get("notionalUsd"),
+                        "leverage": pos.get("lever"),
+                    })
+            checks["existing_positions"] = active_positions
+            if active_positions:
+                warnings.append(f"检测到 {strategy.symbol} 已有交易所持仓，请确认是否让策略接管")
+
+            pending_orders = await exchange.get_orders_pending(inst_type="SWAP", inst_id=strategy.symbol)
+            checks["pending_orders"] = [
+                {
+                    "ord_id": order.get("ordId"),
+                    "side": order.get("side"),
+                    "pos_side": order.get("posSide"),
+                    "ord_type": order.get("ordType"),
+                    "price": order.get("px"),
+                    "size": order.get("sz"),
+                    "state": order.get("state"),
+                }
+                for order in pending_orders
+            ]
+            if pending_orders:
+                warnings.append(f"检测到 {len(pending_orders)} 个未成交订单，启动前建议确认或撤销")
+
+        except Exception as exc:
+            blockers.append(f"交易所检查失败: {exc}")
+        finally:
+            if exchange:
+                await exchange.close()
+
+    return {
+        "ok": len(blockers) == 0 and len(warnings) == 0,
+        "can_force_start": len(blockers) == 0,
+        "warnings": warnings,
+        "blockers": blockers,
+        "checks": checks,
+    }
 
 
 @router.post("/{strategy_id}/stop", response_model=StrategyResponse)

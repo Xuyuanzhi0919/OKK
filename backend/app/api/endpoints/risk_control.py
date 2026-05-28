@@ -1,6 +1,8 @@
 """
 风控管理API端点
 """
+from datetime import datetime
+from decimal import Decimal
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -9,9 +11,11 @@ from loguru import logger
 
 from app.core.database import get_db
 from app.api.deps import require_current_user_id
+
 from app.models import RiskControl, RiskAction, Strategy
 from app.services.risk import RiskManager
-from app.services.exchange.okx import OKXExchange
+from app.services.api_config_service import api_config_service
+from app.services.strategy.manager import strategy_manager
 
 
 router = APIRouter()
@@ -94,6 +98,8 @@ class EmergencyStopRequest(BaseModel):
     """紧急停止请求"""
     action: str = Field(..., description="动作: pause_all(暂停所有), close_all(平仓所有)")
     strategy_ids: Optional[List[int]] = Field(None, description="策略ID列表，None表示所有策略")
+    cancel_orders: bool = Field(True, description="是否撤销相关未成交订单")
+    close_positions: bool = Field(False, description="是否市价平仓；action=close_all 时强制为 true")
 
 
 class EmergencyStopResponse(BaseModel):
@@ -368,20 +374,27 @@ async def emergency_stop(
         failed_count = 0
         details = {}
 
-        # 创建风控管理器
-        risk_manager = RiskManager(db, user_id)
-
         if request.action == "pause_all":
-            # 暂停所有策略
+            # 暂停所有策略，可选撤单，不平仓
             for strategy in strategies:
                 try:
-                    success = await risk_manager._pause_strategy(strategy.id)
+                    success = await strategy_manager.stop_strategy(
+                        strategy.id,
+                        cancel_orders=request.cancel_orders,
+                        close_position=False,
+                    )
+                    strategy.status = "paused"
+                    strategy.stopped_at = datetime.utcnow()
+                    db.commit()
+                    cancel_detail = {}
+                    if request.cancel_orders:
+                        cancel_detail = await cancel_exchange_orders_for_strategy(strategy, user_id)
                     if success:
                         success_count += 1
-                        details[strategy.id] = "已暂停"
+                        details[strategy.id] = {"status": "已暂停", "cancel": cancel_detail}
                     else:
-                        failed_count += 1
-                        details[strategy.id] = "暂停失败"
+                        success_count += 1
+                        details[strategy.id] = {"status": "策略未在内存运行，数据库已标记暂停", "cancel": cancel_detail}
                 except Exception as e:
                     failed_count += 1
                     details[strategy.id] = f"暂停失败: {str(e)}"
@@ -389,25 +402,29 @@ async def emergency_stop(
             message = f"紧急暂停完成: 成功 {success_count}, 失败 {failed_count}"
 
         elif request.action == "close_all":
-            # 平仓所有策略
-            # TODO: 需要交易所实例才能平仓
-            # risk_manager.set_exchange(exchange)
-
+            # 停止策略并尝试市价平仓
             for strategy in strategies:
                 try:
-                    # 暂时只暂停，不平仓（需要交易所实例）
-                    success = await risk_manager._pause_strategy(strategy.id)
+                    success = await strategy_manager.stop_strategy(
+                        strategy.id,
+                        cancel_orders=request.cancel_orders,
+                        close_position=True,
+                    )
+                    close_detail = await close_exchange_position_for_strategy(strategy, user_id)
+                    strategy.status = "paused"
+                    strategy.stopped_at = datetime.utcnow()
+                    db.commit()
                     if success:
                         success_count += 1
-                        details[strategy.id] = "已暂停（暂不支持自动平仓）"
+                        details[strategy.id] = {"status": "已暂停并尝试平仓", "close": close_detail}
                     else:
-                        failed_count += 1
-                        details[strategy.id] = "暂停失败"
+                        success_count += 1
+                        details[strategy.id] = {"status": "策略未在内存运行，已尝试按交易所持仓平仓", "close": close_detail}
                 except Exception as e:
                     failed_count += 1
                     details[strategy.id] = f"处理失败: {str(e)}"
 
-            message = f"紧急停止完成: 成功 {success_count}, 失败 {failed_count}（注：自动平仓功能待集成）"
+            message = f"紧急停止完成: 成功 {success_count}, 失败 {failed_count}"
 
         else:
             raise HTTPException(
@@ -432,6 +449,74 @@ async def emergency_stop(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"紧急停止失败: {str(e)}"
         )
+
+
+async def close_exchange_position_for_strategy(strategy: Strategy, user_id: int) -> dict:
+    """按交易所真实持仓尝试平仓，作为急停兜底。"""
+    exchange = api_config_service.get_exchange(user_id=user_id, config_id=strategy.api_config_id)
+    closed = []
+    canceled = []
+    try:
+        try:
+            pending_orders = await exchange.get_orders_pending(inst_type="SWAP", inst_id=strategy.symbol)
+            for order in pending_orders:
+                try:
+                    result = await exchange.cancel_order(strategy.symbol, order_id=order.get("ordId"))
+                    canceled.append({"ord_id": order.get("ordId"), "result": result})
+                except Exception as exc:
+                    canceled.append({"ord_id": order.get("ordId"), "error": str(exc)})
+        except Exception as exc:
+            canceled.append({"error": f"查询/撤销未成交订单失败: {exc}"})
+
+        positions = await exchange.get_positions(inst_id=strategy.symbol)
+        for pos in positions:
+            try:
+                qty = float(pos.get("pos") or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            if qty == 0:
+                continue
+
+            pos_side = pos.get("posSide") or "net"
+            logical_side = pos_side if pos_side in ("long", "short") else ("long" if qty > 0 else "short")
+            order_side = "sell" if logical_side == "long" else "buy"
+            result = await exchange.create_order(
+                symbol=strategy.symbol,
+                side=order_side,
+                order_type="market",
+                amount=Decimal(str(abs(qty))),
+                td_mode=(strategy.parameters or {}).get("margin_mode", "isolated"),
+                pos_side=pos_side if pos_side in ("long", "short") else "net",
+                reduce_only=True,
+            )
+            closed.append({
+                "pos_side": pos_side,
+                "size": qty,
+                "order_side": order_side,
+                "result": result,
+            })
+    finally:
+        await exchange.close()
+
+    return {"canceled_orders": canceled, "closed_positions": closed}
+
+
+async def cancel_exchange_orders_for_strategy(strategy: Strategy, user_id: int) -> dict:
+    """撤销策略交易对的 OKX 未成交订单。"""
+    exchange = api_config_service.get_exchange(user_id=user_id, config_id=strategy.api_config_id)
+    canceled = []
+    try:
+        pending_orders = await exchange.get_orders_pending(inst_type="SWAP", inst_id=strategy.symbol)
+        for order in pending_orders:
+            try:
+                result = await exchange.cancel_order(strategy.symbol, order_id=order.get("ordId"))
+                canceled.append({"ord_id": order.get("ordId"), "result": result})
+            except Exception as exc:
+                canceled.append({"ord_id": order.get("ordId"), "error": str(exc)})
+    finally:
+        await exchange.close()
+
+    return {"canceled_orders": canceled}
 
 
 @router.get("/actions", response_model=List[dict])

@@ -60,7 +60,11 @@ export const strategyApi = {
   update: (id: number, data: Partial<Strategy>) =>
     api.put(`/strategies/${id}`, data),
   delete: (id: number) => api.delete(`/strategies/${id}`),
-  start: (id: number) => api.post(`/strategies/${id}/start`),
+  start: (id: number, forceStart: boolean = false) =>
+    api.post(`/strategies/${id}/start`, null, { params: { force_start: forceStart } }),
+  startPreflight: (id: number) =>
+    api.get<{ code: number; msg: string; data: any }>(`/strategies/${id}/start-preflight`)
+      .then(res => (res as any).data),
   stop: (id: number, cancelOrders: boolean = true, closePosition: boolean = true) =>
     api.post(`/strategies/${id}/stop`, null, { params: { cancel_orders: cancelOrders, close_position: closePosition } }),
   getStats: (id: number) => api.get(`/strategies/${id}/stats`),
@@ -82,6 +86,15 @@ export const strategyApi = {
     api.post(`/strategies/${id}/backtest`, params),
   getPnl: (id: number) =>
     api.get(`/strategies/${id}/pnl`),
+}
+
+export const safetyApi = {
+  emergencyStop: (data: {
+    action: 'pause_all' | 'close_all'
+    strategy_ids?: number[]
+    cancel_orders?: boolean
+    close_positions?: boolean
+  }) => api.post('/risk-control/emergency-stop', data),
 }
 
 // 订单API

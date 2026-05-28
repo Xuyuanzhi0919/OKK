@@ -306,6 +306,24 @@ OKK_IMAGE_TAG=latest
 
 不过实盘系统更建议用 `v1`、`v2`、日期或 Git commit 作为标签，回滚会更稳。
 
+### 服务器快速回滚
+
+如果更新后发现异常，可以回滚到上一个 commit：
+
+```bash
+cd /opt/1panel/apps/okk-trading
+./scripts/server-rollback.sh /opt/1panel/apps/okk-trading HEAD~1
+```
+
+也可以回滚到指定 commit：
+
+```bash
+./scripts/server-rollback.sh /opt/1panel/apps/okk-trading 27cd196
+```
+
+脚本会备份服务器 `.env`、执行 `git reset --hard`、重建 Docker 并做后端健康检查。  
+注意：数据库不会自动回滚，执行过数据库迁移的版本需要人工确认是否需要处理。
+
 ## 🔒 安全配置
 
 ### 1. 防火墙设置
