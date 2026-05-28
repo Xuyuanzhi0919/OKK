@@ -20,7 +20,7 @@ export const ADAPTIVE_GRID_TREND_PRESETS: Record<string, AdaptiveGridTrendPreset
   DOT: { fast: 30, slow: 80, entry: 0.6, stop: 2.8, takeProfit: 6.0, cooldownMinutes: 120 },
   ATOM: { fast: 30, slow: 160, entry: 0.25, stop: 2.8, takeProfit: 6.0, cooldownMinutes: 120 },
   OP: { fast: 30, slow: 80, entry: 0.6, stop: 1.8, takeProfit: 6.0, cooldownMinutes: 120 },
-  ARB: { fast: 20, slow: 160, entry: 0.9, stop: 2.8, takeProfit: 3.2, cooldownMinutes: 240, riskPercent: 2, maxPositionUsd: 800 },
+  ARB: { fast: 20, slow: 160, entry: 0.9, stop: 3.2, takeProfit: 3.6, cooldownMinutes: 240, riskPercent: 2, maxPositionUsd: 800 },
   EDEN: { fast: 20, slow: 80, entry: 0.6, stop: 1.8, takeProfit: 3.2, cooldownMinutes: 60 },
 }
 
