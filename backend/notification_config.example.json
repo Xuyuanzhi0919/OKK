@@ -23,5 +23,13 @@
     "webhook_url": "YOUR_WEBHOOK_URL_HERE",
     "mentioned_list": [],
     "mentioned_mobile_list": []
+  },
+  "bark": {
+    "enabled": false,
+    "server_url": "https://api.day.app",
+    "device_key": "YOUR_BARK_DEVICE_KEY",
+    "group": "OKK",
+    "sound": "alarm",
+    "level": "active"
   }
 }

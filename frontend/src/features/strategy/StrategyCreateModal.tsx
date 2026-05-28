@@ -204,6 +204,13 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         agt_cooldown_minutes: params.cooldown_seconds != null
           ? Math.round(Number(params.cooldown_seconds) / 60)
           : undefined,
+        agt_notify_near_trigger: params.notify_near_trigger ?? true,
+        agt_near_trigger_pct: params.near_trigger_pct != null
+          ? percentValue(params.near_trigger_pct)
+          : 0.3,
+        agt_near_trigger_cooldown_minutes: params.near_trigger_cooldown_seconds != null
+          ? Math.round(Number(params.near_trigger_cooldown_seconds) / 60)
+          : 10,
         agt_fuse_enabled: riskFuse.enabled,
         agt_fuse_max_consecutive_losses: riskFuse.max_consecutive_losses,
         agt_fuse_daily_loss_pct: percentValue(riskFuse.daily_loss_limit_pct),
@@ -233,6 +240,9 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       agt_cooldown_minutes: preset.cooldownMinutes,
       agt_risk_per_trade: preset.riskPercent ?? 1,
       agt_max_position_usd: preset.maxPositionUsd ?? 500,
+      agt_notify_near_trigger: true,
+      agt_near_trigger_pct: 0.3,
+      agt_near_trigger_cooldown_minutes: 10,
     })
   }, [open, backtestData, watchedType, watchedSymbol, form])
 
@@ -360,6 +370,9 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         parameters.leverage                 = values.agt_leverage ?? 3
         parameters.margin_mode              = values.agt_margin_mode ?? 'isolated'
         parameters.cooldown_seconds         = (values.agt_cooldown_minutes ?? 60) * 60
+        parameters.notify_near_trigger      = values.agt_notify_near_trigger ?? true
+        parameters.near_trigger_pct         = (values.agt_near_trigger_pct ?? 0.3) / 100
+        parameters.near_trigger_cooldown_seconds = (values.agt_near_trigger_cooldown_minutes ?? 10) * 60
         parameters.risk_fuse                = {
           enabled: values.agt_fuse_enabled ?? true,
           max_consecutive_losses: values.agt_fuse_max_consecutive_losses ?? 3,
@@ -478,6 +491,9 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
           agt_leverage: 3,
           agt_margin_mode: 'isolated',
           agt_cooldown_minutes: 60,
+          agt_notify_near_trigger: true,
+          agt_near_trigger_pct: 0.3,
+          agt_near_trigger_cooldown_minutes: 10,
           agt_fuse_enabled: true,
           agt_fuse_max_consecutive_losses: 3,
           agt_fuse_daily_loss_pct: 2,
@@ -978,6 +994,34 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                   style={compactItem}
                 >
                   <InputNumber min={1} max={240} step={1} suffix="分钟" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_notify_near_trigger"
+                  label={<Space size={4}>临近提醒<Tooltip title="价格接近止盈或止损线时发送系统通知；配置 Bark 后手机也会收到"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  valuePropName="checked"
+                  style={compactItem}
+                >
+                  <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_near_trigger_pct"
+                  label={<Space size={4}>提醒距离<Tooltip title="距离止盈或止损价小于该百分比时提醒，默认0.3%"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0.05} max={5} step={0.05} suffix="%" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="agt_near_trigger_cooldown_minutes"
+                  label={<Space size={4}>提醒冷却<Tooltip title="同一持仓同一触发线重复提醒的最小间隔"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={1} max={120} step={1} suffix="分钟" style={{ width: '100%' }} />
                 </Form.Item>
               </Col>
             </Row>

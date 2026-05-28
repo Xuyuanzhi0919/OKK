@@ -7,7 +7,7 @@ from loguru import logger
 from datetime import datetime
 from decimal import Decimal
 import json
-from .channels import TelegramChannel, ServerChanChannel, PushPlusChannel, WeComChannel
+from .channels import TelegramChannel, ServerChanChannel, PushPlusChannel, WeComChannel, BarkChannel
 
 
 class NotificationType:
@@ -80,6 +80,11 @@ class NotificationService:
         if "wecom" in config:
             self.channels["wecom"] = WeComChannel(config["wecom"])
             logger.info(f"✅ 企业微信渠道已配置 (启用: {self.channels['wecom'].is_enabled()})")
+
+        # 初始化Bark渠道
+        if "bark" in config:
+            self.channels["bark"] = BarkChannel(config["bark"])
+            logger.info(f"✅ Bark渠道已配置 (启用: {self.channels['bark'].is_enabled()})")
 
         logger.success(f"📢 推送渠道配置完成,共 {len(self.channels)} 个渠道")
 

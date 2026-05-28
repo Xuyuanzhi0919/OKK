@@ -18,6 +18,7 @@ from loguru import logger
 
 from app.core.database import SessionLocal
 from app.models.strategy import Strategy as DBStrategy, StrategyEvent
+from app.services.notification.notification_service import notification_service
 from app.services.strategy.base import StrategyBase
 
 
@@ -41,6 +42,9 @@ class AdaptiveGridTrendStrategy(StrategyBase):
         self.leverage: int = int(p.get("leverage", 3))
         self.margin_mode: str = str(p.get("margin_mode", "isolated")).lower()
         self.min_seconds_between_trades: int = int(p.get("cooldown_seconds", 60 * 60))
+        self.notify_near_trigger: bool = bool(p.get("notify_near_trigger", True))
+        self.near_trigger_pct: float = float(p.get("near_trigger_pct", 0.003))
+        self.near_trigger_cooldown_seconds: int = int(p.get("near_trigger_cooldown_seconds", 10 * 60))
 
         self._is_derivative = symbol.endswith("-SWAP") or self._looks_like_futures(symbol)
         self._ct_val = 1.0
@@ -60,6 +64,7 @@ class AdaptiveGridTrendStrategy(StrategyBase):
         self._signal_status: Dict = {}
         self._last_event_key = ""
         self._last_event_time = 0.0
+        self._last_near_trigger_alerts: Dict[str, float] = {}
 
         self.realized_pnl = 0.0
         self.total_trades = 0
@@ -447,6 +452,7 @@ class AdaptiveGridTrendStrategy(StrategyBase):
         self._position_qty = qty
         self._open_time = time.time()
         self._last_trade_time = self._open_time
+        self._last_near_trigger_alerts.clear()
         if side == "long":
             self._stop_px = fill_price - atr * self.stop_atr_multiple
             self._take_profit_px = fill_price + atr * self.take_profit_atr_multiple
@@ -486,6 +492,7 @@ class AdaptiveGridTrendStrategy(StrategyBase):
             if self._is_derivative:
                 pnl *= self._ct_val
             self._unrealized_pnl = pnl
+            await self._notify_near_exit_trigger(price)
             if price <= self._stop_px:
                 await self._close_position("atr_stop")
             elif price >= self._take_profit_px:
@@ -495,10 +502,80 @@ class AdaptiveGridTrendStrategy(StrategyBase):
             if self._is_derivative:
                 pnl *= self._ct_val
             self._unrealized_pnl = pnl
+            await self._notify_near_exit_trigger(price)
             if price >= self._stop_px:
                 await self._close_position("atr_stop")
             elif price <= self._take_profit_px:
                 await self._close_position("atr_take_profit")
+
+    async def _notify_near_exit_trigger(self, price: float):
+        if (
+            not self.notify_near_trigger
+            or price <= 0
+            or not self._position_side
+            or self._stop_px <= 0
+            or self._take_profit_px <= 0
+            or self.near_trigger_pct <= 0
+        ):
+            return
+
+        if self._position_side == "long":
+            stop_distance_pct = (price - self._stop_px) / price
+            tp_distance_pct = (self._take_profit_px - price) / price
+        else:
+            stop_distance_pct = (self._stop_px - price) / price
+            tp_distance_pct = (price - self._take_profit_px) / price
+
+        checks = [
+            ("stop", "止损", self._stop_px, stop_distance_pct, "warning"),
+            ("take_profit", "止盈", self._take_profit_px, tp_distance_pct, "success"),
+        ]
+        for trigger_key, trigger_name, trigger_price, distance_pct, level in checks:
+            if distance_pct < 0 or distance_pct > self.near_trigger_pct:
+                continue
+            alert_key = f"{self._position_side}:{trigger_key}"
+            if not self._can_send_near_trigger_alert(alert_key):
+                continue
+
+            distance_text = f"{distance_pct * 100:.3f}%"
+            title = f"{self.symbol} 快触发{trigger_name}"
+            message = (
+                f"{self.symbol} {self._position_side} 当前价 {price:.6f}，"
+                f"{trigger_name}价 {trigger_price:.6f}，距离 {distance_text}"
+            )
+            data = {
+                "symbol": self.symbol,
+                "side": self._position_side,
+                "current_price": round(price, 8),
+                "trigger": trigger_name,
+                "trigger_price": round(trigger_price, 8),
+                "distance_pct": distance_text,
+                "entry_price": round(self._entry_price, 8),
+                "qty": self._position_qty,
+                "unrealized_pnl": round(self._unrealized_pnl, 4),
+            }
+            await notification_service.send_strategy_notification(
+                strategy_id=self.strategy_id,
+                title=title,
+                message=message,
+                level=level,
+                data=data,
+            )
+            self._log_event(
+                event_type="near_exit_trigger",
+                level=level,
+                title=title,
+                message=message,
+                data=data,
+            )
+
+    def _can_send_near_trigger_alert(self, alert_key: str) -> bool:
+        now = time.time()
+        last_sent = self._last_near_trigger_alerts.get(alert_key, 0)
+        if now - last_sent < self.near_trigger_cooldown_seconds:
+            return False
+        self._last_near_trigger_alerts[alert_key] = now
+        return True
 
     async def _rebuild_risk_levels(self) -> bool:
         if not self._position_side or self._entry_price <= 0:
@@ -581,6 +658,7 @@ class AdaptiveGridTrendStrategy(StrategyBase):
         self._take_profit_px = 0.0
         self._last_trade_time = time.time()
         self._unrealized_pnl = 0.0
+        self._last_near_trigger_alerts.clear()
 
     def _order_pos_side(self, side: str) -> Optional[str]:
         if not self._is_derivative:
