@@ -52,6 +52,10 @@ class StrategyBase(ABC):
         self.max_runtime_drawdown: float = 0.0    # 本次运行最大回撤（绝对金额）
         self.daily_realized_pnl: float = 0.0      # 当日已实现盈亏
         self._daily_pnl_date: date = datetime.now().date()
+        self.last_ticker_at: Optional[float] = None
+        self.last_tick_ok_at: Optional[float] = None
+        self.last_error_at: Optional[float] = None
+        self.last_error_message: Optional[str] = None
 
     def record_trade_result(self, pnl: float) -> None:
         """

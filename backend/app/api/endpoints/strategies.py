@@ -566,7 +566,18 @@ async def build_strategy_start_preflight(strategy: Strategy, user_id: int, db: S
 
             balance = await exchange.get_balance()
             total_eq = float(balance.get("totalEq") or 0)
-            checks["account"] = {"total_equity": total_eq}
+            max_position_usd = float(params.get("max_position_usd") or 0)
+            leverage = float(params.get("leverage") or 1)
+            estimated_margin = max_position_usd / leverage if leverage > 0 else max_position_usd
+            checks["account"] = {
+                "total_equity": total_eq,
+                "estimated_strategy_margin": round(estimated_margin, 4),
+                "estimated_margin_pct": round(estimated_margin / total_eq * 100, 2) if total_eq > 0 else None,
+            }
+            if total_eq > 0 and estimated_margin / total_eq > 0.3:
+                warnings.append(
+                    f"本策略预计保证金约 {estimated_margin:.2f} USDT，占账户权益超过 30%"
+                )
 
             positions = await exchange.get_positions(inst_id=strategy.symbol)
             active_positions = []
@@ -588,6 +599,38 @@ async def build_strategy_start_preflight(strategy: Strategy, user_id: int, db: S
             checks["existing_positions"] = active_positions
             if active_positions:
                 warnings.append(f"检测到 {strategy.symbol} 已有交易所持仓，请确认是否让策略接管")
+
+            all_positions = await exchange.get_positions(inst_type="SWAP")
+            active_all_positions = []
+            total_position_notional = 0.0
+            for pos in all_positions:
+                try:
+                    size = abs(float(pos.get("pos") or 0))
+                except (TypeError, ValueError):
+                    size = 0
+                if size <= 0:
+                    continue
+                try:
+                    notional = abs(float(pos.get("notionalUsd") or 0))
+                except (TypeError, ValueError):
+                    notional = 0.0
+                total_position_notional += notional
+                active_all_positions.append({
+                    "inst_id": pos.get("instId"),
+                    "pos_side": pos.get("posSide"),
+                    "size": size,
+                    "notional_usd": notional,
+                    "upl": pos.get("upl"),
+                })
+            checks["account"]["active_swap_positions"] = active_all_positions
+            checks["account"]["total_position_notional_usd"] = round(total_position_notional, 4)
+            checks["account"]["total_position_notional_pct"] = (
+                round(total_position_notional / total_eq * 100, 2) if total_eq > 0 else None
+            )
+            if total_eq > 0 and total_position_notional / total_eq > 2:
+                warnings.append(
+                    f"当前合约持仓名义价值约 {total_position_notional:.2f} USDT，超过账户权益 2 倍"
+                )
 
             pending_orders = await exchange.get_orders_pending(inst_type="SWAP", inst_id=strategy.symbol)
             checks["pending_orders"] = [

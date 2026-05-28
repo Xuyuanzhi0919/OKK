@@ -91,3 +91,6 @@ class StrategyStatsResponse(BaseModel):
     grid_orders: Optional[int] = None
     grid_orders_detail: Optional[list[GridOrderDetail]] = Field(None, description="网格订单详情列表")
     signal_status: Optional[dict] = Field(None, description="策略当前信号状态")
+    position_status: Optional[dict] = Field(None, description="策略当前持仓风控状态")
+    risk_status: Optional[dict] = Field(None, description="策略运行期风控状态")
+    health_status: Optional[dict] = Field(None, description="策略运行健康状态")

@@ -8,6 +8,7 @@ from typing import Optional
 from app.websocket.manager import broadcast_balance_update, broadcast_positions_update
 from app.services.api_config_service import api_config_service
 from app.services.exchange.okx import OKXExchange
+from app.services.notification.notification_service import notification_service
 
 
 def safe_float(value, default=0.0):
@@ -39,6 +40,7 @@ class AccountMonitor:
         self._snapshot_counter = 0
         self._snapshot_interval = 360
         self.user_id = 1
+        self._last_daily_report_date = None
 
     def _get_exchange(self):
         """获取或创建 exchange 实例（复用，不重复创建）"""
@@ -98,7 +100,7 @@ class AccountMonitor:
                 snapshot_data = await self._push_balance_update()
 
                 # 推送持仓更新
-                await self._push_positions_update()
+                positions_data = await self._push_positions_update()
 
                 # 首次运行立即保存快照，之后每小时一次
                 self._snapshot_counter += 1
@@ -107,6 +109,8 @@ class AccountMonitor:
                     first_run = False
                     if snapshot_data:
                         await self._save_snapshot(snapshot_data)
+
+                await self._maybe_send_daily_report(snapshot_data, positions_data)
 
                 # 等待下一次推送
                 await asyncio.sleep(self.interval)
@@ -173,12 +177,12 @@ class AccountMonitor:
 
         return None
 
-    async def _push_positions_update(self):
+    async def _push_positions_update(self) -> Optional[dict]:
         """推送持仓更新"""
         try:
             exchange = self._get_exchange()
             if not exchange:
-                return
+                return None
 
             # 获取所有持仓
             positions = await exchange.get_positions(inst_type="SWAP")
@@ -229,9 +233,11 @@ class AccountMonitor:
 
                 # 广播持仓更新
                 await broadcast_positions_update(ws_data)
+                return ws_data
 
         except Exception as e:
             logger.error(f"推送持仓更新失败: {e}")
+        return None
 
     async def _save_snapshot(self, data: dict):
         """保存账户净值快照到数据库（每小时一次）"""
@@ -280,6 +286,47 @@ class AccountMonitor:
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _sync_save)
+
+    async def _maybe_send_daily_report(self, balance_data: Optional[dict], positions_data: Optional[dict]):
+        """每天晚间发送一次账户摘要。"""
+        now = datetime.now()
+        if now.hour < 23 or (now.hour == 23 and now.minute < 50):
+            return
+        if self._last_daily_report_date == now.date():
+            return
+        if not balance_data:
+            return
+
+        positions = (positions_data or {}).get("positions", [])
+        total_unrealized_pnl = safe_float((positions_data or {}).get("total_unrealized_pnl"))
+        position_lines = []
+        for pos in positions[:5]:
+            position_lines.append(
+                f"{pos.get('symbol')} {pos.get('side')} "
+                f"upl={safe_float(pos.get('unrealized_pnl')):.2f} "
+                f"notional={safe_float(pos.get('notional_usd')):.2f}"
+            )
+
+        try:
+            await notification_service.send_strategy_notification(
+                strategy_id=0,
+                title="账户日报",
+                message=(
+                    f"总权益 {safe_float(balance_data.get('total_equity')):.2f} USDT，"
+                    f"可用 {safe_float(balance_data.get('available_balance')):.2f} USDT，"
+                    f"持仓 {len(positions)} 个，未实现盈亏 {total_unrealized_pnl:.2f} USDT"
+                ),
+                level="info",
+                data={
+                    "total_equity": round(safe_float(balance_data.get("total_equity")), 4),
+                    "available_balance": round(safe_float(balance_data.get("available_balance")), 4),
+                    "unrealized_pnl": round(total_unrealized_pnl, 4),
+                    "positions": position_lines,
+                },
+            )
+            self._last_daily_report_date = now.date()
+        except Exception as exc:
+            logger.error(f"发送账户日报失败: {exc}")
 
 
 # 全局实例

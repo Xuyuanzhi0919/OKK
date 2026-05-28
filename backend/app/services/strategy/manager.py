@@ -7,6 +7,7 @@ from .base import StrategyBase
 from app.services.exchange.okx import OKXExchange
 from app.models.strategy import StrategyType, Strategy, StrategyEvent, StrategyStatus
 from app.core.database import SessionLocal
+from app.services.notification.notification_service import notification_service
 from app.websocket.manager import broadcast_strategy_stats, broadcast_strategy_update, broadcast_notification
 import asyncio
 from datetime import datetime
@@ -243,6 +244,18 @@ class StrategyManager:
             db.close()
 
         try:
+            await notification_service.send_strategy_notification(
+                strategy_id=strategy_id,
+                title="策略已触发风控暂停",
+                message=f"{strategy.symbol}: {reason}",
+                level="warning",
+                data={
+                    "symbol": strategy.symbol,
+                    "daily_realized_pnl": round(strategy.daily_realized_pnl, 4),
+                    "max_runtime_drawdown": round(strategy.max_runtime_drawdown, 4),
+                    "consecutive_losses": strategy.consecutive_losses,
+                },
+            )
             await broadcast_notification({
                 "type": "warning",
                 "title": "策略已自动暂停",
@@ -258,6 +271,135 @@ class StrategyManager:
             })
         except Exception as ws_err:
             logger.error(f"广播策略熔断状态失败: {ws_err}")
+
+    async def _pause_strategy_for_safety(
+        self,
+        strategy_id: int,
+        strategy: StrategyBase,
+        reason: str,
+        data: Optional[dict] = None,
+    ):
+        """实盘安全检查异常后暂停策略，不主动平仓。"""
+        logger.warning(f"策略 {strategy_id} 触发安全暂停: {reason}")
+        strategy.is_running = False
+        event_data = {
+            "symbol": strategy.symbol,
+            **(data or {}),
+        }
+        self.log_strategy_event(
+            strategy_id=strategy_id,
+            event_type="safety_pause",
+            level="warning",
+            title="策略触发安全暂停",
+            message=reason,
+            data=event_data,
+            parameter_snapshot=strategy.parameters if isinstance(strategy.parameters, dict) else None,
+            user_id=strategy.user_id,
+        )
+
+        db = SessionLocal()
+        try:
+            db_strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
+            if db_strategy:
+                db_strategy.status = StrategyStatus.PAUSED
+                db_strategy.stopped_at = datetime.now()
+                db.commit()
+        except Exception as exc:
+            db.rollback()
+            logger.error(f"策略 {strategy_id} 安全暂停状态写入数据库失败: {exc}")
+        finally:
+            db.close()
+
+        try:
+            await notification_service.send_strategy_notification(
+                strategy_id=strategy_id,
+                title="策略安全暂停",
+                message=f"{strategy.symbol}: {reason}",
+                level="warning",
+                data=event_data,
+            )
+            await broadcast_notification({
+                "type": "warning",
+                "title": "策略安全暂停",
+                "message": f"策略 {strategy.symbol}: {reason}",
+                "strategy_id": strategy_id,
+                "timestamp": time.time(),
+            })
+            await broadcast_strategy_update(strategy_id, {
+                "strategy_id": strategy_id,
+                "status": StrategyStatus.PAUSED.value,
+                "safety_reason": reason,
+                "timestamp": time.time(),
+            })
+        except Exception as notify_err:
+            logger.error(f"发送策略安全暂停通知失败: {notify_err}")
+
+    async def _check_exchange_position_sync(self, strategy: StrategyBase) -> Optional[dict]:
+        """校验策略内存持仓和交易所真实持仓是否一致。"""
+        position_side = getattr(strategy, "_position_side", "")
+        position_qty = float(getattr(strategy, "_position_qty", 0) or 0)
+        if not hasattr(strategy.exchange, "get_positions"):
+            return None
+
+        positions = await strategy.exchange.get_positions(inst_id=strategy.symbol)
+        active_positions = []
+        for pos in positions:
+            try:
+                size = abs(float(pos.get("pos") or 0))
+            except (TypeError, ValueError):
+                size = 0.0
+            if size <= 0:
+                continue
+            pos_side = str(pos.get("posSide") or "").lower()
+            if pos_side == "net":
+                pos_side = position_side or "net"
+            active_positions.append({
+                "inst_id": pos.get("instId"),
+                "pos_side": pos_side,
+                "size": size,
+                "avg_price": pos.get("avgPx"),
+                "upl": pos.get("upl"),
+                "notional_usd": pos.get("notionalUsd"),
+            })
+
+        if position_side and not active_positions:
+            return {
+                "reason": "策略记录有持仓，但交易所未查询到对应持仓",
+                "strategy_side": position_side,
+                "strategy_qty": position_qty,
+                "exchange_positions": active_positions,
+            }
+
+        if not position_side and active_positions:
+            return {
+                "reason": "交易所存在持仓，但策略记录为空仓",
+                "strategy_side": position_side,
+                "strategy_qty": position_qty,
+                "exchange_positions": active_positions,
+            }
+
+        if position_side and active_positions:
+            matched = next((p for p in active_positions if p["pos_side"] in {position_side, "net"}), None)
+            if not matched:
+                return {
+                    "reason": "交易所持仓方向与策略方向不一致",
+                    "strategy_side": position_side,
+                    "strategy_qty": position_qty,
+                    "exchange_positions": active_positions,
+                }
+
+            exchange_qty = float(matched["size"])
+            tolerance = max(position_qty * 0.05, 1e-8)
+            if position_qty > 0 and abs(exchange_qty - position_qty) > tolerance:
+                return {
+                    "reason": "交易所持仓数量与策略记录不一致",
+                    "strategy_side": position_side,
+                    "strategy_qty": position_qty,
+                    "exchange_qty": exchange_qty,
+                    "exchange_positions": active_positions,
+                }
+
+        return None
 
     def _check_runtime_fuse(self, strategy: StrategyBase) -> Optional[str]:
         """检查策略运行期风控熔断条件。"""
@@ -331,13 +473,30 @@ class StrategyManager:
 
         # 持久化计数器（每10次循环更新一次数据库，约50秒）
         persist_counter = 0
+        position_sync_counter = 0
+        last_error_notify_at = 0.0
 
         try:
             while strategy.is_running:
                 try:
                     # 1. 获取最新ticker并调用 on_tick
                     ticker = await strategy.exchange.get_ticker(strategy.symbol)
+                    strategy.last_ticker_at = time.time()
                     await strategy.on_tick(ticker)
+                    strategy.last_tick_ok_at = time.time()
+
+                    position_sync_counter += 1
+                    if position_sync_counter >= 12:
+                        position_sync_counter = 0
+                        sync_issue = await self._check_exchange_position_sync(strategy)
+                        if sync_issue:
+                            await self._pause_strategy_for_safety(
+                                strategy_id,
+                                strategy,
+                                sync_issue["reason"],
+                                sync_issue,
+                            )
+                            break
 
                     fuse_reason = self._check_runtime_fuse(strategy)
                     if fuse_reason:
@@ -366,9 +525,24 @@ class StrategyManager:
 
                 except Exception as e:
                     logger.error(f"策略监控循环出错: {e}")
+                    strategy.last_error_at = time.time()
+                    strategy.last_error_message = str(e)
 
                     # 发送监控循环出错警告
                     try:
+                        now = time.time()
+                        if now - last_error_notify_at >= 300:
+                            last_error_notify_at = now
+                            await notification_service.send_strategy_notification(
+                                strategy_id=strategy_id,
+                                title="策略运行异常",
+                                message=f"{strategy.symbol} 监控循环异常: {str(e)}",
+                                level="error",
+                                data={
+                                    "symbol": strategy.symbol,
+                                    "error": str(e),
+                                },
+                            )
                         await broadcast_notification({
                             "type": "warning",
                             "title": "策略监控异常",
@@ -434,6 +608,20 @@ class StrategyManager:
                 parameter_snapshot=parameters,
                 user_id=user_id,
             )
+            await notification_service.send_strategy_notification(
+                strategy_id=strategy_id,
+                title="策略启动",
+                message=f"{symbol} 策略已启动",
+                level="success",
+                data={
+                    "symbol": symbol,
+                    "strategy_type": strategy_type.value if hasattr(strategy_type, "value") else str(strategy_type),
+                    "simulated": getattr(exchange, "simulated", None),
+                    "timeframe": parameters.get("trend_timeframe") if isinstance(parameters, dict) else None,
+                    "leverage": parameters.get("leverage") if isinstance(parameters, dict) else None,
+                    "max_position_usd": parameters.get("max_position_usd") if isinstance(parameters, dict) else None,
+                },
+            )
 
             # 保存策略实例
             self.strategies[strategy_id] = strategy
@@ -483,6 +671,20 @@ class StrategyManager:
                 },
                 parameter_snapshot=strategy.parameters if isinstance(strategy.parameters, dict) else None,
                 user_id=strategy.user_id,
+            )
+            await notification_service.send_strategy_notification(
+                strategy_id=strategy_id,
+                title="策略停止",
+                message=f"{strategy.symbol} 策略已停止",
+                level="info",
+                data={
+                    "symbol": strategy.symbol,
+                    "cancel_orders": cancel_orders,
+                    "close_position": close_position,
+                    "realized_pnl": round(float(getattr(strategy, "realized_pnl", 0) or 0), 4),
+                    "unrealized_pnl": round(float(getattr(strategy, "_unrealized_pnl", 0) or 0), 4),
+                    "total_trades": getattr(strategy, "total_trades", 0),
+                },
             )
 
             # 取消监控任务
@@ -620,6 +822,13 @@ class StrategyManager:
             "signal_status": signal_status,
             "position_status": position_status,
             "risk_status": risk_status,
+            "health_status": {
+                "last_ticker_at": getattr(strategy, "last_ticker_at", None),
+                "last_tick_ok_at": getattr(strategy, "last_tick_ok_at", None),
+                "last_error_at": getattr(strategy, "last_error_at", None),
+                "last_error_message": getattr(strategy, "last_error_message", None),
+                "exchange_simulated": getattr(strategy.exchange, "simulated", None),
+            },
         }
 
     async def stop_all_strategies(self):

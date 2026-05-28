@@ -152,6 +152,7 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
   const signalStatus = displayData.signal_status
   const positionStatus = displayData.position_status
   const riskStatus = displayData.risk_status
+  const healthStatus = displayData.health_status
 
   const trendLabel: Record<string, string> = {
     bull: '多头趋势',
@@ -187,6 +188,8 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
     open_position: '开仓',
     close_position: '平仓',
     risk_pause: '风控',
+    safety_pause: '安全暂停',
+    near_exit_trigger: '临近提醒',
     stop: '停止',
     error: '异常',
   }
@@ -204,6 +207,10 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
     return new Date(value).toLocaleString()
   }
 
+  const formatUnixTime = (value?: number | null) => {
+    if (!value) return '-'
+    return new Date(Number(value) * 1000).toLocaleString()
+  }
 
   // Tab标签页配置
   const tabItems = [
@@ -483,6 +490,30 @@ export default function StrategyDetailModal({ open, strategy, onCancel }: Strate
                 <Descriptions.Item label="利润因子">
                   {riskStatus.runtime_profit_factor == null ? '-' : Number(riskStatus.runtime_profit_factor).toFixed(2)}
                   {riskStatus.min_profit_factor != null ? ` / ${Number(riskStatus.min_profit_factor).toFixed(2)}` : ''}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+          )}
+
+          {healthStatus && (
+            <Card title="运行健康" variant="borderless" size="small" style={{ marginBottom: 16 }}>
+              <Descriptions column={3} size="small">
+                <Descriptions.Item label="账户模式">
+                  <Tag color={healthStatus.exchange_simulated ? 'blue' : 'red'}>
+                    {healthStatus.exchange_simulated ? '模拟盘' : '实盘'}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="最近行情">
+                  {formatUnixTime(healthStatus.last_ticker_at)}
+                </Descriptions.Item>
+                <Descriptions.Item label="最近成功处理">
+                  {formatUnixTime(healthStatus.last_tick_ok_at)}
+                </Descriptions.Item>
+                <Descriptions.Item label="最近异常">
+                  {formatUnixTime(healthStatus.last_error_at)}
+                </Descriptions.Item>
+                <Descriptions.Item label="异常信息" span={2}>
+                  {healthStatus.last_error_message || '-'}
                 </Descriptions.Item>
               </Descriptions>
             </Card>

@@ -71,6 +71,10 @@ export interface StrategyStatsData {
   total_buy_volume: number
   total_sell_volume: number
   grid_orders: number
+  signal_status?: Record<string, any>
+  position_status?: Record<string, any>
+  risk_status?: Record<string, any>
+  health_status?: Record<string, any>
 }
 
 export interface NotificationData {
