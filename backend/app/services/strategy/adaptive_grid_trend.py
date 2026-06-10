@@ -41,6 +41,7 @@ class AdaptiveGridTrendStrategy(StrategyBase):
         self.max_position_usd: float = float(p.get("max_position_usd", 500))
         self.leverage: int = int(p.get("leverage", 3))
         self.margin_mode: str = str(p.get("margin_mode", "isolated")).lower()
+        self.margin_usage_ratio: float = float(p.get("margin_usage_ratio", 0.85))
         self.min_seconds_between_trades: int = int(p.get("cooldown_seconds", 60 * 60))
         self.notify_near_trigger: bool = bool(p.get("notify_near_trigger", True))
         self.near_trigger_pct: float = float(p.get("near_trigger_pct", 0.003))
@@ -393,13 +394,18 @@ class AdaptiveGridTrendStrategy(StrategyBase):
         return sum(recent) / len(recent) if recent else 0.0
 
     async def _account_equity_usd(self) -> float:
+        funds = await self._account_funds_usd()
+        return funds["equity"]
+
+    async def _account_funds_usd(self) -> Dict[str, float]:
         balance = await self.exchange.get_balance()
         total = float(balance.get("totalEq") or 0)
-        if total > 0:
-            return total
         details = balance.get("details", [])
         usdt = next((d for d in details if d.get("ccy") == "USDT"), None)
-        return float((usdt or {}).get("availBal") or 0)
+        available = float((usdt or {}).get("availBal") or 0)
+        if total > 0:
+            return {"equity": total, "available_usdt": available}
+        return {"equity": available, "available_usdt": available}
 
     def _round_qty(self, qty: float) -> float:
         if qty <= 0:
@@ -411,18 +417,30 @@ class AdaptiveGridTrendStrategy(StrategyBase):
         return round(rounded, 8)
 
     async def _calc_qty(self, price: float, atr: float) -> float:
-        equity = await self._account_equity_usd()
+        funds = await self._account_funds_usd()
+        equity = funds["equity"]
+        available_usdt = funds["available_usdt"]
         stop_distance = max(atr * self.stop_atr_multiple, price * 0.002)
         risk_capital = min(equity * self.risk_per_trade, self.max_position_usd * 0.05)
 
         if self._is_derivative:
             qty_by_risk = risk_capital / (stop_distance * self._ct_val)
             qty_by_cap = self.max_position_usd / (price * self._ct_val)
-            return self._round_qty(min(qty_by_risk, qty_by_cap))
+            usable_margin = max(0.0, available_usdt * self.margin_usage_ratio)
+            qty_by_margin = (usable_margin * max(self.leverage, 1)) / (price * self._ct_val)
+            qty = self._round_qty(min(qty_by_risk, qty_by_cap, qty_by_margin))
+            if qty <= 0:
+                logger.warning(
+                    f"[{self.symbol}] 可用保证金不足，跳过开仓: "
+                    f"available_usdt={available_usdt:.4f}, price={price:.8f}, "
+                    f"ctVal={self._ct_val}, lotSz={self._lot_sz}, minSz={self._min_sz}"
+                )
+            return qty
 
         qty_by_risk = risk_capital / stop_distance
         qty_by_cap = self.max_position_usd / price
-        return self._round_qty(min(qty_by_risk, qty_by_cap))
+        qty_by_available = (available_usdt * self.margin_usage_ratio) / price
+        return self._round_qty(min(qty_by_risk, qty_by_cap, qty_by_available))
 
     async def _open_position(self, side: str, price: float, atr: float):
         qty = await self._calc_qty(price, atr)
