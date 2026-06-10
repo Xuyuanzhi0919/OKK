@@ -11,6 +11,7 @@ from app.api.deps import require_current_user_id
 from app.services.exchange.okx import OKXExchange
 from app.services.ai.multi_factor_analyzer import MultiFactorAnalyzer
 from app.models.api_config import APIConfig
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,17 @@ class TopAltcoinStrategyRequest(BaseModel):
     inst_type: str = "SWAP"
     quote_ccy: str = "USDT"
     min_volume_usdt: float = 1000000
+    exclude_majors: bool = True
+
+
+class StealthAltcoinStrategyRequest(BaseModel):
+    limit: int = 5
+    inst_type: str = "SWAP"
+    quote_ccy: str = "USDT"
+    min_volume_usdt: float = 3000000
+    min_range_pct: float = 3
+    max_change_pct: float = 8
+    min_change_pct: float = -8
     exclude_majors: bool = True
 
 
@@ -77,6 +89,84 @@ def _ticker_volume_usdt(ticker: Dict[str, Any]) -> float:
         volume_ccy * last,
         _to_float(ticker.get("vol24h")) * last,
     )
+
+
+def _range_position(ticker: Dict[str, Any]) -> float:
+    last = _to_float(ticker.get("last"))
+    high = _to_float(ticker.get("high24h"))
+    low = _to_float(ticker.get("low24h"))
+    if last <= 0 or high <= low:
+        return 1.0
+    return max(0.0, min(1.0, (last - low) / (high - low)))
+
+
+def _range_pct(ticker: Dict[str, Any]) -> float:
+    high = _to_float(ticker.get("high24h"))
+    low = _to_float(ticker.get("low24h"))
+    last = _to_float(ticker.get("last"))
+    if high <= low or last <= 0:
+        return 0.0
+    return (high - low) / last * 100
+
+
+def _stealth_score(ticker: Dict[str, Any]) -> float:
+    change_pct = _ticker_change_pct(ticker)
+    position = _range_position(ticker)
+    range_pct = _range_pct(ticker)
+    volume_usdt = _ticker_volume_usdt(ticker)
+
+    volume_score = min(30.0, volume_usdt / 5000000)
+    location_score = max(0.0, 35.0 * (1.0 - abs(position - 0.35) / 0.35))
+    change_score = max(0.0, 20.0 - abs(change_pct - 1.5) * 2.0)
+    range_score = min(15.0, range_pct)
+    return volume_score + location_score + change_score + range_score
+
+
+def _analysis_for_stealth_candidate(symbol: str, candidate: Dict[str, Any], score: float) -> Dict[str, Any]:
+    confidence = max(0.35, min(0.85, score / 100))
+    position = candidate.get("range_position", 1.0)
+    change_pct = candidate.get("change_pct", 0.0)
+
+    if position <= 0.45 and change_pct > -6:
+        decision = "long"
+        suggested_strategy = "swing_long"
+        long_score = confidence
+        short_score = max(0.05, 1 - confidence)
+    else:
+        decision = "wait"
+        suggested_strategy = None
+        long_score = confidence
+        short_score = 1 - confidence
+
+    return {
+        "symbol": symbol,
+        "timestamp": datetime.now().isoformat(),
+        "decision": decision,
+        "confidence": round(confidence, 3),
+        "scores": {
+            "long_score": round(long_score, 3),
+            "short_score": round(short_score, 3),
+            "wait_score": round(max(0.0, 1 - long_score - short_score), 3),
+        },
+        "factors": {
+            "stealth": {
+                "score": round(score, 2),
+                "weight": 1,
+                "details": {
+                    "change_pct": round(change_pct, 2),
+                    "range_position": round(position, 3),
+                    "range_pct": round(candidate.get("range_pct", 0), 2),
+                    "volume_usdt": round(candidate.get("volume_usdt", 0), 2),
+                },
+            }
+        },
+        "risk_level": "medium" if candidate.get("range_pct", 0) > 12 else "low",
+        "suggested_strategy": suggested_strategy,
+        "reasoning": (
+            f"潜伏候选评分 {score:.1f}。24h涨幅 {change_pct:.2f}%，"
+            f"价格位于24h区间 {position*100:.1f}% 位置，成交额约 {candidate.get('volume_usdt', 0):,.0f} USDT。"
+        ),
+    }
 
 
 def _strategy_from_analysis(analysis: Dict[str, Any], change_pct: float, volume_usdt: float) -> Dict[str, Any]:
@@ -367,5 +457,116 @@ async def analyze_top_altcoin_strategies(
     except Exception as e:
         logger.error(f"涨幅榜山寨币策略分析失败: {e}")
         raise HTTPException(status_code=500, detail=f"涨幅榜分析失败: {str(e)}")
+    finally:
+        await exchange.close()
+
+
+@router.post("/stealth-altcoin-strategies")
+async def analyze_stealth_altcoin_strategies(
+    request: StealthAltcoinStrategyRequest,
+    user_id: int = Depends(get_current_user_api_config),
+    db: Session = Depends(get_db)
+):
+    """
+    筛选适合潜伏的USDT山寨币候选：成交量足够、未明显过热、价格位置偏低。
+    """
+    api_config = db.query(APIConfig).filter(
+        APIConfig.user_id == user_id,
+        APIConfig.is_active == True
+    ).first()
+
+    if not api_config:
+        raise HTTPException(status_code=400, detail="请先配置OKX API密钥")
+
+    exchange = OKXExchange(
+        api_key=api_config.api_key,
+        secret_key=api_config.secret_key,
+        passphrase=api_config.passphrase,
+        simulated=api_config.is_simulated
+    )
+
+    try:
+        tickers = await exchange.get_tickers(request.inst_type.upper())
+        suffix = f"-{request.quote_ccy.upper()}-SWAP" if request.inst_type.upper() == "SWAP" else f"-{request.quote_ccy.upper()}"
+
+        candidates = []
+        for ticker in tickers:
+            inst_id = ticker.get("instId", "")
+            if not inst_id.endswith(suffix):
+                continue
+
+            base_ccy = _base_ccy_from_inst_id(inst_id)
+            if request.exclude_majors and base_ccy in MAJOR_AND_STABLE_COINS:
+                continue
+
+            change_pct = _ticker_change_pct(ticker)
+            volume_usdt = _ticker_volume_usdt(ticker)
+            range_pct = _range_pct(ticker)
+            range_position = _range_position(ticker)
+
+            if volume_usdt < request.min_volume_usdt:
+                continue
+            if change_pct < request.min_change_pct or change_pct > request.max_change_pct:
+                continue
+            if range_pct < request.min_range_pct:
+                continue
+            if range_position > 0.65:
+                continue
+
+            score = _stealth_score(ticker)
+            candidates.append({
+                "symbol": inst_id,
+                "base_ccy": base_ccy,
+                "last": _to_float(ticker.get("last")),
+                "open24h": _to_float(ticker.get("open24h")),
+                "high24h": _to_float(ticker.get("high24h")),
+                "low24h": _to_float(ticker.get("low24h")),
+                "volume_usdt": volume_usdt,
+                "change_pct": change_pct,
+                "range_pct": range_pct,
+                "range_position": range_position,
+                "stealth_score": score,
+            })
+
+        top_candidates = sorted(candidates, key=lambda item: item["stealth_score"], reverse=True)[:request.limit]
+        results: List[Dict[str, Any]] = []
+        for candidate in top_candidates:
+            analysis = _analysis_for_stealth_candidate(
+                candidate["symbol"],
+                candidate,
+                candidate["stealth_score"],
+            )
+            recommendation = _strategy_from_analysis(
+                analysis,
+                candidate["change_pct"],
+                candidate["volume_usdt"],
+            )
+            recommendation["parameters"]["direction"] = "long"
+            recommendation["direction"] = "long"
+            results.append({
+                **candidate,
+                "change_pct": round(candidate["change_pct"], 2),
+                "volume_usdt": round(candidate["volume_usdt"], 2),
+                "range_pct": round(candidate["range_pct"], 2),
+                "range_position": round(candidate["range_position"], 3),
+                "stealth_score": round(candidate["stealth_score"], 2),
+                "analysis": analysis,
+                "recommended_strategy": recommendation,
+            })
+
+        return {
+            "code": 0,
+            "msg": "success",
+            "data": {
+                "items": results,
+                "universe_count": len(candidates),
+                "ai_enabled": False,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"潜伏山寨币策略分析失败: {e}")
+        raise HTTPException(status_code=500, detail=f"潜伏候选分析失败: {str(e)}")
     finally:
         await exchange.close()

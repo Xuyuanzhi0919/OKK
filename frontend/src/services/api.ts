@@ -317,6 +317,30 @@ export const aiApi = {
       }
     ).then(res => (res as any).data),
 
+  analyzeStealthAltcoinStrategies: (params?: {
+    limit?: number
+    inst_type?: 'SPOT' | 'SWAP'
+    quote_ccy?: string
+    min_volume_usdt?: number
+    min_range_pct?: number
+    min_change_pct?: number
+    max_change_pct?: number
+    exclude_majors?: boolean
+  }) =>
+    api.post<{ code: number; msg: string; data: { items: TopAltcoinStrategyCandidate[]; universe_count: number; ai_enabled: boolean } }>(
+      '/ai/stealth-altcoin-strategies',
+      {
+        limit: params?.limit ?? 5,
+        inst_type: params?.inst_type ?? 'SWAP',
+        quote_ccy: params?.quote_ccy ?? 'USDT',
+        min_volume_usdt: params?.min_volume_usdt ?? 3000000,
+        min_range_pct: params?.min_range_pct ?? 3,
+        min_change_pct: params?.min_change_pct ?? -8,
+        max_change_pct: params?.max_change_pct ?? 8,
+        exclude_majors: params?.exclude_majors ?? true,
+      }
+    ).then(res => (res as any).data),
+
   // AI配置管理
   getConfigList: () =>
     api.get<any[]>('/ai-configs/list'),

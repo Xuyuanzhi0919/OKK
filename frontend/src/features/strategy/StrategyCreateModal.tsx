@@ -105,6 +105,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
   const [loading, setLoading] = useState(false)
   const [topAltcoinLoading, setTopAltcoinLoading] = useState(false)
   const [topAltcoinCandidates, setTopAltcoinCandidates] = useState<TopAltcoinStrategyCandidate[]>([])
+  const [candidateMode, setCandidateMode] = useState<'top' | 'stealth'>('stealth')
   // 记录上一次自动生成的名称，用于判断用户是否手动修改过
   const [lastAutoName, setLastAutoName] = useState('')
 
@@ -273,6 +274,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       setLastAutoName('')
       setGridTickerLoading(false)
       setTopAltcoinCandidates([])
+      setCandidateMode('stealth')
     }
   }, [open])
 
@@ -478,7 +480,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       agt_fuse_min_profit_factor: params.risk_fuse?.min_profit_factor,
       agt_fuse_cancel_orders: params.risk_fuse?.cancel_orders_on_trigger,
       agt_fuse_close_position: params.risk_fuse?.close_position_on_trigger,
-      description: `来自24h涨幅榜分析：涨幅 ${candidate.change_pct.toFixed(2)}%，${candidate.analysis.reasoning}`,
+      description: `来自${candidateMode === 'stealth' ? '潜伏候选' : '24h涨幅榜'}分析：涨幅 ${candidate.change_pct.toFixed(2)}%，${candidate.analysis.reasoning}`,
     })
     message.success(`已套用 ${candidate.symbol} 的策略建议`)
   }
@@ -493,12 +495,38 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         min_volume_usdt: 1000000,
         exclude_majors: true,
       })
+      setCandidateMode('top')
       setTopAltcoinCandidates(result.items || [])
       if (!result.items?.length) {
         message.info('暂未找到满足成交量条件的涨幅榜山寨币')
       }
     } catch (error: any) {
       message.error(error?.response?.data?.detail || '涨幅榜分析失败')
+    } finally {
+      setTopAltcoinLoading(false)
+    }
+  }
+
+  const fetchStealthAltcoinStrategies = async () => {
+    setTopAltcoinLoading(true)
+    try {
+      const result = await aiApi.analyzeStealthAltcoinStrategies({
+        limit: 5,
+        inst_type: 'SWAP',
+        quote_ccy: 'USDT',
+        min_volume_usdt: 3000000,
+        min_range_pct: 3,
+        min_change_pct: -8,
+        max_change_pct: 8,
+        exclude_majors: true,
+      })
+      setCandidateMode('stealth')
+      setTopAltcoinCandidates(result.items || [])
+      if (!result.items?.length) {
+        message.info('暂未找到满足潜伏条件的山寨币')
+      }
+    } catch (error: any) {
+      message.error(error?.response?.data?.detail || '潜伏候选分析失败')
     } finally {
       setTopAltcoinLoading(false)
     }
@@ -689,22 +717,35 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
 
         {!editStrategyId && !backtestData && (
           <>
-            <Divider orientation="left" style={compactDivider}>涨幅榜分析</Divider>
+            <Divider orientation="left" style={compactDivider}>候选分析</Divider>
             <Alert
-              message="选择OKX USDT永续24h涨幅榜前五山寨币，分析后可一键套用推荐策略。"
+              message={candidateMode === 'stealth'
+                ? '筛选成交量足够、涨幅未过热、价格位置偏低的潜伏候选，分析后可一键套用推荐策略。'
+                : '选择OKX USDT永续24h涨幅榜前五山寨币，分析后可一键套用推荐策略。'
+              }
               type="info"
               showIcon
               style={{ marginBottom: 10, fontSize: 12 }}
               action={
-                <Button
-                  size="small"
-                  type="primary"
-                  icon={<RiseOutlined />}
-                  loading={topAltcoinLoading}
-                  onClick={fetchTopAltcoinStrategies}
-                >
-                  分析前五
-                </Button>
+                <Space size={6}>
+                  <Button
+                    size="small"
+                    type={candidateMode === 'stealth' ? 'primary' : 'default'}
+                    loading={topAltcoinLoading}
+                    onClick={fetchStealthAltcoinStrategies}
+                  >
+                    潜伏候选
+                  </Button>
+                  <Button
+                    size="small"
+                    type={candidateMode === 'top' ? 'primary' : 'default'}
+                    icon={<RiseOutlined />}
+                    loading={topAltcoinLoading}
+                    onClick={fetchTopAltcoinStrategies}
+                  >
+                    涨幅前五
+                  </Button>
+                </Space>
               }
             />
             {topAltcoinCandidates.length > 0 && (
