@@ -7,6 +7,19 @@ export interface AdaptiveGridTrendPreset {
   cooldownMinutes: number
   riskPercent?: number
   maxPositionUsd?: number
+  leverage?: number
+}
+
+export const DEFAULT_ADAPTIVE_GRID_TREND_PRESET: AdaptiveGridTrendPreset = {
+  fast: 30,
+  slow: 120,
+  entry: 0.2,
+  stop: 1.6,
+  takeProfit: 3.0,
+  cooldownMinutes: 30,
+  riskPercent: 2,
+  maxPositionUsd: 2000,
+  leverage: 3,
 }
 
 export const ADAPTIVE_GRID_TREND_PRESETS: Record<string, AdaptiveGridTrendPreset> = {
@@ -30,7 +43,7 @@ export function extractCoin(symbol?: string): string {
 
 export function getAdaptiveGridTrendPreset(symbol?: string): AdaptiveGridTrendPreset {
   const coin = extractCoin(symbol || 'BTC-USDT-SWAP')
-  return ADAPTIVE_GRID_TREND_PRESETS[coin] ?? ADAPTIVE_GRID_TREND_PRESETS.BTC
+  return ADAPTIVE_GRID_TREND_PRESETS[coin] ?? DEFAULT_ADAPTIVE_GRID_TREND_PRESET
 }
 
 export function getAdaptiveGridTrendPresetForBacktest(symbol?: string) {
@@ -42,7 +55,7 @@ export function getAdaptiveGridTrendPresetForBacktest(symbol?: string) {
     stop: preset.stop,
     takeProfit: preset.takeProfit,
     cooldownSeconds: preset.cooldownMinutes * 60,
-    riskPerTrade: (preset.riskPercent ?? 1) / 100,
-    maxPositionUsd: preset.maxPositionUsd ?? 500,
+    riskPerTrade: (preset.riskPercent ?? DEFAULT_ADAPTIVE_GRID_TREND_PRESET.riskPercent ?? 2) / 100,
+    maxPositionUsd: preset.maxPositionUsd ?? DEFAULT_ADAPTIVE_GRID_TREND_PRESET.maxPositionUsd ?? 2000,
   }
 }

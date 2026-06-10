@@ -124,7 +124,17 @@ class StrategyManager:
                 user_id=user_id,
             )
 
-        raise ValueError("后端当前仅支持自适应趋势网格策略")
+        if strategy_type_enum == StrategyType.ARBITRAGE:
+            from app.services.strategy.spot_perp_arbitrage import SpotPerpArbitrageStrategy
+            return SpotPerpArbitrageStrategy(
+                strategy_id=strategy_id,
+                exchange=exchange,
+                symbol=symbol,
+                parameters=parameters,
+                user_id=user_id,
+            )
+
+        raise ValueError("后端当前仅支持自适应趋势网格策略和现货-永续套利策略")
 
     async def _persist_strategy_state(self, strategy_id: int, strategy: StrategyBase):
         """持久化策略状态到数据库"""

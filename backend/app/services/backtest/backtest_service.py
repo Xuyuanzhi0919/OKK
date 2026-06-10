@@ -10,6 +10,7 @@ from datetime import datetime
 from app.models import Backtest, BacktestTrade, Kline
 from .kline_service import KlineService
 from .adaptive_grid_trend_backtest import AdaptiveGridTrendBacktestEngine
+from .spot_perp_arbitrage_backtest import SpotPerpArbitrageBacktestEngine
 from .backtest_engine import BacktestEngine
 from .metrics import BacktestMetrics
 
@@ -17,6 +18,7 @@ from .metrics import BacktestMetrics
 # 策略类型注册表
 BACKTEST_ENGINES: Dict[str, Type[BacktestEngine]] = {
     "adaptive_grid_trend": AdaptiveGridTrendBacktestEngine,
+    "arbitrage": SpotPerpArbitrageBacktestEngine,
 }
 
 
@@ -159,6 +161,33 @@ class BacktestService:
 
             # 创建回测引擎
             engine = self._create_engine(backtest)
+            if hasattr(engine, "set_pair_klines") and hasattr(engine, "required_symbols"):
+                pair_klines = {backtest.symbol.upper(): kline_dicts}
+                for pair_symbol in engine.required_symbols():
+                    pair_symbol = pair_symbol.upper()
+                    if pair_symbol in pair_klines:
+                        continue
+                    pair_rows = kline_service.query_klines(
+                        symbol=pair_symbol,
+                        interval=backtest.interval,
+                        start_time=backtest.start_time,
+                        end_time=backtest.end_time
+                    )
+                    if not pair_rows:
+                        raise ValueError(f"没有 {pair_symbol} 的K线数据，请先获取历史数据")
+                    pair_klines[pair_symbol] = [
+                        {
+                            "timestamp": k.timestamp,
+                            "open": float(k.open),
+                            "high": float(k.high),
+                            "low": float(k.low),
+                            "close": float(k.close),
+                            "volume": float(k.volume),
+                            "volume_currency": float(k.volume_currency)
+                        }
+                        for k in pair_rows
+                    ]
+                engine.set_pair_klines(pair_klines)
 
             # 进度回调
             def progress_callback(current, total):

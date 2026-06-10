@@ -23,5 +23,35 @@
     "webhook_url": "YOUR_WEBHOOK_URL_HERE",
     "mentioned_list": [],
     "mentioned_mobile_list": []
+  },
+  "bark": {
+    "enabled": true,
+    "server_url": "https://api.day.app",
+    "device_key": "g5kdUGRGMught93thiHcL",
+    "group": "OKK",
+    "sound": "alarm",
+    "level": "active"
+  },
+  "altcoin_momentum_monitor": {
+    "enabled": true,
+    "inst_type": "SWAP",
+    "quote_ccy": "USDT",
+    "window_seconds": 60,
+    "threshold_pct": 2.5,
+    "windows": [
+      {
+        "window_seconds": 60,
+        "threshold_pct": 2.5
+      },
+      {
+        "window_seconds": 900,
+        "threshold_pct": 6
+      }
+    ],
+    "interval_seconds": 15,
+    "cooldown_seconds": 600,
+    "min_volume_usdt": 1000000,
+    "exclude_majors": true,
+    "user_id": 1
   }
 }

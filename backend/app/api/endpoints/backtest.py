@@ -183,7 +183,8 @@ async def get_strategy_types():
         'grid_mm': '网格做市',
         'ma_cross': '均线交叉',
         'dual_ma_cross': '双均线(多空)',
-        'adaptive_grid_trend': '自适应趋势网格'
+        'adaptive_grid_trend': '自适应趋势网格',
+        'arbitrage': '现货-永续套利',
     }
     
     return [

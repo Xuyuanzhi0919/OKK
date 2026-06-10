@@ -30,7 +30,7 @@ router = APIRouter()
 get_current_user_id = require_current_user_id
 
 
-SUPPORTED_STRATEGY_TYPE = "adaptive_grid_trend"
+SUPPORTED_STRATEGY_TYPES = {"adaptive_grid_trend", "arbitrage"}
 
 
 @router.get("/", response_model=StrategyListResponse)
@@ -171,10 +171,10 @@ async def create_strategy(
 
         logger.debug(f"策略类型转换: {strategy_data.type} -> {strategy_type_value}")
 
-        if strategy_type_value != SUPPORTED_STRATEGY_TYPE:
+        if strategy_type_value not in SUPPORTED_STRATEGY_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="后端当前仅支持自适应趋势网格策略"
+                detail="后端当前仅支持自适应趋势网格策略和现货-永续套利策略"
             )
 
         bound_api_config = None
@@ -416,10 +416,10 @@ async def start_strategy(
             )
 
         strategy_type_value = strategy.type.value if hasattr(strategy.type, 'value') else str(strategy.type)
-        if strategy_type_value != SUPPORTED_STRATEGY_TYPE:
+        if strategy_type_value not in SUPPORTED_STRATEGY_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="后端当前仅支持启动自适应趋势网格策略"
+                detail="后端当前仅支持启动自适应趋势网格策略和现货-永续套利策略"
             )
 
         preflight = await build_strategy_start_preflight(strategy, user_id, db)
@@ -517,8 +517,8 @@ async def build_strategy_start_preflight(strategy: Strategy, user_id: int, db: S
     checks = {}
 
     strategy_type_value = strategy.type.value if hasattr(strategy.type, 'value') else str(strategy.type)
-    if strategy_type_value != SUPPORTED_STRATEGY_TYPE:
-        blockers.append("后端当前仅支持自适应趋势网格策略")
+    if strategy_type_value not in SUPPORTED_STRATEGY_TYPES:
+        blockers.append("后端当前仅支持自适应趋势网格策略和现货-永续套利策略")
 
     api_config = api_config_service.get_config(user_id=user_id, config_id=strategy.api_config_id, db=db)
     if not api_config:

@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Modal, Form, Input, Select, Divider,
-  Row, Col, Space, Tooltip, Alert, InputNumber, Switch, Spin,
+  Row, Col, Space, Tooltip, Alert, InputNumber, Switch, Spin, Button, Table, Tag, message,
 } from 'antd'
-import { InfoCircleOutlined } from '@ant-design/icons'
+import { InfoCircleOutlined, RiseOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { strategyApi, marketApi } from '@/services/api'
+import { strategyApi, marketApi, aiApi } from '@/services/api'
 import { API_BASE_URL } from '@/config/api'
 import { extractCoin, getAdaptiveGridTrendPreset } from '@/config/strategyPresets'
+import type { TopAltcoinStrategyCandidate } from '@/types'
 
 const { TextArea } = Input
 
@@ -43,6 +44,11 @@ const STRATEGY_TYPES: { value: string; label: string; desc: string }[] = [
     label: '自适应趋势网格',
     desc: '趋势过滤后按ATR回撤入场，固定风险仓位，硬止损止盈，不马丁不无限补仓',
   },
+  {
+    value: 'arbitrage',
+    label: '现货-永续套利',
+    desc: '买入现货并做空USDT永续，捕捉正向基差收敛，建议先用模拟盘小额验证',
+  },
 ]
 
 // 交易对列表：合约（SWAP）优先，后接现货（SPOT）
@@ -74,6 +80,7 @@ const TYPE_SHORT: Record<string, string> = {
   dual_side: '双向持仓',
   grid: '网格交易',
   adaptive_grid_trend: '自适应趋势网格',
+  arbitrage: '现货-永续套利',
 }
 
 // 生成自动名称，例如 BTC 趋势跟踪
@@ -96,6 +103,8 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
 }) => {
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
+  const [topAltcoinLoading, setTopAltcoinLoading] = useState(false)
+  const [topAltcoinCandidates, setTopAltcoinCandidates] = useState<TopAltcoinStrategyCandidate[]>([])
   // 记录上一次自动生成的名称，用于判断用户是否手动修改过
   const [lastAutoName, setLastAutoName] = useState('')
 
@@ -238,8 +247,9 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       agt_stop_atr_multiple: preset.stop,
       agt_take_profit_atr_multiple: preset.takeProfit,
       agt_cooldown_minutes: preset.cooldownMinutes,
-      agt_risk_per_trade: preset.riskPercent ?? 1,
-      agt_max_position_usd: preset.maxPositionUsd ?? 500,
+      agt_risk_per_trade: preset.riskPercent ?? 2,
+      agt_max_position_usd: preset.maxPositionUsd ?? 2000,
+      agt_leverage: preset.leverage ?? 3,
       agt_notify_near_trigger: true,
       agt_near_trigger_pct: 0.3,
       agt_near_trigger_cooldown_minutes: 10,
@@ -262,6 +272,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
     if (!open) {
       setLastAutoName('')
       setGridTickerLoading(false)
+      setTopAltcoinCandidates([])
     }
   }, [open])
 
@@ -359,17 +370,17 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       } else if (values.type === 'adaptive_grid_trend') {
         parameters.direction                = values.agt_direction ?? 'both'
         parameters.trend_timeframe          = values.agt_timeframe ?? '1H'
-        parameters.fast_period              = values.agt_fast_period ?? 20
-        parameters.slow_period              = values.agt_slow_period ?? 80
+        parameters.fast_period              = values.agt_fast_period ?? 30
+        parameters.slow_period              = values.agt_slow_period ?? 120
         parameters.atr_period               = values.agt_atr_period ?? 14
-        parameters.entry_atr_multiple       = values.agt_entry_atr_multiple ?? 0.6
-        parameters.stop_atr_multiple        = values.agt_stop_atr_multiple ?? 2.8
-        parameters.take_profit_atr_multiple = values.agt_take_profit_atr_multiple ?? 6.0
-        parameters.risk_per_trade           = (values.agt_risk_per_trade ?? 1) / 100
-        parameters.max_position_usd         = values.agt_max_position_usd ?? 500
+        parameters.entry_atr_multiple       = values.agt_entry_atr_multiple ?? 0.2
+        parameters.stop_atr_multiple        = values.agt_stop_atr_multiple ?? 1.6
+        parameters.take_profit_atr_multiple = values.agt_take_profit_atr_multiple ?? 3.0
+        parameters.risk_per_trade           = (values.agt_risk_per_trade ?? 2) / 100
+        parameters.max_position_usd         = values.agt_max_position_usd ?? 2000
         parameters.leverage                 = values.agt_leverage ?? 3
         parameters.margin_mode              = values.agt_margin_mode ?? 'isolated'
-        parameters.cooldown_seconds         = (values.agt_cooldown_minutes ?? 60) * 60
+        parameters.cooldown_seconds         = (values.agt_cooldown_minutes ?? 30) * 60
         parameters.notify_near_trigger      = values.agt_notify_near_trigger ?? true
         parameters.near_trigger_pct         = (values.agt_near_trigger_pct ?? 0.3) / 100
         parameters.near_trigger_cooldown_seconds = (values.agt_near_trigger_cooldown_minutes ?? 10) * 60
@@ -384,6 +395,21 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
           cancel_orders_on_trigger: values.agt_fuse_cancel_orders ?? true,
           close_position_on_trigger: values.agt_fuse_close_position ?? false,
         }
+      } else if (values.type === 'arbitrage') {
+        const baseSymbol = String(values.symbol || 'BTC-USDT-SWAP').replace(/-SWAP$/, '')
+        parameters.spot_symbol          = values.arb_spot_symbol || baseSymbol
+        parameters.perp_symbol          = values.arb_perp_symbol || `${baseSymbol}-SWAP`
+        parameters.target_notional_usd  = values.arb_target_notional_usd ?? 100
+        parameters.max_notional_usd     = values.arb_max_notional_usd ?? values.arb_target_notional_usd ?? 100
+        parameters.open_edge_threshold  = (values.arb_open_edge_pct ?? 0.3) / 100
+        parameters.close_edge_threshold = (values.arb_close_edge_pct ?? 0.08) / 100
+        parameters.min_net_edge         = (values.arb_min_net_edge_pct ?? 0.15) / 100
+        parameters.fee_buffer           = (values.arb_fee_buffer_pct ?? 0.12) / 100
+        parameters.slippage_buffer      = (values.arb_slippage_buffer_pct ?? 0.08) / 100
+        parameters.poll_interval        = values.arb_poll_interval ?? 1
+        parameters.leverage             = values.arb_leverage ?? 1
+        parameters.margin_mode          = values.arb_margin_mode ?? 'isolated'
+        parameters.close_on_stop        = values.arb_close_on_stop ?? false
       }
 
       const payload = {
@@ -395,6 +421,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                  : values.type === 'dual_side' ? (values.dual_timeframe ?? '15m')
                  : values.type === 'grid' ? '1m'
                  : values.type === 'adaptive_grid_trend' ? (values.agt_timeframe ?? '1H')
+                 : values.type === 'arbitrage' ? '1m'
                  : (values.timeframe ?? '1H'),
         parameters,
         description: values.description,
@@ -417,12 +444,74 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
 
   const handleCancel = () => { form.resetFields(); onCancel() }
 
+  const applyStrategyRecommendation = (candidate: TopAltcoinStrategyCandidate) => {
+    const params = candidate.recommended_strategy.parameters || {}
+    form.setFieldsValue({
+      type: candidate.recommended_strategy.type,
+      symbol: candidate.symbol,
+      timeframe: candidate.recommended_strategy.timeframe,
+      name: buildAutoName(candidate.recommended_strategy.type, candidate.symbol),
+      agt_direction: params.direction,
+      agt_timeframe: params.trend_timeframe,
+      agt_fast_period: params.fast_period,
+      agt_slow_period: params.slow_period,
+      agt_atr_period: params.atr_period,
+      agt_entry_atr_multiple: params.entry_atr_multiple,
+      agt_stop_atr_multiple: params.stop_atr_multiple,
+      agt_take_profit_atr_multiple: params.take_profit_atr_multiple,
+      agt_risk_per_trade: percentValue(params.risk_per_trade),
+      agt_max_position_usd: params.max_position_usd,
+      agt_leverage: params.leverage,
+      agt_margin_mode: params.margin_mode,
+      agt_cooldown_minutes: params.cooldown_seconds != null ? Math.round(Number(params.cooldown_seconds) / 60) : undefined,
+      agt_notify_near_trigger: params.notify_near_trigger,
+      agt_near_trigger_pct: percentValue(params.near_trigger_pct),
+      agt_near_trigger_cooldown_minutes: params.near_trigger_cooldown_seconds != null
+        ? Math.round(Number(params.near_trigger_cooldown_seconds) / 60)
+        : undefined,
+      agt_fuse_enabled: params.risk_fuse?.enabled,
+      agt_fuse_max_consecutive_losses: params.risk_fuse?.max_consecutive_losses,
+      agt_fuse_daily_loss_pct: percentValue(params.risk_fuse?.daily_loss_limit_pct),
+      agt_fuse_max_drawdown_pct: percentValue(params.risk_fuse?.max_drawdown_pct),
+      agt_fuse_profit_factor_window: params.risk_fuse?.profit_factor_window,
+      agt_fuse_min_trades: params.risk_fuse?.min_trades_for_profit_factor,
+      agt_fuse_min_profit_factor: params.risk_fuse?.min_profit_factor,
+      agt_fuse_cancel_orders: params.risk_fuse?.cancel_orders_on_trigger,
+      agt_fuse_close_position: params.risk_fuse?.close_position_on_trigger,
+      description: `来自24h涨幅榜分析：涨幅 ${candidate.change_pct.toFixed(2)}%，${candidate.analysis.reasoning}`,
+    })
+    message.success(`已套用 ${candidate.symbol} 的策略建议`)
+  }
+
+  const fetchTopAltcoinStrategies = async () => {
+    setTopAltcoinLoading(true)
+    try {
+      const result = await aiApi.analyzeTopAltcoinStrategies({
+        limit: 5,
+        inst_type: 'SWAP',
+        quote_ccy: 'USDT',
+        min_volume_usdt: 1000000,
+        exclude_majors: true,
+      })
+      setTopAltcoinCandidates(result.items || [])
+      if (!result.items?.length) {
+        message.info('暂未找到满足成交量条件的涨幅榜山寨币')
+      }
+    } catch (error: any) {
+      message.error(error?.response?.data?.detail || '涨幅榜分析失败')
+    } finally {
+      setTopAltcoinLoading(false)
+    }
+  }
+
   const compactDivider = { fontSize: 12, color: '#8c8c8c', margin: '12px 0 8px' }
   const compactItem = { marginBottom: 8 }
 
   const noTypes = STRATEGY_TYPES.length === 0
   const selectedType = Form.useWatch('type', form)
   const useTrailingStop = Form.useWatch('use_trailing_stop', form)
+  const decisionColor: Record<string, string> = { long: 'green', short: 'red', wait: 'default' }
+  const decisionText: Record<string, string> = { long: '做多', short: '做空', wait: '观望' }
 
   return (
     <Modal
@@ -480,17 +569,17 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
           // 自适应趋势网格默认值
           agt_direction: 'both',
           agt_timeframe: '1H',
-          agt_fast_period: 20,
-          agt_slow_period: 80,
+          agt_fast_period: 30,
+          agt_slow_period: 120,
           agt_atr_period: 14,
-          agt_entry_atr_multiple: 0.6,
-          agt_stop_atr_multiple: 2.8,
-          agt_take_profit_atr_multiple: 6.0,
-          agt_risk_per_trade: 1,
-          agt_max_position_usd: 500,
+          agt_entry_atr_multiple: 0.2,
+          agt_stop_atr_multiple: 1.6,
+          agt_take_profit_atr_multiple: 3.0,
+          agt_risk_per_trade: 2,
+          agt_max_position_usd: 2000,
           agt_leverage: 3,
           agt_margin_mode: 'isolated',
-          agt_cooldown_minutes: 60,
+          agt_cooldown_minutes: 30,
           agt_notify_near_trigger: true,
           agt_near_trigger_pct: 0.3,
           agt_near_trigger_cooldown_minutes: 10,
@@ -503,6 +592,17 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
           agt_fuse_min_profit_factor: 0.8,
           agt_fuse_cancel_orders: true,
           agt_fuse_close_position: false,
+          arb_target_notional_usd: 100,
+          arb_max_notional_usd: 100,
+          arb_open_edge_pct: 0.3,
+          arb_close_edge_pct: 0.08,
+          arb_min_net_edge_pct: 0.15,
+          arb_fee_buffer_pct: 0.12,
+          arb_slippage_buffer_pct: 0.08,
+          arb_poll_interval: 1,
+          arb_leverage: 1,
+          arb_margin_mode: 'isolated',
+          arb_close_on_stop: false,
         }}
       >
         {/* ── 基础信息 ── */}
@@ -586,6 +686,78 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
             </Form.Item>
           </Col>
         </Row>
+
+        {!editStrategyId && !backtestData && (
+          <>
+            <Divider orientation="left" style={compactDivider}>涨幅榜分析</Divider>
+            <Alert
+              message="选择OKX USDT永续24h涨幅榜前五山寨币，分析后可一键套用推荐策略。"
+              type="info"
+              showIcon
+              style={{ marginBottom: 10, fontSize: 12 }}
+              action={
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<RiseOutlined />}
+                  loading={topAltcoinLoading}
+                  onClick={fetchTopAltcoinStrategies}
+                >
+                  分析前五
+                </Button>
+              }
+            />
+            {topAltcoinCandidates.length > 0 && (
+              <Table<TopAltcoinStrategyCandidate>
+                size="small"
+                rowKey="symbol"
+                pagination={false}
+                dataSource={topAltcoinCandidates}
+                style={{ marginBottom: 10 }}
+                columns={[
+                  {
+                    title: '交易对',
+                    dataIndex: 'symbol',
+                    width: 130,
+                    render: (value) => <span style={{ fontWeight: 600 }}>{value}</span>,
+                  },
+                  {
+                    title: '涨幅',
+                    dataIndex: 'change_pct',
+                    width: 80,
+                    render: (value) => <span style={{ color: '#16a34a' }}>{Number(value).toFixed(2)}%</span>,
+                  },
+                  {
+                    title: '决策',
+                    dataIndex: ['analysis', 'decision'],
+                    width: 80,
+                    render: (value) => <Tag color={decisionColor[value] || 'default'}>{decisionText[value] || value}</Tag>,
+                  },
+                  {
+                    title: '信心',
+                    dataIndex: ['analysis', 'confidence'],
+                    width: 70,
+                    render: (value) => `${(Number(value || 0) * 100).toFixed(0)}%`,
+                  },
+                  {
+                    title: '策略',
+                    dataIndex: ['recommended_strategy', 'label'],
+                    ellipsis: true,
+                  },
+                  {
+                    title: '',
+                    width: 72,
+                    render: (_, record) => (
+                      <Button size="small" type="link" onClick={() => applyStrategyRecommendation(record)}>
+                        套用
+                      </Button>
+                    ),
+                  },
+                ]}
+              />
+            )}
+          </>
+        )}
 
         {/* ── EMA 趋势跟踪参数 ── */}
         {selectedType === 'trend' && (
@@ -1115,6 +1287,149 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
                   style={compactItem}
                 >
                   <Switch checkedChildren="平仓" unCheckedChildren="不平" />
+                </Form.Item>
+              </Col>
+            </Row>
+          </>
+        )}
+
+        {/* ── 现货-永续套利参数 ── */}
+        {selectedType === 'arbitrage' && (
+          <>
+            <Divider orientation="left" style={compactDivider}>
+              现货-永续套利参数
+              <Tooltip title="当前版本执行正向基差套利：买现货、做空USDT永续，等待基差收敛后平仓">
+                <InfoCircleOutlined style={{ marginLeft: 6, color: '#8c8c8c', fontSize: 12 }} />
+              </Tooltip>
+            </Divider>
+            <Alert
+              message="建议先选择模拟盘并使用小额名义金额。策略会按盘口买入现货并做空永续，单边失败时会尝试立即补偿。"
+              type="warning"
+              showIcon
+              style={{ marginBottom: 10, fontSize: 12 }}
+            />
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item
+                  name="arb_spot_symbol"
+                  label={<Space size={4}>现货交易对<Tooltip title="留空时根据主交易对自动推导，例如 BTC-USDT-SWAP -> BTC-USDT"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <Input placeholder="BTC-USDT" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="arb_perp_symbol"
+                  label={<Space size={4}>永续交易对<Tooltip title="留空时根据主交易对自动推导，例如 BTC-USDT -> BTC-USDT-SWAP"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <Input placeholder="BTC-USDT-SWAP" />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="arb_target_notional_usd"
+                  label={<Space size={4}>单笔名义金额<Tooltip title="每次套利尝试的目标名义价值，单位USDT"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={10} step={10} prefix="$" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="arb_max_notional_usd"
+                  label={<Space size={4}>最大名义金额<Tooltip title="策略会取单笔名义金额和该上限的较小值"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={10} step={10} prefix="$" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="arb_leverage"
+                  label={<Space size={4}>永续杠杆<Tooltip title="套利初期建议1x，降低强平和保证金风险"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={1} max={10} step={1} suffix="x" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="arb_open_edge_pct"
+                  label={<Space size={4}>开仓基差<Tooltip title="永续买一相对现货卖一的溢价达到该比例后尝试开仓"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0.05} max={5} step={0.01} suffix="%" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="arb_close_edge_pct"
+                  label={<Space size={4}>平仓基差<Tooltip title="基差回落到该比例以下时卖出现货并买回永续"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0} max={2} step={0.01} suffix="%" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="arb_min_net_edge_pct"
+                  label={<Space size={4}>最低净基差<Tooltip title="扣除手续费和滑点缓冲后仍需达到该比例才开仓"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0} max={3} step={0.01} suffix="%" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="arb_fee_buffer_pct"
+                  label={<Space size={4}>手续费缓冲<Tooltip title="开仓判断时预扣的双边手续费缓冲"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0} max={2} step={0.01} suffix="%" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="arb_slippage_buffer_pct"
+                  label={<Space size={4}>滑点缓冲<Tooltip title="开仓判断时预扣的成交滑点缓冲"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0} max={2} step={0.01} suffix="%" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="arb_poll_interval"
+                  label={<Space size={4}>检查间隔<Tooltip title="REST保守版的行情检查间隔，后续可升级为WebSocket事件驱动"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <InputNumber min={0.5} max={10} step={0.5} suffix="秒" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="arb_margin_mode"
+                  label={<Space size={4}>保证金模式<Tooltip title="永续腿使用的保证金模式"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  style={compactItem}
+                >
+                  <Select
+                    options={[
+                      { label: '逐仓', value: 'isolated' },
+                      { label: '全仓', value: 'cross' },
+                    ]}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="arb_close_on_stop"
+                  label={<Space size={4}>停止时平仓<Tooltip title="关闭时会尝试市价平掉套利组合；实盘初期建议关闭，手动确认后处理"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  valuePropName="checked"
+                  style={compactItem}
+                >
+                  <Switch checkedChildren="平仓" unCheckedChildren="保留" />
                 </Form.Item>
               </Col>
             </Row>

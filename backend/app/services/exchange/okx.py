@@ -201,6 +201,31 @@ class OKXExchange(ExchangeBase):
 
         return data[0]
 
+    async def get_tickers(self, inst_type: str = "SWAP") -> List[Dict]:
+        """
+        获取某类产品的全量行情信息。
+
+        Args:
+            inst_type: 产品类型，如 SPOT / SWAP / FUTURES / OPTION
+
+        Returns:
+            OKX /market/tickers 的 data 数组
+        """
+        endpoint = "/api/v5/market/tickers"
+        params = {"instType": inst_type}
+
+        response = await self._request(
+            method="GET",
+            endpoint=endpoint,
+            params=params,
+            auth_required=False
+        )
+
+        if response.get("code") != "0":
+            raise Exception(f"获取tickers失败: {response.get('msg')}")
+
+        return response.get("data", [])
+
     async def get_kline(
         self,
         symbol: str,

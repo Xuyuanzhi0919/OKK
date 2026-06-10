@@ -114,6 +114,36 @@ export interface Ticker {
   ts?: string
 }
 
+export interface TopAltcoinStrategyCandidate {
+  symbol: string
+  base_ccy: string
+  last: number
+  open24h: number
+  high24h: number
+  low24h: number
+  volume_usdt: number
+  change_pct: number
+  analysis: {
+    decision: 'long' | 'short' | 'wait'
+    confidence: number
+    risk_level: 'low' | 'medium' | 'high'
+    reasoning: string
+    suggested_strategy?: string | null
+    scores?: {
+      long_score: number
+      short_score: number
+      wait_score: number
+    }
+  }
+  recommended_strategy: {
+    type: string
+    label: string
+    direction: 'long' | 'short' | 'both'
+    timeframe: string
+    parameters: Record<string, any>
+  }
+}
+
 // 交易产品信息 (OKX API格式)
 export interface Instrument {
   instType: string      // 产品类型: SPOT/SWAP/FUTURES/OPTION

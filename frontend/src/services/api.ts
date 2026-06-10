@@ -3,7 +3,7 @@
  */
 import axios from 'axios'
 import type { AxiosInstance, AxiosRequestConfig } from 'axios'
-import type { Strategy, StrategyEvent, Order, Position, Ticker, Kline, Instrument, StrategyPerformance, User } from '@/types'
+import type { Strategy, StrategyEvent, Order, Position, Ticker, Kline, Instrument, StrategyPerformance, User, TopAltcoinStrategyCandidate } from '@/types'
 
 type ApiClient = Omit<AxiosInstance, 'get' | 'post' | 'put' | 'delete'> & {
   get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>
@@ -298,6 +298,24 @@ export const aiApi = {
   // 批量分析
   analyzeBatch: (symbols: string[]) =>
     api.post('/ai/analyze/batch', symbols),
+
+  analyzeTopAltcoinStrategies: (params?: {
+    limit?: number
+    inst_type?: 'SPOT' | 'SWAP'
+    quote_ccy?: string
+    min_volume_usdt?: number
+    exclude_majors?: boolean
+  }) =>
+    api.post<{ code: number; msg: string; data: { items: TopAltcoinStrategyCandidate[]; universe_count: number; ai_enabled: boolean } }>(
+      '/ai/top-altcoin-strategies',
+      {
+        limit: params?.limit ?? 5,
+        inst_type: params?.inst_type ?? 'SWAP',
+        quote_ccy: params?.quote_ccy ?? 'USDT',
+        min_volume_usdt: params?.min_volume_usdt ?? 1000000,
+        exclude_majors: params?.exclude_majors ?? true,
+      }
+    ).then(res => (res as any).data),
 
   // AI配置管理
   getConfigList: () =>

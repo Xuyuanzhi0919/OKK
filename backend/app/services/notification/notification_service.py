@@ -396,6 +396,25 @@ class NotificationService:
         # 通知广播给所有用户（策略通知不区分user_id，user_id=1兜底）
         await self._send_notification(user_id=1, message=msg)
 
+    async def send_bark_notification(
+        self,
+        title: str,
+        message: str,
+        level: str = "info",
+        data: Optional[Dict] = None
+    ) -> bool:
+        """只通过 Bark 发送通知。"""
+        bark = self.channels.get("bark")
+        if not bark or not bark.is_enabled():
+            logger.warning("Bark渠道未启用，跳过Bark推送")
+            return False
+
+        try:
+            return await bark.send(title, message, level, data or {})
+        except Exception as e:
+            logger.error(f"Bark推送异常: {e}")
+            return False
+
     async def _send_notification(self, user_id: int, message: Dict):
         """
         发送通知到各个渠道

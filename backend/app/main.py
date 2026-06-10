@@ -67,6 +67,7 @@ async def startup_event():
     from app.websocket.okx_websocket import OKXWebSocketClient
     from app.websocket.manager import ws_manager
     from app.services.notification import notification_service
+    from app.services.altcoin_momentum_monitor import altcoin_momentum_monitor
     import app.websocket as websocket_module
 
     if not settings.DEBUG and settings.SECRET_KEY == "your-secret-key-change-in-production-please":
@@ -86,6 +87,10 @@ async def startup_event():
                 notification_config = json.load(f)
             notification_service.configure_channels(notification_config)
             logger.info("✅ 推送渠道配置已加载")
+
+            altcoin_momentum_monitor.configure(
+                notification_config.get("altcoin_momentum_monitor", {})
+            )
         except Exception as e:
             logger.error(f"❌ 加载推送配置失败: {e}")
     else:
@@ -125,6 +130,12 @@ async def startup_event():
         logger.info("📊 账户监控器已启动")
     except Exception as e:
         logger.error(f"账户监控器启动失败，已跳过: {e}")
+
+    # 启动山寨币1分钟急涨监控
+    try:
+        await altcoin_momentum_monitor.start()
+    except Exception as e:
+        logger.error(f"山寨币短线异动监控启动失败，已跳过: {e}")
 
     # 自动恢复运行中的策略
     try:
@@ -205,9 +216,13 @@ async def shutdown_event():
     from loguru import logger
     from app.services.strategy.manager import strategy_manager
     from app.services.account_monitor import account_monitor
+    from app.services.altcoin_momentum_monitor import altcoin_momentum_monitor
 
     # 停止账户监控器
     await account_monitor.stop()
+
+    # 停止山寨币短线异动监控
+    await altcoin_momentum_monitor.stop()
 
     # 停止所有运行中的策略
     try:
