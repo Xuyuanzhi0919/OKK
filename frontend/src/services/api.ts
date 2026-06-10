@@ -323,6 +323,7 @@ export const aiApi = {
     quote_ccy?: string
     min_volume_usdt?: number
     min_range_pct?: number
+    max_range_pct?: number
     min_change_pct?: number
     max_change_pct?: number
     exclude_majors?: boolean
@@ -335,6 +336,7 @@ export const aiApi = {
         quote_ccy: params?.quote_ccy ?? 'USDT',
         min_volume_usdt: params?.min_volume_usdt ?? 3000000,
         min_range_pct: params?.min_range_pct ?? 3,
+        max_range_pct: params?.max_range_pct ?? 12,
         min_change_pct: params?.min_change_pct ?? -8,
         max_change_pct: params?.max_change_pct ?? 8,
         exclude_majors: params?.exclude_majors ?? true,

@@ -516,6 +516,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         quote_ccy: 'USDT',
         min_volume_usdt: 3000000,
         min_range_pct: 3,
+        max_range_pct: 12,
         min_change_pct: -8,
         max_change_pct: 8,
         exclude_majors: true,

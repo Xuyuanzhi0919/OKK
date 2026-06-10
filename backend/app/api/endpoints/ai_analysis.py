@@ -52,6 +52,7 @@ class StealthAltcoinStrategyRequest(BaseModel):
     quote_ccy: str = "USDT"
     min_volume_usdt: float = 3000000
     min_range_pct: float = 3
+    max_range_pct: float = 12
     max_change_pct: float = 8
     min_change_pct: float = -8
     exclude_majors: bool = True
@@ -508,7 +509,7 @@ async def analyze_stealth_altcoin_strategies(
                 continue
             if change_pct < request.min_change_pct or change_pct > request.max_change_pct:
                 continue
-            if range_pct < request.min_range_pct:
+            if range_pct < request.min_range_pct or range_pct > request.max_range_pct:
                 continue
             if range_position > 0.65:
                 continue
