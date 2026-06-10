@@ -541,8 +541,8 @@ async def analyze_stealth_altcoin_strategies(
                 candidate["change_pct"],
                 candidate["volume_usdt"],
             )
-            recommendation["parameters"]["direction"] = "long"
-            recommendation["direction"] = "long"
+            recommendation["parameters"]["direction"] = "both"
+            recommendation["direction"] = "both"
             results.append({
                 **candidate,
                 "change_pct": round(candidate["change_pct"], 2),
