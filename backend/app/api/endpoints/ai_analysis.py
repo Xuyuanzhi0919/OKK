@@ -12,6 +12,7 @@ from app.services.exchange.okx import OKXExchange
 from app.services.ai.multi_factor_analyzer import MultiFactorAnalyzer
 from app.models.api_config import APIConfig
 from datetime import datetime
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,11 @@ class StealthAltcoinStrategyRequest(BaseModel):
     max_range_pct: float = 12
     max_change_pct: float = 8
     min_change_pct: float = -8
+    trend_timeframe: str = "15m"
+    trend_lookback: int = 192
+    max_lookback_drop_pct: float = 10
+    min_ma_gap_pct: float = -2
+    max_recent_position: float = 0.75
     exclude_majors: bool = True
 
 
@@ -123,6 +129,52 @@ def _stealth_score(ticker: Dict[str, Any]) -> float:
     return volume_score + location_score + change_score + range_score
 
 
+def _stealth_trend_metrics(klines: List[Dict[str, Any]]) -> Dict[str, float]:
+    closes = [_to_float(kline.get("c")) for kline in reversed(klines)]
+    closes = [close for close in closes if close > 0]
+    if len(closes) < 60:
+        return {
+            "lookback_change_pct": 0.0,
+            "ma_gap_pct": -100.0,
+            "recent_position": 1.0,
+        }
+
+    first_close = closes[0]
+    last_close = closes[-1]
+    lookback_change_pct = (last_close - first_close) / first_close * 100 if first_close > 0 else 0.0
+
+    fast_window = closes[-24:]
+    slow_window = closes[-96:] if len(closes) >= 96 else closes
+    fast_ma = sum(fast_window) / len(fast_window)
+    slow_ma = sum(slow_window) / len(slow_window)
+    ma_gap_pct = (fast_ma - slow_ma) / slow_ma * 100 if slow_ma > 0 else -100.0
+
+    recent_window = closes[-96:] if len(closes) >= 96 else closes
+    recent_low = min(recent_window)
+    recent_high = max(recent_window)
+    recent_position = (
+        (last_close - recent_low) / (recent_high - recent_low)
+        if recent_high > recent_low
+        else 1.0
+    )
+
+    return {
+        "lookback_change_pct": lookback_change_pct,
+        "ma_gap_pct": ma_gap_pct,
+        "recent_position": max(0.0, min(1.0, recent_position)),
+    }
+
+
+async def _get_stealth_trend_metrics(
+    exchange: OKXExchange,
+    symbol: str,
+    timeframe: str,
+    lookback: int,
+) -> Dict[str, float]:
+    klines = await exchange.get_kline(symbol, timeframe=timeframe, limit=min(max(lookback, 60), 300))
+    return _stealth_trend_metrics(klines)
+
+
 def _analysis_for_stealth_candidate(symbol: str, candidate: Dict[str, Any], score: float) -> Dict[str, Any]:
     confidence = max(0.35, min(0.85, score / 100))
     position = candidate.get("range_position", 1.0)
@@ -158,6 +210,9 @@ def _analysis_for_stealth_candidate(symbol: str, candidate: Dict[str, Any], scor
                     "range_position": round(position, 3),
                     "range_pct": round(candidate.get("range_pct", 0), 2),
                     "volume_usdt": round(candidate.get("volume_usdt", 0), 2),
+                    "lookback_change_pct": round(candidate.get("lookback_change_pct", 0), 2),
+                    "ma_gap_pct": round(candidate.get("ma_gap_pct", 0), 2),
+                    "recent_position": round(candidate.get("recent_position", 1), 3),
                 },
             }
         },
@@ -165,7 +220,10 @@ def _analysis_for_stealth_candidate(symbol: str, candidate: Dict[str, Any], scor
         "suggested_strategy": suggested_strategy,
         "reasoning": (
             f"潜伏候选评分 {score:.1f}。24h涨幅 {change_pct:.2f}%，"
-            f"价格位于24h区间 {position*100:.1f}% 位置，成交额约 {candidate.get('volume_usdt', 0):,.0f} USDT。"
+            f"价格位于24h区间 {position*100:.1f}% 位置，"
+            f"近周期涨跌 {candidate.get('lookback_change_pct', 0):.2f}%，"
+            f"均线差 {candidate.get('ma_gap_pct', 0):.2f}%，"
+            f"成交额约 {candidate.get('volume_usdt', 0):,.0f} USDT。"
         ),
     }
 
@@ -529,7 +587,52 @@ async def analyze_stealth_altcoin_strategies(
                 "stealth_score": score,
             })
 
-        top_candidates = sorted(candidates, key=lambda item: item["stealth_score"], reverse=True)[:request.limit]
+        preliminary_candidates = sorted(
+            candidates,
+            key=lambda item: item["stealth_score"],
+            reverse=True,
+        )[:max(request.limit * 8, 20)]
+
+        semaphore = asyncio.Semaphore(6)
+
+        async def enrich_candidate(candidate: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+            try:
+                async with semaphore:
+                    metrics = await _get_stealth_trend_metrics(
+                        exchange,
+                        candidate["symbol"],
+                        request.trend_timeframe,
+                        request.trend_lookback,
+                    )
+                lookback_change_pct = metrics["lookback_change_pct"]
+                ma_gap_pct = metrics["ma_gap_pct"]
+                recent_position = metrics["recent_position"]
+                if lookback_change_pct < -request.max_lookback_drop_pct:
+                    return None
+                if ma_gap_pct < request.min_ma_gap_pct:
+                    return None
+                if recent_position > request.max_recent_position:
+                    return None
+
+                trend_score = max(0.0, min(10.0, lookback_change_pct + request.max_lookback_drop_pct))
+                ma_score = max(0.0, min(10.0, ma_gap_pct - request.min_ma_gap_pct))
+                candidate.update(metrics)
+                candidate["stealth_score"] = candidate["stealth_score"] + trend_score + ma_score
+                return candidate
+            except Exception as exc:
+                logger.warning(f"潜伏候选趋势过滤失败 {candidate['symbol']}: {exc}")
+                return None
+
+        enriched_candidates = await asyncio.gather(*[
+            enrich_candidate(candidate)
+            for candidate in preliminary_candidates
+        ])
+        top_candidates = sorted(
+            [candidate for candidate in enriched_candidates if candidate is not None],
+            key=lambda item: item["stealth_score"],
+            reverse=True,
+        )[:request.limit]
+
         results: List[Dict[str, Any]] = []
         for candidate in top_candidates:
             analysis = _analysis_for_stealth_candidate(
@@ -543,6 +646,14 @@ async def analyze_stealth_altcoin_strategies(
                 candidate["volume_usdt"],
             )
             recommendation["parameters"]["direction"] = "both"
+            recommendation["parameters"]["fast_period"] = 30
+            recommendation["parameters"]["slow_period"] = 120
+            recommendation["parameters"]["entry_atr_multiple"] = 0.8
+            recommendation["parameters"]["stop_atr_multiple"] = 2.8
+            recommendation["parameters"]["take_profit_atr_multiple"] = 6.0
+            recommendation["parameters"]["cooldown_seconds"] = 7200
+            recommendation["parameters"]["risk_fuse"]["daily_loss_limit_pct"] = 0.03
+            recommendation["parameters"]["risk_fuse"]["max_drawdown_pct"] = 0.08
             recommendation["direction"] = "both"
             results.append({
                 **candidate,
@@ -550,6 +661,9 @@ async def analyze_stealth_altcoin_strategies(
                 "volume_usdt": round(candidate["volume_usdt"], 2),
                 "range_pct": round(candidate["range_pct"], 2),
                 "range_position": round(candidate["range_position"], 3),
+                "lookback_change_pct": round(candidate.get("lookback_change_pct", 0), 2),
+                "ma_gap_pct": round(candidate.get("ma_gap_pct", 0), 2),
+                "recent_position": round(candidate.get("recent_position", 1), 3),
                 "stealth_score": round(candidate["stealth_score"], 2),
                 "analysis": analysis,
                 "recommended_strategy": recommendation,
@@ -561,6 +675,8 @@ async def analyze_stealth_altcoin_strategies(
             "data": {
                 "items": results,
                 "universe_count": len(candidates),
+                "preliminary_count": len(preliminary_candidates),
+                "trend_filtered_count": len([candidate for candidate in enriched_candidates if candidate is not None]),
                 "ai_enabled": False,
             }
         }

@@ -519,6 +519,11 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         max_range_pct: 12,
         min_change_pct: -8,
         max_change_pct: 8,
+        trend_timeframe: '15m',
+        trend_lookback: 192,
+        max_lookback_drop_pct: 10,
+        min_ma_gap_pct: -2,
+        max_recent_position: 0.75,
         exclude_majors: true,
       })
       setCandidateMode('stealth')

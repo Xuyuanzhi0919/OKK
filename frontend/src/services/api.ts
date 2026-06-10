@@ -326,6 +326,11 @@ export const aiApi = {
     max_range_pct?: number
     min_change_pct?: number
     max_change_pct?: number
+    trend_timeframe?: string
+    trend_lookback?: number
+    max_lookback_drop_pct?: number
+    min_ma_gap_pct?: number
+    max_recent_position?: number
     exclude_majors?: boolean
   }) =>
     api.post<{ code: number; msg: string; data: { items: TopAltcoinStrategyCandidate[]; universe_count: number; ai_enabled: boolean } }>(
@@ -339,6 +344,11 @@ export const aiApi = {
         max_range_pct: params?.max_range_pct ?? 12,
         min_change_pct: params?.min_change_pct ?? -8,
         max_change_pct: params?.max_change_pct ?? 8,
+        trend_timeframe: params?.trend_timeframe ?? '15m',
+        trend_lookback: params?.trend_lookback ?? 192,
+        max_lookback_drop_pct: params?.max_lookback_drop_pct ?? 10,
+        min_ma_gap_pct: params?.min_ma_gap_pct ?? -2,
+        max_recent_position: params?.max_recent_position ?? 0.75,
         exclude_majors: params?.exclude_majors ?? true,
       }
     ).then(res => (res as any).data),
