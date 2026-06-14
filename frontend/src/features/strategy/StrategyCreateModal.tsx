@@ -37,6 +37,23 @@ interface APIConfigOption {
   is_valid: boolean
 }
 
+interface AdaptiveGridTrendRecommendationItem {
+  symbol: string
+  score: number
+  return_pct: number
+  max_drawdown_pct: number
+  reason: string
+}
+
+interface AdaptiveGridTrendRecommendation {
+  profile: string
+  params: Record<string, any>
+  active: AdaptiveGridTrendRecommendationItem[]
+  watch: AdaptiveGridTrendRecommendationItem[]
+  excluded: AdaptiveGridTrendRecommendationItem[]
+  warning?: string
+}
+
 // 可用实盘策略类型（已通过回测验证）
 const STRATEGY_TYPES: { value: string; label: string; desc: string }[] = [
   {
@@ -237,6 +254,13 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
   // 自动命名：监听类型和交易对，只要名称为空或等于上次自动生成的值就覆盖
   const watchedType   = Form.useWatch('type',   form)
   const watchedSymbol = Form.useWatch('symbol', form)
+
+  const { data: agtRecommendation, isLoading: agtRecommendationLoading } = useQuery<AdaptiveGridTrendRecommendation>({
+    queryKey: ['adaptive-grid-trend-recommendation'],
+    queryFn: () => strategyApi.getAdaptiveGridTrendRecommendation(),
+    enabled: open && watchedType === 'adaptive_grid_trend' && !backtestData && editStrategyId == null,
+    staleTime: 60 * 1000,
+  })
 
   useEffect(() => {
     if (!open || backtestData || watchedType !== 'adaptive_grid_trend') return
@@ -445,6 +469,48 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
   }
 
   const handleCancel = () => { form.resetFields(); onCancel() }
+
+  const applyAdaptiveGridTrendRecommendation = (
+    item: AdaptiveGridTrendRecommendationItem,
+    groupLabel: string
+  ) => {
+    const params = agtRecommendation?.params || {}
+    const coin = extractCoin(item.symbol)
+    form.setFieldsValue({
+      name: `${coin} 自适应趋势网格 1000U稳健`,
+      symbol: item.symbol,
+      timeframe: params.trend_timeframe ?? '15m',
+      agt_direction: params.direction ?? 'both',
+      agt_timeframe: params.trend_timeframe ?? '15m',
+      agt_fast_period: params.fast_period ?? 30,
+      agt_slow_period: params.slow_period ?? 60,
+      agt_atr_period: params.atr_period ?? 14,
+      agt_entry_atr_multiple: params.entry_atr_multiple ?? 0.6,
+      agt_stop_atr_multiple: params.stop_atr_multiple ?? 2.8,
+      agt_take_profit_atr_multiple: params.take_profit_atr_multiple ?? 3.2,
+      agt_risk_per_trade: percentValue(params.risk_per_trade, 2),
+      agt_max_position_usd: params.max_position_usd ?? 800,
+      agt_leverage: params.leverage ?? 5,
+      agt_margin_mode: params.margin_mode ?? 'isolated',
+      agt_cooldown_minutes: params.cooldown_seconds != null ? Math.round(Number(params.cooldown_seconds) / 60) : 60,
+      agt_notify_near_trigger: params.notify_near_trigger ?? true,
+      agt_near_trigger_pct: params.near_trigger_pct != null ? percentValue(params.near_trigger_pct, 0.3) : 0.3,
+      agt_near_trigger_cooldown_minutes: params.near_trigger_cooldown_seconds != null
+        ? Math.round(Number(params.near_trigger_cooldown_seconds) / 60)
+        : 10,
+      agt_fuse_enabled: params.risk_fuse?.enabled ?? true,
+      agt_fuse_max_consecutive_losses: params.risk_fuse?.max_consecutive_losses ?? 2,
+      agt_fuse_daily_loss_pct: percentValue(params.risk_fuse?.daily_loss_limit_pct, 3),
+      agt_fuse_max_drawdown_pct: percentValue(params.risk_fuse?.max_drawdown_pct, 5),
+      agt_fuse_profit_factor_window: params.risk_fuse?.profit_factor_window ?? 10,
+      agt_fuse_min_trades: params.risk_fuse?.min_trades_for_profit_factor ?? 8,
+      agt_fuse_min_profit_factor: params.risk_fuse?.min_profit_factor ?? 0.8,
+      agt_fuse_cancel_orders: params.risk_fuse?.cancel_orders_on_trigger ?? true,
+      agt_fuse_close_position: params.risk_fuse?.close_position_on_trigger ?? false,
+    })
+    setLastAutoName(`${coin} 自适应趋势网格 1000U稳健`)
+    message.success(`已套用${groupLabel}: ${item.symbol}`)
+  }
 
   const applyStrategyRecommendation = (candidate: TopAltcoinStrategyCandidate) => {
     const params = candidate.recommended_strategy.parameters || {}
@@ -724,6 +790,58 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         {!editStrategyId && !backtestData && (
           <>
             <Divider orientation="left" style={compactDivider}>候选分析</Divider>
+            {selectedType === 'adaptive_grid_trend' && (
+              <Alert
+                message={
+                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                    <Space wrap>
+                      <span style={{ fontWeight: 600 }}>1000U稳健实盘选币</span>
+                      {agtRecommendationLoading && <Tag>加载中</Tag>}
+                      {agtRecommendation?.warning && <Tag color="orange">静态推荐</Tag>}
+                    </Space>
+                    <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                      <Space wrap>
+                        <span style={{ color: '#595959' }}>建议运行</span>
+                        {(agtRecommendation?.active || []).map(item => (
+                          <Button
+                            key={item.symbol}
+                            size="small"
+                            type={watchedSymbol === item.symbol ? 'primary' : 'default'}
+                            onClick={() => applyAdaptiveGridTrendRecommendation(item, '建议运行')}
+                          >
+                            {item.symbol.replace('-USDT-SWAP', '')}
+                          </Button>
+                        ))}
+                      </Space>
+                      <Space wrap>
+                        <span style={{ color: '#595959' }}>观察候选</span>
+                        {(agtRecommendation?.watch || []).map(item => (
+                          <Button
+                            key={item.symbol}
+                            size="small"
+                            onClick={() => applyAdaptiveGridTrendRecommendation(item, '观察候选')}
+                          >
+                            {item.symbol.replace('-USDT-SWAP', '')}
+                          </Button>
+                        ))}
+                      </Space>
+                      <Space wrap>
+                        <span style={{ color: '#595959' }}>暂缓</span>
+                        {(agtRecommendation?.excluded || []).map(item => (
+                          <Tag key={item.symbol} color="default">
+                            {item.symbol.replace('-USDT-SWAP', '')}
+                          </Tag>
+                        ))}
+                      </Space>
+                    </Space>
+                  </Space>
+                }
+                description="推荐器会用1000U稳健参数和昨日验证结果做初始篮子：先跑 LTC/XRP/LINK，DOT/AVAX/SOL 作为加仓观察，DOGE/TRX 暂缓。点击币种可直接套用交易对、策略名和参数。"
+                type="success"
+                showIcon
+                style={{ marginBottom: 10, fontSize: 12 }}
+              />
+            )}
             <Alert
               message={candidateMode === 'stealth'
                 ? '筛选成交量足够、涨幅未过热、价格位置偏低的潜伏候选，分析后可一键套用推荐策略。'
