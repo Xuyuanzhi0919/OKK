@@ -16,6 +16,11 @@ from app.schemas.strategy import (
     StrategyStatsResponse,
 )
 from app.services.strategy.manager import strategy_manager
+from app.services.strategy.adaptive_grid_trend_config import (
+    normalize_adaptive_grid_trend_params,
+    select_stable_1000u_symbols,
+)
+from app.services.exchange.okx import OKXExchange
 from app.services.api_config_service import api_config_service
 from app.core.config import settings
 from typing import List
@@ -31,6 +36,33 @@ get_current_user_id = require_current_user_id
 
 
 SUPPORTED_STRATEGY_TYPES = {"adaptive_grid_trend", "arbitrage"}
+
+
+@router.get("/adaptive-grid-trend/recommendation")
+async def get_adaptive_grid_trend_recommendation(
+    user_id: int = Depends(get_current_user_id)
+):
+    """获取1000U稳健实盘配置和候选币推荐。"""
+    exchange = OKXExchange(
+        api_key=settings.OKX_API_KEY,
+        secret_key=settings.OKX_SECRET_KEY,
+        passphrase=settings.OKX_PASSPHRASE,
+        simulated=settings.OKX_SIMULATED,
+        proxy=settings.OKX_PROXY,
+    )
+    try:
+        tickers = await exchange.get_tickers("SWAP")
+        recommendation = select_stable_1000u_symbols(tickers=tickers, active_limit=3)
+        recommendation["user_id"] = user_id
+        return recommendation
+    except Exception as exc:
+        logger.warning(f"获取自适应趋势网格推荐失败，返回静态推荐: {exc}")
+        recommendation = select_stable_1000u_symbols(active_limit=3)
+        recommendation["user_id"] = user_id
+        recommendation["warning"] = f"实时行情不可用，已返回静态推荐: {exc}"
+        return recommendation
+    finally:
+        await exchange.close()
 
 
 @router.get("/", response_model=StrategyListResponse)
@@ -177,6 +209,10 @@ async def create_strategy(
                 detail="后端当前仅支持自适应趋势网格策略和现货-永续套利策略"
             )
 
+        parameters = strategy_data.parameters or {}
+        if strategy_type_value == "adaptive_grid_trend":
+            parameters = normalize_adaptive_grid_trend_params(parameters)
+
         bound_api_config = None
         if strategy_data.api_config_id is not None:
             bound_api_config = api_config_service.get_config(
@@ -202,7 +238,7 @@ async def create_strategy(
             type=strategy_type_value,
             symbol=strategy_data.symbol,
             timeframe=strategy_data.timeframe,
-            parameters=strategy_data.parameters,
+            parameters=parameters,
             description=strategy_data.description,
             status='stopped',  # 直接使用小写字符串
         )

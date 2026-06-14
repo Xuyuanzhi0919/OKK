@@ -249,8 +249,8 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
       agt_take_profit_atr_multiple: preset.takeProfit,
       agt_cooldown_minutes: preset.cooldownMinutes,
       agt_risk_per_trade: preset.riskPercent ?? 2,
-      agt_max_position_usd: preset.maxPositionUsd ?? 2000,
-      agt_leverage: preset.leverage ?? 3,
+      agt_max_position_usd: preset.maxPositionUsd ?? 800,
+      agt_leverage: preset.leverage ?? 5,
       agt_notify_near_trigger: true,
       agt_near_trigger_pct: 0.3,
       agt_near_trigger_cooldown_minutes: 10,
@@ -371,25 +371,25 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         parameters.stop_loss     = (values.grid_stop_loss ?? 5) / 100
       } else if (values.type === 'adaptive_grid_trend') {
         parameters.direction                = values.agt_direction ?? 'both'
-        parameters.trend_timeframe          = values.agt_timeframe ?? '1H'
+        parameters.trend_timeframe          = values.agt_timeframe ?? '15m'
         parameters.fast_period              = values.agt_fast_period ?? 30
-        parameters.slow_period              = values.agt_slow_period ?? 120
+        parameters.slow_period              = values.agt_slow_period ?? 60
         parameters.atr_period               = values.agt_atr_period ?? 14
-        parameters.entry_atr_multiple       = values.agt_entry_atr_multiple ?? 0.2
-        parameters.stop_atr_multiple        = values.agt_stop_atr_multiple ?? 1.6
-        parameters.take_profit_atr_multiple = values.agt_take_profit_atr_multiple ?? 3.0
+        parameters.entry_atr_multiple       = values.agt_entry_atr_multiple ?? 0.6
+        parameters.stop_atr_multiple        = values.agt_stop_atr_multiple ?? 2.8
+        parameters.take_profit_atr_multiple = values.agt_take_profit_atr_multiple ?? 3.2
         parameters.risk_per_trade           = (values.agt_risk_per_trade ?? 2) / 100
-        parameters.max_position_usd         = values.agt_max_position_usd ?? 2000
-        parameters.leverage                 = values.agt_leverage ?? 3
+        parameters.max_position_usd         = values.agt_max_position_usd ?? 800
+        parameters.leverage                 = values.agt_leverage ?? 5
         parameters.margin_mode              = values.agt_margin_mode ?? 'isolated'
-        parameters.cooldown_seconds         = (values.agt_cooldown_minutes ?? 30) * 60
+        parameters.cooldown_seconds         = (values.agt_cooldown_minutes ?? 60) * 60
         parameters.notify_near_trigger      = values.agt_notify_near_trigger ?? true
         parameters.near_trigger_pct         = (values.agt_near_trigger_pct ?? 0.3) / 100
         parameters.near_trigger_cooldown_seconds = (values.agt_near_trigger_cooldown_minutes ?? 10) * 60
         parameters.risk_fuse                = {
           enabled: values.agt_fuse_enabled ?? true,
-          max_consecutive_losses: values.agt_fuse_max_consecutive_losses ?? 3,
-          daily_loss_limit_pct: (values.agt_fuse_daily_loss_pct ?? 2) / 100,
+          max_consecutive_losses: values.agt_fuse_max_consecutive_losses ?? 2,
+          daily_loss_limit_pct: (values.agt_fuse_daily_loss_pct ?? 3) / 100,
           max_drawdown_pct: (values.agt_fuse_max_drawdown_pct ?? 5) / 100,
           profit_factor_window: values.agt_fuse_profit_factor_window ?? 10,
           min_trades_for_profit_factor: values.agt_fuse_min_trades ?? 8,
@@ -422,7 +422,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
         timeframe: values.type === 'trend' ? '15m'
                  : values.type === 'dual_side' ? (values.dual_timeframe ?? '15m')
                  : values.type === 'grid' ? '1m'
-                 : values.type === 'adaptive_grid_trend' ? (values.agt_timeframe ?? '1H')
+                 : values.type === 'adaptive_grid_trend' ? (values.agt_timeframe ?? '15m')
                  : values.type === 'arbitrage' ? '1m'
                  : (values.timeframe ?? '1H'),
         parameters,
@@ -602,24 +602,24 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
           grid_stop_loss: 5,
           // 自适应趋势网格默认值
           agt_direction: 'both',
-          agt_timeframe: '1H',
+          agt_timeframe: '15m',
           agt_fast_period: 30,
-          agt_slow_period: 120,
+          agt_slow_period: 60,
           agt_atr_period: 14,
-          agt_entry_atr_multiple: 0.2,
-          agt_stop_atr_multiple: 1.6,
-          agt_take_profit_atr_multiple: 3.0,
+          agt_entry_atr_multiple: 0.6,
+          agt_stop_atr_multiple: 2.8,
+          agt_take_profit_atr_multiple: 3.2,
           agt_risk_per_trade: 2,
-          agt_max_position_usd: 2000,
-          agt_leverage: 3,
+          agt_max_position_usd: 800,
+          agt_leverage: 5,
           agt_margin_mode: 'isolated',
-          agt_cooldown_minutes: 30,
+          agt_cooldown_minutes: 60,
           agt_notify_near_trigger: true,
           agt_near_trigger_pct: 0.3,
           agt_near_trigger_cooldown_minutes: 10,
           agt_fuse_enabled: true,
-          agt_fuse_max_consecutive_losses: 3,
-          agt_fuse_daily_loss_pct: 2,
+          agt_fuse_max_consecutive_losses: 2,
+          agt_fuse_daily_loss_pct: 3,
           agt_fuse_max_drawdown_pct: 5,
           agt_fuse_profit_factor_window: 10,
           agt_fuse_min_trades: 8,
@@ -1128,7 +1128,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
               <Col span={8}>
                 <Form.Item
                   name="agt_fast_period"
-                  label={<Space size={4}>EMA快线<Tooltip title="趋势快线周期，默认20"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  label={<Space size={4}>EMA快线<Tooltip title="趋势快线周期，1000U稳健版默认30"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
                   style={compactItem}
                 >
                   <InputNumber min={5} max={80} step={1} style={{ width: '100%' }} />
@@ -1137,7 +1137,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
               <Col span={8}>
                 <Form.Item
                   name="agt_slow_period"
-                  label={<Space size={4}>EMA慢线<Tooltip title="趋势慢线周期，必须大于快线，默认80"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  label={<Space size={4}>EMA慢线<Tooltip title="趋势慢线周期，必须大于快线，1000U稳健版默认60"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
                   style={compactItem}
                 >
                   <InputNumber min={20} max={200} step={5} style={{ width: '100%' }} />
@@ -1173,7 +1173,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
               <Col span={8}>
                 <Form.Item
                   name="agt_leverage"
-                  label={<Space size={4}>杠杆倍数<Tooltip title="合约启动时自动设置，默认3x"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  label={<Space size={4}>杠杆倍数<Tooltip title="合约启动时自动设置，1000U稳健版默认5x"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
                   style={compactItem}
                 >
                   <InputNumber min={1} max={20} step={1} suffix="x" style={{ width: '100%' }} />
@@ -1200,7 +1200,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
               <Col span={8}>
                 <Form.Item
                   name="agt_take_profit_atr_multiple"
-                  label={<Space size={4}>止盈ATR<Tooltip title="止盈距离 = ATR × 此倍数，默认6.0"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  label={<Space size={4}>止盈ATR<Tooltip title="止盈距离 = ATR × 此倍数，1000U稳健版默认3.2"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
                   style={compactItem}
                 >
                   <InputNumber min={0.5} max={8} step={0.1} style={{ width: '100%' }} />
@@ -1274,7 +1274,7 @@ const StrategyCreateModal: React.FC<StrategyCreateModalProps> = ({
               <Col span={8}>
                 <Form.Item
                   name="agt_fuse_daily_loss_pct"
-                  label={<Space size={4}>日亏损上限<Tooltip title="按风险基准资金计算，默认2%"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
+                  label={<Space size={4}>日亏损上限<Tooltip title="按风险基准资金计算，1000U稳健版默认3%"><InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} /></Tooltip></Space>}
                   style={compactItem}
                 >
                   <InputNumber min={0.1} max={20} step={0.1} suffix="%" style={{ width: '100%' }} />

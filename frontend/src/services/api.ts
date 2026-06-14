@@ -82,6 +82,8 @@ export const strategyApi = {
     api.get<{ code: number; msg: string; data: StrategyPerformance }>(
       `/strategies/${id}/performance`
     ).then(res => (res as any).data),
+  getAdaptiveGridTrendRecommendation: () =>
+    api.get('/strategies/adaptive-grid-trend/recommendation'),
   backtest: (id: number, params: any) =>
     api.post(`/strategies/${id}/backtest`, params),
   getPnl: (id: number) =>

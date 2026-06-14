@@ -19,6 +19,7 @@ from loguru import logger
 from app.core.database import SessionLocal
 from app.models.strategy import Strategy as DBStrategy, StrategyEvent
 from app.services.notification.notification_service import notification_service
+from app.services.strategy.adaptive_grid_trend_config import normalize_adaptive_grid_trend_params
 from app.services.strategy.base import StrategyBase
 
 
@@ -28,18 +29,19 @@ class AdaptiveGridTrendStrategy(StrategyBase):
     def __init__(self, strategy_id: int, exchange, symbol: str, parameters: Dict, user_id: int = 1):
         super().__init__(strategy_id, exchange, symbol, parameters, user_id)
 
-        p = parameters or {}
+        p = normalize_adaptive_grid_trend_params(parameters)
+        self.parameters = p
         self.direction: str = str(p.get("direction", "both")).lower()
-        self.timeframe: str = str(p.get("trend_timeframe", p.get("timeframe", "1H")))
-        self.fast_period: int = int(p.get("fast_period", 20))
-        self.slow_period: int = int(p.get("slow_period", 80))
+        self.timeframe: str = str(p.get("trend_timeframe", p.get("timeframe", "15m")))
+        self.fast_period: int = int(p.get("fast_period", 30))
+        self.slow_period: int = int(p.get("slow_period", 60))
         self.atr_period: int = int(p.get("atr_period", 14))
         self.entry_atr_multiple: float = float(p.get("entry_atr_multiple", 0.6))
         self.stop_atr_multiple: float = float(p.get("stop_atr_multiple", 2.8))
-        self.take_profit_atr_multiple: float = float(p.get("take_profit_atr_multiple", 6.0))
-        self.risk_per_trade: float = float(p.get("risk_per_trade", 0.01))
-        self.max_position_usd: float = float(p.get("max_position_usd", 500))
-        self.leverage: int = int(p.get("leverage", 3))
+        self.take_profit_atr_multiple: float = float(p.get("take_profit_atr_multiple", 3.2))
+        self.risk_per_trade: float = float(p.get("risk_per_trade", 0.02))
+        self.max_position_usd: float = float(p.get("max_position_usd", 800))
+        self.leverage: int = int(p.get("leverage", 5))
         self.margin_mode: str = str(p.get("margin_mode", "isolated")).lower()
         self.margin_usage_ratio: float = float(p.get("margin_usage_ratio", 0.85))
         self.min_seconds_between_trades: int = int(p.get("cooldown_seconds", 60 * 60))

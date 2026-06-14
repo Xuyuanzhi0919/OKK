@@ -15,6 +15,8 @@ from typing import Dict, List, Optional
 
 from loguru import logger
 
+from app.services.strategy.adaptive_grid_trend_config import normalize_adaptive_grid_trend_params
+
 from .backtest_engine import BacktestEngine, Position, Trade
 
 
@@ -83,20 +85,21 @@ class AdaptiveGridTrendBacktestEngine(BacktestEngine):
 
     @classmethod
     def from_params(cls, symbol: str, initial_capital: float, params: Dict) -> "AdaptiveGridTrendBacktestEngine":
+        params = normalize_adaptive_grid_trend_params(params)
         return cls(
             symbol=symbol,
             initial_capital=initial_capital,
             direction=str(params.get("direction", "both")),
-            fast_period=int(params.get("fast_period", 20)),
-            slow_period=int(params.get("slow_period", 80)),
+            fast_period=int(params.get("fast_period", 30)),
+            slow_period=int(params.get("slow_period", 60)),
             atr_period=int(params.get("atr_period", 14)),
             entry_atr_multiple=float(params.get("entry_atr_multiple", 0.6)),
             stop_atr_multiple=float(params.get("stop_atr_multiple", 2.8)),
-            take_profit_atr_multiple=float(params.get("take_profit_atr_multiple", 6.0)),
-            risk_per_trade=float(params.get("risk_per_trade", 0.01)),
-            max_position_usd=float(params.get("max_position_usd", 500)),
+            take_profit_atr_multiple=float(params.get("take_profit_atr_multiple", 3.2)),
+            risk_per_trade=float(params.get("risk_per_trade", 0.02)),
+            max_position_usd=float(params.get("max_position_usd", 800)),
             fee_rate=float(params.get("fee_rate", 0.0005)),
-            leverage=int(params.get("leverage", 3)),
+            leverage=int(params.get("leverage", 5)),
             cooldown_seconds=int(params.get("cooldown_seconds", 60 * 60)),
         )
 
